@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ros2-pkg-validator"
+version = "0.1.0"
+description = "Validates package xml of ros2 pkgs"
+readme = "README.md"
+requires-python = ">=3.7"
+dependencies = [
+    "lxml",
+    "rosdep",
+]
+
+[project.scripts]
+package-xml-formatter = "ros2_pkg_validator.package_xml_formatter:main"
+ros2-pkg-validator = "ros2_pkg_validator.ros2_pkg_validator:main"

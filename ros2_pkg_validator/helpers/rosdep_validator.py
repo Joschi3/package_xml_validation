@@ -1,9 +1,4 @@
 import rosdep2
-from rosdep2.lookup import RosdepLookup
-from rosdep2.rospkg_loader import DEFAULT_VIEW_KEY
-from rosdep2.sources_list import SourcesListLoader
-from rosdep2.installers import PackageManagerInstaller
-from rospkg import RosPack, os_detect
 
 
 def check_rosdeps(dependencies) -> list[str]:

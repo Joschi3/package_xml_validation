@@ -1,6 +1,6 @@
 -   id: format-package-xml
     name: Format package.xml files
     description: Verify the package xml schema and ordering of dependencies
-    entry: python scripts/package_xml_formatter.py
-    language: script
+    entry: package-xml-formatter
+    language: python
     files: ^.*package\.xml$
