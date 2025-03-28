@@ -51,8 +51,6 @@ def parse_package_xml(xml_path: Path):
     return main_deps, test_deps
 
 
-
-
 def find_files_in_dir(base_dir: Path):
     """
     Recursively find all package.xml or CMakeLists.txt files under base_dir.
@@ -68,7 +66,8 @@ def find_files_in_dir(base_dir: Path):
                 cmake_files.add(Path(root) / file)
     return xml_files, cmake_files
 
-def collect_cmake_package_pairs(cmake_files:List[Path], package_xmls:List[Path]):
+
+def collect_cmake_package_pairs(cmake_files: List[Path], package_xmls: List[Path]):
     # corresponding package.xml and cmake files are in the same directory
     pairs = []
     visited_cmake_files = set()
@@ -85,10 +84,13 @@ def collect_cmake_package_pairs(cmake_files:List[Path], package_xmls:List[Path])
             existing_pairs.append((package_xml, cmake_file))
     return existing_pairs
 
+
 def print_missing(source, target, missing_in_target_deps, is_test=False):
-    print(f"\t {source} -> {target} missing {"test " if is_test else ''}dependencies:")
+    dep_name = "test " if is_test else ""
+    print(f"\t {source} -> {target} missing {dep_name}dependencies:")
     for dep in missing_in_target_deps:
         print(f"\t\t{dep}")
+
 
 def compare_if_missing(source, target):
     # in priniciple missing_in_target = set(source) - set(target), but robust to
@@ -97,13 +99,13 @@ def compare_if_missing(source, target):
     for dep in source:
         exists = dep in target
         if exists:
-            continue 
+            continue
         if dep.startswith("lib"):
             exists = dep[3:] in target
         else:
             exists = f"lib{dep}" in target
         if exists:
-            continue 
+            continue
         if dep.endswith("-dev"):
             exists = dep[:-4] in target
         else:
@@ -136,13 +138,12 @@ def validate(paths, check_rosdep=False, verbose=False):
             elif path.name == "CMakeLists.txt":
                 all_cmake_lists.add(path)
         # else: non-existent path is ignored in this example
-    
 
     # If no relevant files found, exit 0 (no error)
     if not all_package_xmls and not all_cmake_lists:
         print("No package.xml or CMakeLists.txt found. Exiting with code 0.")
         sys.exit(0)
-    
+
     # collect pairs of package.xml and CMakeLists.txt files
     pairs = collect_cmake_package_pairs(list(all_cmake_lists), list(all_package_xmls))
 
@@ -163,7 +164,12 @@ def validate(paths, check_rosdep=False, verbose=False):
         test_deps_missing_in_cmake = compare_if_missing(test_deps_xml, test_deps_cmake)
         test_deps_missing_in_xml = compare_if_missing(test_deps_cmake, test_deps_xml)
 
-        if deps_missing_in_cmake or deps_missing_in_xml or test_deps_missing_in_cmake or test_deps_missing_in_xml:
+        if (
+            deps_missing_in_cmake
+            or deps_missing_in_xml
+            or test_deps_missing_in_cmake
+            or test_deps_missing_in_xml
+        ):
             print(f"{package_name}")
 
         if deps_missing_in_cmake:
@@ -171,12 +177,21 @@ def validate(paths, check_rosdep=False, verbose=False):
         if deps_missing_in_xml:
             print_missing("CMakeLists.txt", "package.xml", deps_missing_in_xml)
         if test_deps_missing_in_cmake:
-            print_missing("package.xml", "CMakeLists.txt", test_deps_missing_in_cmake, True)
+            print_missing(
+                "package.xml", "CMakeLists.txt", test_deps_missing_in_cmake, True
+            )
         if test_deps_missing_in_xml:
-            print_missing("CMakeLists.txt", "package.xml", test_deps_missing_in_xml, True)
-        if deps_missing_in_cmake or deps_missing_in_xml or test_deps_missing_in_cmake or test_deps_missing_in_xml:
+            print_missing(
+                "CMakeLists.txt", "package.xml", test_deps_missing_in_xml, True
+            )
+        if (
+            deps_missing_in_cmake
+            or deps_missing_in_xml
+            or test_deps_missing_in_cmake
+            or test_deps_missing_in_xml
+        ):
             print("\n")
-        
+
         # make sure the listed keys in the package.xml are resolvable
         if check_rosdep:
             unresolvable_deps = check_rosdeps(main_deps_xml + test_deps_xml)
@@ -188,27 +203,27 @@ def validate(paths, check_rosdep=False, verbose=False):
 
     sys.exit(0)
 
+
 def main():
     parser = argparse.ArgumentParser(description="ROS2 dependency validator.")
     parser.add_argument(
         "--check_rosdeps",
         action="store_true",
         default=False,
-        help="If set tests whether rosdep is able to resolve the listed dependencies."
+        help="If set tests whether rosdep is able to resolve the listed dependencies.",
     )
     parser.add_argument(
         "SRC",
         nargs="*",
-        help="List of files or directories to check. If empty or '.', we scan the current directory."
+        help="List of files or directories to check. If empty or '.', we scan the current directory.",
     )
 
     args = parser.parse_args()
     validate(args.SRC, args.check_rosdeps)
- 
 
 
 if __name__ == "__main__":
-    #main()
+    # main()
 
     paths = ["/home/aljoscha-schmidt/hector/src/"]
     validate(paths, True, False)

@@ -5,44 +5,49 @@ from lxml import etree as ET
 
 # Define the expected order of dependency tags
 DEPENDENCY_ORDER = [
-    'buildtool_depend',
-    'buildtool_export_depend',
-    'build_depend',
-    'build_export_depend',
-    'depend',
-    'exec_depend',
-    'doc_depend',
-    'test_depend'
+    "buildtool_depend",
+    "buildtool_export_depend",
+    "build_depend",
+    "build_export_depend",
+    "depend",
+    "exec_depend",
+    "doc_depend",
+    "test_depend",
 ]
+
 
 def find_package_xml_files(paths):
     """Locate all package.xml files within the provided paths."""
     package_xml_files = []
     for path in paths:
-        if os.path.isfile(path) and os.path.basename(path) == 'package.xml':
+        if os.path.isfile(path) and os.path.basename(path) == "package.xml":
             package_xml_files.append(path)
         elif os.path.isdir(path):
             for root, _, files in os.walk(path):
-                if 'package.xml' in files:
-                    package_xml_files.append(os.path.join(root, 'package.xml'))
+                if "package.xml" in files:
+                    package_xml_files.append(os.path.join(root, "package.xml"))
     return package_xml_files
+
 
 def validate_xml_with_xmllint(xml_file):
     """Validate XML file against the ROS package_format3.xsd schema using xmllint."""
     schema_url = "http://download.ros.org/schema/package_format3.xsd"
     try:
         result = subprocess.run(
-            ['xmllint', '--noout', '--schema', schema_url, xml_file],
+            ["xmllint", "--noout", "--schema", schema_url, xml_file],
             capture_output=True,
-            text=True
+            text=True,
         )
         if result.returncode != 0:
             print(f"XML validation error in {xml_file}:\n{result.stderr}")
             return False
         return True
     except FileNotFoundError:
-        print("Error: xmllint not found. Please ensure it's installed and in your PATH.")
+        print(
+            "Error: xmllint not found. Please ensure it's installed and in your PATH."
+        )
         return False
+
 
 def check_dependency_order(xml_file, check_only):
     """Check and optionally correct the order of dependencies in the package.xml file (with comment preservation using lxml)."""
@@ -75,7 +80,9 @@ def check_dependency_order(xml_file, check_only):
             names = [e.text for e in elems]
             if names != sorted(names):
                 if check_only:
-                    print(f"Dependency group '{dep_type}' in {xml_file} is not alphabetically sorted.")
+                    print(
+                        f"Dependency group '{dep_type}' in {xml_file} is not alphabetically sorted."
+                    )
                     return False
 
     if check_only:
@@ -88,32 +95,39 @@ def check_dependency_order(xml_file, check_only):
             root.remove(elem)
 
     # Find index of <export> or append at end
-    export_index = next((i for i, elem in enumerate(root) if elem.tag == 'export'), len(root))
-    member_of_group_index = next((i for i, elem in enumerate(root) if elem.tag == 'member_of_group'), len(root))
-    group_dep_index = next((i for i, elem in enumerate(root) if elem.tag == 'group_depend'), len(root))
+    export_index = next(
+        (i for i, elem in enumerate(root) if elem.tag == "export"), len(root)
+    )
+    member_of_group_index = next(
+        (i for i, elem in enumerate(root) if elem.tag == "member_of_group"), len(root)
+    )
+    group_dep_index = next(
+        (i for i, elem in enumerate(root) if elem.tag == "group_depend"), len(root)
+    )
 
-    indendantion = root[0].tail.replace('\n', '')
+    indendantion = root[0].tail.replace("\n", "")
     # Reinsert sorted dependencies before <export>, <member_of_group>, or <group_depend>
     insert_index = min(export_index, member_of_group_index, group_dep_index)
     for dep_type in DEPENDENCY_ORDER:
         sorted_elems = sorted(dependencies[dep_type], key=lambda x: x.text)
-        for i,elem in enumerate(sorted_elems):
+        for i, elem in enumerate(sorted_elems):
             if i != len(sorted_elems) - 1:
-                elem.tail = '\n' + indendantion
+                elem.tail = "\n" + indendantion
             else:
-                elem.tail = '\n\n' + indendantion
+                elem.tail = "\n\n" + indendantion
             root.insert(insert_index, elem)
             insert_index += 1
 
     # make sure there is no more than one empty line in the xml file
     for elm in root:
-        while elm.tail and isinstance(elm.tail, str) and elm.tail.startswith('\n\n\n'):
+        while elm.tail and isinstance(elm.tail, str) and elm.tail.startswith("\n\n\n"):
             elm.tail = elm.tail[1:]
 
     # Write back to file
-    tree.write(xml_file, encoding='utf-8', xml_declaration=True, pretty_print=True)
+    tree.write(xml_file, encoding="utf-8", xml_declaration=True, pretty_print=True)
     print(f"Corrected dependency order in {xml_file}.")
     return True
+
 
 def check_and_format(src, check_only):
     package_xml_files = find_package_xml_files(src)
@@ -139,14 +153,20 @@ def check_and_format(src, check_only):
     else:
         print("Some package.xml files have issues. Please review the messages above.")
 
+
 def main():
-    parser = argparse.ArgumentParser(description="Validate and check ordering of ROS package.xml files.")
-    parser.add_argument('src', nargs='+', help="List of files or directories to process.")
-    parser.add_argument('--check', action='store_true', help="Only check for errors without correcting.")
+    parser = argparse.ArgumentParser(
+        description="Validate and check ordering of ROS package.xml files."
+    )
+    parser.add_argument(
+        "src", nargs="+", help="List of files or directories to process."
+    )
+    parser.add_argument(
+        "--check", action="store_true", help="Only check for errors without correcting."
+    )
     args = parser.parse_args()
     check_and_format(args.src, args.check)
 
-   
 
 if __name__ == "__main__":
     main()

@@ -5,17 +5,21 @@ from rosdep2.sources_list import SourcesListLoader
 from rosdep2.installers import PackageManagerInstaller
 from rospkg import RosPack, os_detect
 
-def check_rosdeps(dependencies)->list[str]:
+
+def check_rosdeps(dependencies) -> list[str]:
     """
     Check if rosdep can resolve all specified ROS dependencies.
 
     :param dependencies: List of ROS dependency names to check.
     :return: List of dependencies that rosdep cannot resolve.
     """
-    
+
     rosdep_installer_context = rosdep2.create_default_installer_context()
     rosdep = rosdep2.RosdepLookup.create_from_rospkg()
-    rosdep_os_name, rosdep_os_version = rosdep_installer_context.get_os_name_and_version()
+    (
+        rosdep_os_name,
+        rosdep_os_version,
+    ) = rosdep_installer_context.get_os_name_and_version()
     rosdep_view = rosdep.get_rosdep_view(rosdep2.rospkg_loader.DEFAULT_VIEW_KEY)
 
     unresolvable = []

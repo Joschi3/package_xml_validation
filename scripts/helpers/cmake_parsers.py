@@ -3,9 +3,11 @@ from pathlib import Path
 import re
 from typing import List
 
+
 def remove_comments(lines: List[str]) -> list[str]:
     """Removes comments from a list of lines."""
     return [line.split("#", 1)[0].strip() for line in lines]
+
 
 def read_cmake_lines_with_parens_joined(raw_lines: List[str]) -> list[str]:
     """
@@ -38,18 +40,21 @@ def read_cmake_lines_with_parens_joined(raw_lines: List[str]) -> list[str]:
         lines.append(buffer)
 
     return lines
-    
+
+
 def resolve_for_eachs(raw_lines: List[str]) -> List[str]:
     """Expands CMake's foreach() loops in a list of lines."""
     foreach_stack = []
 
     # Regex patterns
-    set_pattern = re.compile(r'^\s*set\s*\(\s*([A-Za-z0-9_]+)\s+(.*?)\)\s*$', re.IGNORECASE)
-    foreach_pattern = re.compile(
-    r'^\s*foreach\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s+IN\s+(LISTS|ITEMS)\s+(\$\{\s*[A-Za-z0-9_]+\s*\}|[A-Za-z0-9_]+)\s*\)\s*$',
-    re.IGNORECASE
+    set_pattern = re.compile(
+        r"^\s*set\s*\(\s*([A-Za-z0-9_]+)\s+(.*?)\)\s*$", re.IGNORECASE
     )
-    endforeach_pattern = re.compile(r'^\s*endforeach\s*\(?.*\)?\s*$', re.IGNORECASE)
+    foreach_pattern = re.compile(
+        r"^\s*foreach\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s+IN\s+(LISTS|ITEMS)\s+(\$\{\s*[A-Za-z0-9_]+\s*\}|[A-Za-z0-9_]+)\s*\)\s*$",
+        re.IGNORECASE,
+    )
+    endforeach_pattern = re.compile(r"^\s*endforeach\s*\(?.*\)?\s*$", re.IGNORECASE)
     variables = {}
     lines = []
     for line in raw_lines:
@@ -87,10 +92,11 @@ def resolve_for_eachs(raw_lines: List[str]) -> List[str]:
             loop_var, expanded_vals = foreach_stack[-1]
             if loop_var in stripped:
                 for val in expanded_vals:
-                    lines.append(stripped.replace(f"${{{loop_var}}}", val))            
+                    lines.append(stripped.replace(f"${{{loop_var}}}", val))
         else:
             lines.append(line)
     return lines
+
 
 def retrieve_cmake_dependencies(lines: List[str]) -> List[str]:
     if isinstance(lines, Path):
@@ -103,14 +109,14 @@ def retrieve_cmake_dependencies(lines: List[str]) -> List[str]:
     in_test_block = False
 
     # Regex patterns
-    if_pattern = re.compile(r'^\s*if\s*\((.*)\)\s*$', re.IGNORECASE)
-    endif_pattern = re.compile(r'^\s*endif\s*\(?.*\)?\s*$', re.IGNORECASE)
-    
+    if_pattern = re.compile(r"^\s*if\s*\((.*)\)\s*$", re.IGNORECASE)
+    endif_pattern = re.compile(r"^\s*endif\s*\(?.*\)?\s*$", re.IGNORECASE)
 
     # We look for find_package(...) statements, which might contain expansions
     # e.g. find_package(${PKG} REQUIRED)
-    find_package_pattern = re.compile(r'^\s*find_package\s*\(\s*([^)]+)\)\s*$', re.IGNORECASE)
-
+    find_package_pattern = re.compile(
+        r"^\s*find_package\s*\(\s*([^)]+)\)\s*$", re.IGNORECASE
+    )
 
     def add_deps(dep_list: list[str], is_test: bool):
         """
@@ -121,21 +127,19 @@ def retrieve_cmake_dependencies(lines: List[str]) -> List[str]:
         else:
             main_deps.extend(dep_list)
 
-
     for line in lines:
         stripped = line.strip()
-
 
         # ---------- Parse if(...) lines ----------
         if_match = if_pattern.match(stripped)
         if if_match:
             condition = if_match.group(1).lower()
             # If condition has 'build_testing', assume test block
-            if 'build_testing' in condition:
-                if_stack.append('BUILD_TESTING')
+            if "build_testing" in condition:
+                if_stack.append("BUILD_TESTING")
                 in_test_block = True
             else:
-                if_stack.append('OTHER')
+                if_stack.append("OTHER")
             continue
 
         # ---------- Parse endif lines ----------
@@ -143,7 +147,7 @@ def retrieve_cmake_dependencies(lines: List[str]) -> List[str]:
             if if_stack:
                 popped = if_stack.pop()
             # Recompute in_test_block
-            in_test_block = any(item == 'BUILD_TESTING' for item in if_stack)
+            in_test_block = any(item == "BUILD_TESTING" for item in if_stack)
             continue
 
         # ---------- Parse find_package(...) lines ----------
@@ -158,11 +162,15 @@ def retrieve_cmake_dependencies(lines: List[str]) -> List[str]:
                 idx = expanded_tokens.index("COMPONENTS")
                 expanded_tokens = expanded_tokens[:idx]
             # remove version constraints -> remove only number tokens e.g 3.3 or 2.0.1 or 2
-            expanded_tokens = [tok for tok in expanded_tokens if not re.match(r'^\d+(\.\d+)*$', tok)]
+            expanded_tokens = [
+                tok for tok in expanded_tokens if not re.match(r"^\d+(\.\d+)*$", tok)
+            ]
             # We collect all tokens that don't match known keywords like "REQUIRED", "QUIET", etc.
             skip_words = {"REQUIRED", "QUIET", "NO_MODULE"}
-            used_deps = [tok for tok in expanded_tokens if tok.upper() not in skip_words]
-            
+            used_deps = [
+                tok for tok in expanded_tokens if tok.upper() not in skip_words
+            ]
+
             add_deps(used_deps, in_test_block)
             continue
 
@@ -179,15 +187,22 @@ def read_cmake_file(file_path: Path) -> List[str]:
     lines = remove_comments(raw_lines)
     lines = read_cmake_lines_with_parens_joined(lines)
     lines = resolve_for_eachs(lines)
-    #for line in lines:
+    # for line in lines:
     #    print(line)
     return lines
 
+
 if __name__ == "__main__":
     # Example usage
-    cmake_file = Path("/home/aljoscha-schmidt/hector/src/hector_gamepad_manager/hector_gamepad_manager/CMakeLists.txt")
-    cmake_file = Path("/home/aljoscha-schmidt/hector/src/hector_base_velocity_manager/hector_base_velocity_manager/CMakeLists.txt")
-    cmake_file = Path("/home/aljoscha-schmidt/hector/src/hector_math/hector_math/CMakeLists.txt")
+    cmake_file = Path(
+        "/home/aljoscha-schmidt/hector/src/hector_gamepad_manager/hector_gamepad_manager/CMakeLists.txt"
+    )
+    cmake_file = Path(
+        "/home/aljoscha-schmidt/hector/src/hector_base_velocity_manager/hector_base_velocity_manager/CMakeLists.txt"
+    )
+    cmake_file = Path(
+        "/home/aljoscha-schmidt/hector/src/hector_math/hector_math/CMakeLists.txt"
+    )
     lines = read_cmake_file(cmake_file)
     main_deps, test_deps = retrieve_cmake_dependencies(lines)
     print("Main dependencies:", main_deps)
