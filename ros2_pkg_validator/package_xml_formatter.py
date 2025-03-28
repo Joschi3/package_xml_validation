@@ -3,6 +3,7 @@ import os
 import subprocess
 from lxml import etree as ET
 
+
 # Define the expected order of dependency tags
 DEPENDENCY_ORDER = [
     "buildtool_depend",
@@ -13,6 +14,19 @@ DEPENDENCY_ORDER = [
     "exec_depend",
     "doc_depend",
     "test_depend",
+]
+
+ELEMENT_ORDER = [
+    "name",
+    "version",
+    "description",
+    "maintainer",
+    "license",
+    "url",
+    "author",
+    "group_depend",
+    "member_of_group",
+    "export",
 ]
 
 
@@ -49,11 +63,8 @@ def validate_xml_with_xmllint(xml_file):
         return False
 
 
-def check_dependency_order(xml_file, check_only):
+def check_dependency_order(root, xml_file, check_only):
     """Check and optionally correct the order of dependencies in the package.xml file (with comment preservation using lxml)."""
-    parser = ET.XMLParser()
-    tree = ET.parse(xml_file, parser)
-    root = tree.getroot()
 
     dependencies = {dep: [] for dep in DEPENDENCY_ORDER}
     current_order = []
@@ -123,9 +134,80 @@ def check_dependency_order(xml_file, check_only):
         while elm.tail and isinstance(elm.tail, str) and elm.tail.startswith("\n\n\n"):
             elm.tail = elm.tail[1:]
 
-    # Write back to file
-    tree.write(xml_file, encoding="utf-8", xml_declaration=True, pretty_print=True)
     print(f"Corrected dependency order in {xml_file}.")
+    return True
+
+
+def check_for_duplicates(root, xml_file, check_only):
+    """
+    Check for duplicate elements in the XML file.
+    """
+    seen = set()
+    duplicates = []
+    for elem in root:
+        if elem.tag in seen and elem.tag in ELEMENT_ORDER:
+            duplicates.append(elem.tag)
+        else:
+            seen.add(elem.tag)
+
+    if duplicates:
+        print(f"Duplicate elements found in {xml_file}: {', '.join(duplicates)}")
+        if check_only:
+            return False
+
+    if check_only:
+        print(f"No duplicate elements found in {xml_file}.")
+        return True
+    # Remove duplicates
+    for elem in root:
+        if elem.tag in duplicates:
+            root.remove(elem)
+            duplicates.remove(elem.tag)
+    return False
+
+
+def check_element_order(root, xml_file, check_only):
+    """
+    Check if the elements in the XML file are in the expected order.
+    """
+
+    def find_index(root, tag):
+        for i, elem in enumerate(root):
+            if elem.tag == tag:
+                return i
+        return -1
+
+    # c
+    current_order = [elem for elem in root if elem.tag in ELEMENT_ORDER]
+    misplaced_elements = []
+    for i, elem in enumerate(current_order):
+        if i > 0 and ELEMENT_ORDER.index(elem.tag) < ELEMENT_ORDER.index(
+            current_order[i - 1].tag
+        ):
+            misplaced_elements.append(elem)
+    if misplaced_elements:
+        print(f"Element order in {xml_file} is incorrect.")
+        print(
+            f"Misplaced elements: {', '.join([elem.tag for elem in misplaced_elements])}"
+        )
+        if check_only:
+            return False
+
+    if check_only:
+        print(f"Element order in {xml_file} is correct.")
+        return True
+
+    # Correct the order
+    for elem in misplaced_elements:
+        root.remove(elem)
+        if elem.tag == "name":  # special case for first element
+            prev_index = -1
+        else:
+            prev_index = find_index(
+                root, ELEMENT_ORDER[ELEMENT_ORDER.index(elem.tag) - 1]
+            )
+        root.insert(prev_index + 1, elem)
+
     return True
 
 
@@ -139,14 +221,28 @@ def check_and_format(src, check_only):
     for xml_file in package_xml_files:
         print(f"Processing {xml_file}...")
 
+        parser = ET.XMLParser()
+        tree = ET.parse(xml_file, parser)
+        root = tree.getroot()
+
+        # if not check_for_duplicates(root, xml_file, check_only):
+        #    all_valid = False
+
+        if not check_element_order(root, xml_file, check_only):
+            all_valid = False
+
+        # if not check_dependency_order(root, xml_file, check_only):
+        #    all_valid = False
+
+        # Write back to file
+        tree.write(xml_file, encoding="utf-8", xml_declaration=True, pretty_print=True)
+
         # Validate XML structure
         if not validate_xml_with_xmllint(xml_file):
             all_valid = False
             continue
 
         # Check and possibly correct dependency order
-        if not check_dependency_order(xml_file, check_only):
-            all_valid = False
 
     if all_valid:
         print("All package.xml files are valid and correctly ordered.")
