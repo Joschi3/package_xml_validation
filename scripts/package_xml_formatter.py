@@ -79,6 +79,7 @@ def check_dependency_order(xml_file, check_only):
                     return False
 
     if check_only:
+        print(f"Dependency order in {xml_file} is correct.")
         return True
 
     # Remove old dependency elements from root
