@@ -153,8 +153,14 @@ def retrieve_cmake_dependencies(lines: List[str]) -> List[str]:
             # e.g. 'pluginlib REQUIRED' or '${Dependency} REQUIRED'
             # Expand tokens
             expanded_tokens = inside.split()
+            # remove all tokens after "COMPONENTS" (if present)
+            if "COMPONENTS" in expanded_tokens:
+                idx = expanded_tokens.index("COMPONENTS")
+                expanded_tokens = expanded_tokens[:idx]
+            # remove version constraints -> remove only number tokens e.g 3.3 or 2.0.1 or 2
+            expanded_tokens = [tok for tok in expanded_tokens if not re.match(r'^\d+(\.\d+)*$', tok)]
             # We collect all tokens that don't match known keywords like "REQUIRED", "QUIET", etc.
-            skip_words = {"REQUIRED", "QUIET", "COMPONENTS"}
+            skip_words = {"REQUIRED", "QUIET", "NO_MODULE"}
             used_deps = [tok for tok in expanded_tokens if tok.upper() not in skip_words]
             
             add_deps(used_deps, in_test_block)
@@ -173,14 +179,15 @@ def read_cmake_file(file_path: Path) -> List[str]:
     lines = remove_comments(raw_lines)
     lines = read_cmake_lines_with_parens_joined(lines)
     lines = resolve_for_eachs(lines)
-    for line in lines:
-        print(line)
+    #for line in lines:
+    #    print(line)
     return lines
 
 if __name__ == "__main__":
     # Example usage
     cmake_file = Path("/home/aljoscha-schmidt/hector/src/hector_gamepad_manager/hector_gamepad_manager/CMakeLists.txt")
     cmake_file = Path("/home/aljoscha-schmidt/hector/src/hector_base_velocity_manager/hector_base_velocity_manager/CMakeLists.txt")
+    cmake_file = Path("/home/aljoscha-schmidt/hector/src/hector_math/hector_math/CMakeLists.txt")
     lines = read_cmake_file(cmake_file)
     main_deps, test_deps = retrieve_cmake_dependencies(lines)
     print("Main dependencies:", main_deps)

@@ -16,6 +16,7 @@ import re
 from typing import List
 import xml.etree.ElementTree as ET
 from helpers.cmake_parsers import retrieve_cmake_dependencies
+from helpers.rosdep_validator import check_rosdeps
 
 
 def parse_package_xml(xml_path: Path):
@@ -85,12 +86,34 @@ def collect_cmake_package_pairs(cmake_files:List[Path], package_xmls:List[Path])
     return existing_pairs
 
 def print_missing(source, target, missing_in_target_deps, is_test=False):
-    print(f"\t {source} -> {target} missing {"test" if is_test else ''}dependencies:")
+    print(f"\t {source} -> {target} missing {"test " if is_test else ''}dependencies:")
     for dep in missing_in_target_deps:
         print(f"\t\t{dep}")
 
+def compare_if_missing(source, target):
+    # in priniciple missing_in_target = set(source) - set(target), but robust to
+    # lib<name> vs <name> and <name>-dev vs <name>
+    missing_in_target = set()
+    for dep in source:
+        exists = dep in target
+        if exists:
+            continue 
+        if dep.startswith("lib"):
+            exists = dep[3:] in target
+        else:
+            exists = f"lib{dep}" in target
+        if exists:
+            continue 
+        if dep.endswith("-dev"):
+            exists = dep[:-4] in target
+        else:
+            exists = f"{dep}-dev" in target
+        if not exists:
+            missing_in_target.add(dep)
+    return missing_in_target
 
-def validate(paths, check=False, verbose=False):
+
+def validate(paths, check_rosdep=False, verbose=False):
     # If SRC is empty or is just ['.'], treat it as "scan current directory".
     if not paths or paths == ["."]:
         src_paths = [Path(".").resolve()]
@@ -135,10 +158,10 @@ def validate(paths, check=False, verbose=False):
             print(f"Main deps CMake: {main_deps_cmake}")
             print(f"Test deps CMake: {test_deps_cmake}")
         # Check for discrepancies between package.xml and CMakeLists.txt
-        deps_missing_in_cmake = set(main_deps_xml) - set(main_deps_cmake )
-        deps_missing_in_xml = set(main_deps_cmake) - set(main_deps_xml)
-        test_deps_missing_in_cmake = set(test_deps_xml) - set(test_deps_cmake)
-        test_deps_missing_in_xml = set(test_deps_cmake) - set(test_deps_xml)
+        deps_missing_in_cmake = compare_if_missing(main_deps_xml, main_deps_cmake)
+        deps_missing_in_xml = compare_if_missing(main_deps_cmake, main_deps_xml)
+        test_deps_missing_in_cmake = compare_if_missing(test_deps_xml, test_deps_cmake)
+        test_deps_missing_in_xml = compare_if_missing(test_deps_cmake, test_deps_xml)
 
         if deps_missing_in_cmake or deps_missing_in_xml or test_deps_missing_in_cmake or test_deps_missing_in_xml:
             print(f"{package_name}")
@@ -153,19 +176,25 @@ def validate(paths, check=False, verbose=False):
             print_missing("CMakeLists.txt", "package.xml", test_deps_missing_in_xml, True)
         if deps_missing_in_cmake or deps_missing_in_xml or test_deps_missing_in_cmake or test_deps_missing_in_xml:
             print("\n")
-    # Placeholder: If --check was given, you'd do some error reporting logic here
-    # (e.g. comparing the sets of deps in the CMake vs. package.xml and printing mismatches)
-    #
-    # But for now, we just exit 0 for success
+        
+        # make sure the listed keys in the package.xml are resolvable
+        if check_rosdep:
+            unresolvable_deps = check_rosdeps(main_deps_xml + test_deps_xml)
+            if unresolvable_deps:
+                print(f"Could not resolve dependencies in {package_name}:")
+                for dep in unresolvable_deps:
+                    print(f"\t{dep}")
+                print("\n")
+
     sys.exit(0)
 
 def main():
     parser = argparse.ArgumentParser(description="ROS2 dependency validator.")
     parser.add_argument(
-        "--check",
+        "--check_rosdeps",
         action="store_true",
         default=False,
-        help="If set, only report errors (placeholder). No corrections are performed."
+        help="If set tests whether rosdep is able to resolve the listed dependencies."
     )
     parser.add_argument(
         "SRC",
@@ -174,7 +203,7 @@ def main():
     )
 
     args = parser.parse_args()
-    validate(args.SRC, args.check)
+    validate(args.SRC, args.check_rosdeps)
  
 
 
@@ -182,4 +211,4 @@ if __name__ == "__main__":
     #main()
 
     paths = ["/home/aljoscha-schmidt/hector/src/"]
-    validate(paths, False, False)
+    validate(paths, True, False)
