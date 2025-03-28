@@ -88,14 +88,26 @@ def check_dependency_order(xml_file, check_only):
 
     # Find index of <export> or append at end
     export_index = next((i for i, elem in enumerate(root) if elem.tag == 'export'), len(root))
+    member_of_group_index = next((i for i, elem in enumerate(root) if elem.tag == 'member_of_group'), len(root))
+    group_dep_index = next((i for i, elem in enumerate(root) if elem.tag == 'group_depend'), len(root))
 
-    # Reinsert sorted dependencies before <export>
-    insert_index = export_index
+    indendantion = root[0].tail.replace('\n', '')
+    # Reinsert sorted dependencies before <export>, <member_of_group>, or <group_depend>
+    insert_index = min(export_index, member_of_group_index, group_dep_index)
     for dep_type in DEPENDENCY_ORDER:
         sorted_elems = sorted(dependencies[dep_type], key=lambda x: x.text)
-        for elem in sorted_elems:
+        for i,elem in enumerate(sorted_elems):
+            if i != len(sorted_elems) - 1:
+                elem.tail = '\n' + indendantion
+            else:
+                elem.tail = '\n\n' + indendantion
             root.insert(insert_index, elem)
             insert_index += 1
+
+    # make sure there is no more than one empty line in the xml file
+    for elm in root:
+        while elm.tail and isinstance(elm.tail, str) and elm.tail.startswith('\n\n\n'):
+            elm.tail = elm.tail[1:]
 
     # Write back to file
     tree.write(xml_file, encoding='utf-8', xml_declaration=True, pretty_print=True)
@@ -136,6 +148,4 @@ def main():
    
 
 if __name__ == "__main__":
-    # main()
-    paths = ["/home/aljoscha-schmidt/hector/src/hector_base_velocity_manager/hector_base_velocity_manager/package.xml"]
-    check_and_format(paths, False)
+    main()
