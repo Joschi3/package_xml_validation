@@ -1,7 +1,7 @@
 import argparse
 import os
 import subprocess
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 
 # Define the expected order of dependency tags
 DEPENDENCY_ORDER = [
@@ -45,46 +45,60 @@ def validate_xml_with_xmllint(xml_file):
         return False
 
 def check_dependency_order(xml_file, check_only):
-    """Check and optionally correct the order of dependencies in the package.xml file."""
-    tree = ET.parse(xml_file)
+    """Check and optionally correct the order of dependencies in the package.xml file (with comment preservation using lxml)."""
+    parser = ET.XMLParser()
+    tree = ET.parse(xml_file, parser)
     root = tree.getroot()
 
     dependencies = {dep: [] for dep in DEPENDENCY_ORDER}
     current_order = []
 
-    # Collect dependencies and their current order
+    # Collect dependencies and track their order
     for elem in root:
-        tag = elem.tag
-        if tag in DEPENDENCY_ORDER:
-            dependencies[tag].append(elem)
-            current_order.append(tag)
+        if isinstance(elem.tag, str) and elem.tag in DEPENDENCY_ORDER:
+            dependencies[elem.tag].append(elem)
+            current_order.append(elem.tag)
 
-    # Determine if the current order is correct
+    # Determine correct order for type grouping
     correct_order = []
     for dep_type in DEPENDENCY_ORDER:
         correct_order.extend([dep_type] * len(dependencies[dep_type]))
 
+    # Check type order mismatch
     if current_order != correct_order and check_only:
         print(f"Dependency order in {xml_file} is incorrect.")
         return False
-    
-    # per type check that the order is correct -> alphanumerical
+
+    # Check alphabetical order within each group
     if current_order == correct_order:
-        for dep_type in DEPENDENCY_ORDER:
-            deps = [ dep.text for dep in dependencies[dep_type]]
-            if deps != sorted(deps):
-                print(f"Dependency order in {xml_file} is incorrect.")
-                return False
+        for dep_type, elems in dependencies.items():
+            names = [e.text for e in elems]
+            if names != sorted(names):
+                if check_only:
+                    print(f"Dependency group '{dep_type}' in {xml_file} is not alphabetically sorted.")
+                    return False
 
+    if check_only:
+        return True
 
-    # Reorder dependencies
+    # Remove old dependency elements from root
     for dep_type in DEPENDENCY_ORDER:
-        sorted_deps = sorted(dependencies[dep_type], key=lambda x: x.text)
-        for elem in sorted_deps:
+        for elem in dependencies[dep_type]:
             root.remove(elem)
-            root.append(elem)
 
-    tree.write(xml_file, encoding='utf-8', xml_declaration=True)
+    # Find index of <export> or append at end
+    export_index = next((i for i, elem in enumerate(root) if elem.tag == 'export'), len(root))
+
+    # Reinsert sorted dependencies before <export>
+    insert_index = export_index
+    for dep_type in DEPENDENCY_ORDER:
+        sorted_elems = sorted(dependencies[dep_type], key=lambda x: x.text)
+        for elem in sorted_elems:
+            root.insert(insert_index, elem)
+            insert_index += 1
+
+    # Write back to file
+    tree.write(xml_file, encoding='utf-8', xml_declaration=True, pretty_print=True)
     print(f"Corrected dependency order in {xml_file}.")
     return True
 
