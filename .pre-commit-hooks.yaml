@@ -2,5 +2,5 @@
     name: Format package.xml files
     description: Verify the package xml schema and ordering of dependencies
     entry: python3 package_xml_formatter.py
-    language: script
+    language: system
     files: ^.*package\.xml$
