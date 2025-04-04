@@ -9,10 +9,10 @@ ELEMENTS = [
     ("name", 1, 1),
     ("version", 1, 1),
     ("description", 1, 1),
-    ("maintainer", 1, 1),
-    ("license", 1, 1),
-    ("url", 0, 1),
-    ("author", 0, 1),
+    ("maintainer", 1, None),
+    ("license", 1, None),
+    ("url", 0, None),
+    ("author", 0, None),
     ("buildtool_depend", 0, None),
     ("buildtool_export_depend", 0, None),
     ("build_depend", 0, None),
@@ -21,8 +21,8 @@ ELEMENTS = [
     ("exec_depend", 0, None),
     ("doc_depend", 0, None),
     ("test_depend", 0, None),
-    ("group_depend", 0, 1),
-    ("member_of_group", 0, 1),
+    ("group_depend", 0, None),
+    ("member_of_group", 0, None),
     ("export", 0, 1),
 ]
 
@@ -38,26 +38,6 @@ def find_package_xml_files(paths):
                 if "package.xml" in files:
                     package_xml_files.append(os.path.join(root, "package.xml"))
     return package_xml_files
-
-
-def validate_xml_with_xmllint(xml_file):
-    """Validate XML file against the ROS package_format3.xsd schema using xmllint."""
-    schema_url = "http://download.ros.org/schema/package_format3.xsd"
-    try:
-        result = subprocess.run(
-            ["xmllint", "--noout", "--schema", schema_url, xml_file],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            print(f"XML validation error in {xml_file}:\n{result.stderr}")
-            return False
-        return True
-    except FileNotFoundError:
-        print(
-            "Error: xmllint not found. Please ensure it's installed and in your PATH."
-        )
-        return False
 
 
 def check_dependency_order(root, xml_file, check_only):
@@ -261,12 +241,8 @@ def check_for_empty_lines(root, xml_file, check_only):
             elm.tail = elm.tail[1:]
 
 
-def check_and_format(src, check_only):
-    package_xml_files = find_package_xml_files(src)
-    if not package_xml_files:
-        print("No package.xml files found in the provided paths.")
-        return
-
+def check_and_format_files(package_xml_files, check_only):
+    """Check and format package.xml files if check_only is False."""
     all_valid = True
     for xml_file in package_xml_files:
         print(f"Processing {xml_file}...")
@@ -292,18 +268,15 @@ def check_and_format(src, check_only):
             tree.write(
                 xml_file, encoding="utf-8", xml_declaration=True, pretty_print=True
             )
+    return all_valid
 
-        # Validate XML structure
-        if not validate_xml_with_xmllint(xml_file):
-            all_valid = False
-            continue
 
-        # Check and possibly correct dependency order
-
-    if all_valid:
-        print("All package.xml files are valid and correctly ordered.")
-    else:
-        print("Some package.xml files have issues. Please review the messages above.")
+def check_and_format(src, check_only):
+    package_xml_files = find_package_xml_files(src)
+    if not package_xml_files:
+        print("No package.xml files found in the provided paths.")
+        return
+    return check_and_format_files(package_xml_files, check_only)
 
 
 def main():
@@ -311,17 +284,34 @@ def main():
         description="Validate and check ordering of ROS package.xml files."
     )
     parser.add_argument(
-        "src", nargs="+", help="List of files or directories to process."
+        "src", nargs="*", help="List of files or directories to process."
     )
     parser.add_argument(
         "--check", action="store_true", help="Only check for errors without correcting."
     )
+    parser.add_argument(
+        "--file",
+        help="Path to a single XML file to process. If provided, 'src' arguments are ignored.",
+    )
+
     args = parser.parse_args()
-    check_and_format(args.src, args.check)
+
+    if args.file:
+        # Process the one file given via --file
+        valid = check_and_format_files([args.file], args.check)
+    else:
+        # Process whatever is found in src
+        valid = check_and_format(args.src, args.check)
+    # if not valid exit with error code
+    if not valid and args.check:
+        print("Some package.xml files have issues. Please review the messages above.")
+        exit(1)
+    elif not valid:
+        print("Corrected package.xml files.")
+        exit(1)
+    else:
+        print("All package.xml files are valid and correctly ordered.")
 
 
 if __name__ == "__main__":
-    # main()
-    paths = ["/home/aljoscha-schmidt/hector/src/hector_base_velocity_manager"]
-    check_only = True
-    check_and_format(paths, check_only)
+    main()
