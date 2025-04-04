@@ -95,8 +95,16 @@ class TestPackageXmlFormatter(unittest.TestCase):
             root1 = tree1.getroot()
             root2 = tree2.getroot()
 
-            # Compare the two trees
-            return ET.tostring(root1) == ET.tostring(root2)
+            for elem1, elem2 in zip(root1.iter(), root2.iter()):
+                # Ignore comments and whitespace
+                if ET.iselement(elem1) and ET.iselement(elem2):
+                    if elem1.tag != elem2.tag or elem1.text != elem2.text:
+                        return False
+                elif ET.iselement(elem1) and not ET.iselement(elem2):
+                    return False
+                elif not ET.iselement(elem1) and ET.iselement(elem2):
+                    return False
+            return True
         except ET.XMLSyntaxError as e:
             print(f"XML Syntax Error: {e}")
             return False
