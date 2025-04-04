@@ -12,7 +12,7 @@ import subprocess
 # Otherwise, inline or adjust as needed.
 # ------------------------------------------------------------------
 
-from ros2_pkg_validator.package_xml_formatter import check_and_format_files
+from ros2_pkg_validator.package_xml_formatter import PackageXmlFormatter
 
 
 def validate_xml_with_xmllint(xml_file):
@@ -66,7 +66,8 @@ class TestPackageXmlFormatter(unittest.TestCase):
 
     def tearDown(self):
         """Clean up the temporary directory after each test."""
-        shutil.rmtree(self.test_dir)
+        # shutil.rmtree(self.test_dir)
+        pass
 
     def _is_fail_file(self, filename: str) -> bool:
         """
@@ -99,10 +100,11 @@ class TestPackageXmlFormatter(unittest.TestCase):
             #  - 'original_XX_correct.xml' => returns True (all_valid=True), file unchanged
             #  - 'original_XX_fail.xml'    => returns False (all_valid=False), file unchanged
 
+            formatter = PackageXmlFormatter(check_only=True, verbose=True)
             with open(original_path, "rb") as f_before:
                 original_bytes_before_check = f_before.read()
 
-            all_valid_check = check_and_format_files([original_path], check_only=True)
+            all_valid_check = formatter.check_and_format_files([original_path])
 
             if self._is_correct_file(fname):
                 self.assertTrue(
@@ -129,11 +131,13 @@ class TestPackageXmlFormatter(unittest.TestCase):
             #  - For fail   files => corrected to match `corrected_XX.xml`
             # Then we verify the final result is valid with xmllint.
 
+            formatter = PackageXmlFormatter(check_only=False, verbose=True)
+
             # Reload the file from disk (in case some other step changed it).
             with open(original_path, "rb") as f_before:
                 original_bytes_before_fix = f_before.read()
 
-            all_valid_fix = check_and_format_files([original_path], check_only=False)
+            all_valid_fix = formatter.check_and_format_files([original_path])
             self.assertTrue(
                 isinstance(all_valid_fix, bool),
                 "check_and_format_files should return a boolean.",

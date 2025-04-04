@@ -1,8 +1,12 @@
 import argparse
 import os
 from lxml import etree as ET
-from helpers.logger import get_logger
 
+try:
+    from .helpers.logger import get_logger
+except ImportError:
+    from helpers.logger import get_logger
+import subprocess
 
 # Order and min/max occurrences of elements
 ELEMENTS = [
@@ -27,10 +31,31 @@ ELEMENTS = [
 ]
 
 
+def validate_xml_with_xmllint(xml_file):
+    """Validate XML file against the ROS package_format3.xsd schema using xmllint."""
+    schema_url = "http://download.ros.org/schema/package_format3.xsd"
+    try:
+        result = subprocess.run(
+            ["xmllint", "--noout", "--schema", schema_url, xml_file],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            print(f"XML validation error in {xml_file}:\n{result.stderr}")
+            return False
+        return True
+    except FileNotFoundError:
+        print(
+            "Error: xmllint not found. Please ensure it's installed and in your PATH."
+        )
+        return False
+
+
 class PackageXmlFormatter:
-    def __init__(self, check_only=False, verbose=False):
+    def __init__(self, check_only=False, verbose=False, check_with_xmllint=False):
         self.check_only = check_only
-        self.logger = get_logger(__name__, level="debug" if verbose else "normal")
+        self.check_with_xmllint = check_with_xmllint
+        self.logger = get_logger(__name__, level="verbose" if verbose else "normal")
 
     def find_package_xml_files(self, paths):
         """Locate all package.xml files within the provided paths."""
@@ -70,12 +95,14 @@ class PackageXmlFormatter:
 
         if self.check_only and order_mismatch:
             return False
-
         # Check alphabetical order within each group
         if current_order == correct_order:
             for dep_type, elems in dependencies.items():
                 names = [e.text for e in elems]
                 if names != sorted(names):
+                    self.logger.debug(
+                        f"Dependency order in {xml_file} is incorrect: {dep_type} elements are not sorted."
+                    )
                     order_mismatch = True
                     break
 
@@ -147,6 +174,10 @@ class PackageXmlFormatter:
         if self.check_only:
             self.logger.info(f"No duplicate elements found in {xml_file}.")
             return True
+
+        if not duplicates:
+            return True
+
         # Remove duplicates
         for elem in duplicates:
             root.remove(elem)
@@ -268,21 +299,33 @@ class PackageXmlFormatter:
 
             if not self.check_for_duplicates(root, xml_file):
                 all_valid = False
+                self.logger.debug(f"Duplicate elements found in {xml_file}.")
 
             if not self.check_occurrences(root, xml_file):
                 all_valid = False
+                self.logger.debug(
+                    f"Occurrences of elements in {xml_file} are incorrect."
+                )
 
             if not self.check_element_order(root, xml_file):
                 all_valid = False
+                self.logger.debug(f"Element order in {xml_file} is incorrect.")
 
             if not self.check_dependency_order(root, xml_file):
                 all_valid = False
+                self.logger.debug(f"Dependency order in {xml_file} is incorrect.")
 
             if not all_valid and not self.check_only:
                 # Write back to file
                 tree.write(
                     xml_file, encoding="utf-8", xml_declaration=True, pretty_print=True
                 )
+            if self.check_with_xmllint:
+                if not validate_xml_with_xmllint(xml_file):
+                    self.logger.error(f"XML validation failed {xml_file}.")
+                    all_valid = False
+                else:
+                    self.logger.info(f"XML validation passed {xml_file}.")
         return all_valid
 
     def check_and_format(self, src):
@@ -310,9 +353,17 @@ def main():
 
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output.")
 
+    parser.add_argument(
+        "--check_with_xmllint", action="store_true", help="Check XML with xmllint."
+    )
+
     args = parser.parse_args()
 
-    formatter = PackageXmlFormatter(check_only=args.check, verbose=args.verbose)
+    formatter = PackageXmlFormatter(
+        check_only=args.check,
+        verbose=args.verbose,
+        check_with_xmllint=args.check_with_xmllint,
+    )
 
     if args.file:
         # Process the one file given via --file
