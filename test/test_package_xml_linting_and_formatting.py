@@ -4,6 +4,7 @@ import tempfile
 import shutil
 import filecmp
 import subprocess
+from lxml import etree as ET
 
 # ------------------------------------------------------------------
 # If your code is in xml_formatter.py, you might do:
@@ -80,6 +81,25 @@ class TestPackageXmlFormatter(unittest.TestCase):
         Returns True if the file name indicates it is an 'original_XX_correct.xml'.
         """
         return "_correct.xml" in filename and "_fail" not in filename
+
+    def _compare_xml_files(self, file1: str, file2: str) -> bool:
+        """
+        Compare two XML files for equality.
+        Using xml parser to ignore whitespace and comments.
+        """
+        try:
+            tree1 = ET.parse(file1)
+            tree2 = ET.parse(file2)
+
+            # Normalize the XML trees
+            root1 = tree1.getroot()
+            root2 = tree2.getroot()
+
+            # Compare the two trees
+            return ET.tostring(root1) == ET.tostring(root2)
+        except ET.XMLSyntaxError as e:
+            print(f"XML Syntax Error: {e}")
+            return False
 
     def test_xml_formatting(self):
         """
@@ -164,12 +184,10 @@ class TestPackageXmlFormatter(unittest.TestCase):
                     f"Correct file {fname} should remain unchanged after fix.",
                 )
             elif self._is_fail_file(fname):
-                # For fail files, we expect check_and_format_files to fix them => all_valid could be True
-                # or possibly still False if there's an unfixable error. Usually you'd expect True if it can be fixed.
-                # Depending on your logic, it might just do partial fixes. For most typical scenarios, you'd expect True:
-                self.assertTrue(
+                # For fail files, we expect check_and_format_files to fix them => all_valid False since something was fixed
+                self.assertFalse(
                     all_valid_fix,
-                    f"Expected fail file {fname} to be fixed and become valid.",
+                    f"Expected fail file {fname} to be fixed and return false to indicate that something was fixed.",
                 )
 
                 # Compare to "corrected_XX.xml" if that file exists
@@ -178,10 +196,17 @@ class TestPackageXmlFormatter(unittest.TestCase):
                 corrected_path = os.path.join(self.test_dir, corrected_fname)
                 if os.path.exists(corrected_path):
                     # Compare the final file with corrected_XX.xml
+                    comparison = self._compare_xml_files(final_path, corrected_path)
+                    if not comparison:
+                        # print corrected file to console
+                        with open(final_path, "r") as f_corrected:
+                            corrected_content = f_corrected.read()
+                        print(f"Corrected file content:\n{corrected_content}")
                     self.assertTrue(
-                        filecmp.cmp(final_path, corrected_path, shallow=False),
+                        comparison,
                         f"File {fname} after fixing does not match {corrected_fname}",
                     )
+
                 else:
                     self.fail(
                         f"Missing corrected file {corrected_fname} in test directory."

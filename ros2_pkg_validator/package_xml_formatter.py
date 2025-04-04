@@ -1,6 +1,7 @@
 import argparse
 import os
 from lxml import etree as ET
+from copy import deepcopy
 
 try:
     from .helpers.logger import get_logger
@@ -250,18 +251,20 @@ class PackageXmlFormatter:
             self.logger.info(f"Element order in {xml_file} is correct.")
             return True
 
-        # Correct the order
-        for elem in misplaced_elements:
-            root.remove(elem)
-            if elem.tag == "name":  # special case for first element
-                prev_index = -1
-            else:
-                prev_index = find_last_index(
-                    root, element_order[element_order.index(elem.tag) - 1]
-                )
-            root.insert(prev_index + 1, elem)
+        if not misplaced_elements:
+            return True
 
-        return True
+        elements = []
+        for element in root:
+            elements.append(deepcopy(element))
+            root.remove(element)
+        # Sort the elements based on the expected order
+        elements.sort(key=lambda x: element_order.index(x.tag))
+        # Reinsert the elements in the correct order
+        for i, element in enumerate(elements):
+            root.append(element)
+            self.logger.debug(f"Reinserted element: {element.tag}")
+        return False
 
     def check_for_empty_lines(self, root, xml_file):
         """
