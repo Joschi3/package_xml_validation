@@ -161,7 +161,7 @@ class PackageXmlFormatter:
                 insert_index += 1
 
         self.logger.info(f"Corrected dependency order in {xml_file}.")
-        return True
+        return False
 
     def check_for_duplicates(self, root, xml_file):
         """
@@ -204,23 +204,30 @@ class PackageXmlFormatter:
         If self.check_only is True, only check for errors without correcting.
         Otherwise, it removes the extra elements.
         """
+        incorrect_occurrences = False
         for elem, min_occurrences, max_occurrences in ELEMENTS:
             count = len(root.findall(elem))
             if count < min_occurrences:
                 self.logger.info(
                     f"Error: Element '{elem}' in {xml_file} has fewer than {min_occurrences} occurrences."
                 )
+                incorrect_occurrences = True
                 if self.check_only:
                     return False
             elif max_occurrences is not None and count > max_occurrences:
                 self.logger.info(
                     f"Error: Element '{elem}' in {xml_file} has more than {max_occurrences} occurrences."
                 )
+                incorrect_occurrences = True
                 if self.check_only:
                     return False
 
         if self.check_only:
             self.logger.info(f"Occurrences of elements in {xml_file} are correct.")
+            return True
+
+        if not incorrect_occurrences:
+            self.logger.debug(f"Occurrences of elements in {xml_file} are correct.")
             return True
 
         # Correct the occurrences
@@ -231,7 +238,7 @@ class PackageXmlFormatter:
                     root.remove(root.find(elem))
             if count < min_occurrence:
                 self.logger.info("Please add the missing element: ", elem)
-        return True
+        return False
 
     def check_element_order(self, root, xml_file):
         """
@@ -304,15 +311,20 @@ class PackageXmlFormatter:
         Make sure there are no more than one empty line between elements.
         """
 
+        found_empty_lines = False
         for elm in root:
             if elm.tail and elm.tail.startswith("\n\n\n"):
                 self.logger.info(
                     f"Error: More than one empty line found in {xml_file}."
                 )
+                found_empty_lines = True
                 if self.check_only:
                     return False
 
         if self.check_only:
+            return True
+        if not found_empty_lines:
+            self.logger.debug(f"No empty lines found in {xml_file}.")
             return True
 
         # make sure there is no more than one empty line in the xml file
@@ -321,6 +333,7 @@ class PackageXmlFormatter:
                 elm.tail and isinstance(elm.tail, str) and elm.tail.startswith("\n\n\n")
             ):
                 elm.tail = elm.tail[1:]
+        return False
 
     def check_and_format_files(self, package_xml_files):
         """Check and format package.xml files if self.check_only is False."""

@@ -1,3 +1,4 @@
+<?xml version='1.0' encoding='UTF-8'?>
 <package format="3">
     <name>gazebo_robot_sim_athena</name>
     <version>0.0.1</version>
@@ -7,14 +8,15 @@
     <maintainer email="todo@google.com">todo</maintainer>
     <license>MIT</license>
     <buildtool_depend>ament_cmake</buildtool_depend>
+
     <exec_depend>athena_description</exec_depend>
     <exec_depend>athena_launch_config</exec_depend>
     <exec_depend>gz_ros2_control</exec_depend>
     <exec_depend>hector_gazebo_plugins</exec_depend>
     <exec_depend>hector_gazebo_simulation</exec_depend>
+    <exec_depend>hector_launch_manager</exec_depend>
     <exec_depend>hector_ros_controllers</exec_depend>
     <exec_depend>launch</exec_depend>
-    <exec_depend>hector_launch_manager</exec_depend>
     <exec_depend>launch_ros</exec_depend>
     <exec_depend>rclpy</exec_depend>
     <exec_depend>robot_state_publisher</exec_depend>
@@ -24,6 +26,7 @@
     <exec_depend>ros_gz_sim</exec_depend>
     <exec_depend>srdf_publisher</exec_depend>
     <exec_depend>xacro</exec_depend>
+
     <export>
         <build_type>ament_cmake</build_type>
     </export>

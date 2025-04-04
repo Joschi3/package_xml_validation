@@ -74,13 +74,13 @@ class TestPackageXmlFormatter(unittest.TestCase):
         """
         Returns True if the file name indicates it is an 'original_XX_fail.xml'.
         """
-        return "_fail.xml" in filename
+        return filename.endswith("_fail.xml") and filename.startswith("original")
 
     def _is_correct_file(self, filename: str) -> bool:
         """
         Returns True if the file name indicates it is an 'original_XX_correct.xml'.
         """
-        return "_correct.xml" in filename and "_fail" not in filename
+        return "_correct.xml" in filename or "_corrected.xml" in filename
 
     def _compare_xml_files(self, file1: str, file2: str) -> bool:
         """
@@ -116,7 +116,11 @@ class TestPackageXmlFormatter(unittest.TestCase):
         and compares results to expectations and corrected files.
         """
         for fname in os.listdir(self.test_dir):
-            if not fname.startswith("original_") or not fname.endswith(".xml"):
+            if (
+                not fname.startswith("original_")
+                and not fname.startswith("corrected_")
+                and not fname.endswith(".xml")
+            ):
                 # Skip any non-original test files
                 continue
 
