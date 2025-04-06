@@ -6,14 +6,10 @@ import filecmp
 import subprocess
 from lxml import etree as ET
 
-# ------------------------------------------------------------------
-# If your code is in xml_formatter.py, you might do:
-# from xml_formatter import check_and_format_files, validate_xml_with_xmllint
-#
-# Otherwise, inline or adjust as needed.
-# ------------------------------------------------------------------
-
-from ros2_pkg_validator.package_xml_formatter import PackageXmlFormatter
+from ros2_pkg_validator.package_xml_formatter import (
+    PackageXmlFormatter,
+    RosdepValidator,
+)
 
 
 def validate_xml_with_xmllint(xml_file):
@@ -80,12 +76,14 @@ class TestPackageXmlFormatter(unittest.TestCase):
         """
         Returns True if the file name indicates it is an 'original_XX_correct.xml'.
         """
-        return "_correct.xml" in filename or "_corrected.xml" in filename
+        return filename.endswith("_correct.xml") or filename.startswith("corrected_")
 
     def _compare_xml_files(self, file1: str, file2: str) -> bool:
         """
         Compare two XML files for equality.
         Using xml parser to ignore whitespace and comments.
+        file1: is modified by the formatter
+        file2: is the expected corrected file
         """
         try:
             tree1 = ET.parse(file1)
@@ -103,6 +101,9 @@ class TestPackageXmlFormatter(unittest.TestCase):
                 elif ET.iselement(elem1) and not ET.iselement(elem2):
                     return False
                 elif not ET.iselement(elem1) and ET.iselement(elem2):
+                    return False
+                # make sure there are no more than 2 \n in the tai
+                elif elem2.tail.count("\n") > 2:
                     return False
             return True
         except ET.XMLSyntaxError as e:
@@ -230,6 +231,47 @@ class TestPackageXmlFormatter(unittest.TestCase):
                 validate_xml_with_xmllint(final_path),
                 f"The final file {fname} is not valid against package_format3.xsd.",
             )
+
+    def test_rosdep_checking(self):
+        """
+        Test the rosdep checking functionality.
+        This is a placeholder for the actual implementation.
+        """
+        # Example dependencies to check
+        dependencies = ["rclcpp", "nonexistent_dependency", "sensor_msgs"]
+        validator = RosdepValidator()
+        unresolvable = validator.check_rosdeps(dependencies)
+
+        # Check if the expected dependencies are unresolvable
+        self.assertIn("nonexistent_dependency", unresolvable)
+        self.assertNotIn("rclcpp", unresolvable)
+        self.assertNotIn("sensor_msgs", unresolvable)
+
+    def test_integrated_rosdep_checking(self):
+        correct_rosdep = os.path.join(self.examples_dir, "no_incorrect_rosdeps.xml")
+        incorrect_rosdep = os.path.join(self.examples_dir, "incorrect_rosdeps.xml")
+        # Check the correct file
+        formatter = PackageXmlFormatter(
+            check_only=True, verbose=True, check_rosdeps=True
+        )
+        all_valid_check = formatter.check_and_format_files([correct_rosdep])
+        self.assertTrue(
+            all_valid_check, "Expected correct file to pass in check-only mode."
+        )
+        # Check the incorrect file
+        all_valid_check = formatter.check_and_format_files([incorrect_rosdep])
+        self.assertFalse(
+            all_valid_check, "Expected fail file to fail in check-only mode."
+        )
+
+    def test_invalid_path(self):
+        """
+        Test the behavior when an invalid path is provided.
+        """
+        invalid_path = os.path.join(self.examples_dir, "nonexistent.xml")
+        formatter = PackageXmlFormatter(check_only=True, verbose=True)
+        with self.assertRaises(FileNotFoundError):
+            formatter.check_and_format_files([invalid_path])
 
 
 if __name__ == "__main__":

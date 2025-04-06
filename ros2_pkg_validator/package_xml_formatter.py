@@ -5,8 +5,10 @@ from copy import deepcopy
 
 try:
     from .helpers.logger import get_logger
+    from .helpers.rosdep_validator import RosdepValidator
 except ImportError:
     from helpers.logger import get_logger
+    from helpers.rosdep_validator import RosdepValidator
 import subprocess
 
 # Order and min/max occurrences of elements
@@ -53,10 +55,20 @@ def validate_xml_with_xmllint(xml_file):
 
 
 class PackageXmlFormatter:
-    def __init__(self, check_only=False, verbose=False, check_with_xmllint=False):
+    def __init__(
+        self,
+        check_only=False,
+        verbose=False,
+        check_with_xmllint=False,
+        check_rosdeps=False,
+    ):
         self.check_only = check_only
         self.check_with_xmllint = check_with_xmllint
         self.logger = get_logger(__name__, level="verbose" if verbose else "normal")
+        self.check_rosdeps = check_rosdeps
+        if self.check_rosdeps:
+            self.rosdep_validator = RosdepValidator()
+        self.encountered_unresolvable_error = False
 
     def find_package_xml_files(self, paths):
         """Locate all package.xml files within the provided paths."""
@@ -311,13 +323,30 @@ class PackageXmlFormatter:
         Make sure there are no more than one empty line between elements.
         """
 
+        def remove_inner_newlines(s):
+            first_newline_pos = s.find("\n")
+            last_newline_pos = s.rfind("\n")
+
+            if first_newline_pos == -1 or first_newline_pos == last_newline_pos:
+                return s
+
+            start = s[: first_newline_pos + 1]
+            middle = s[first_newline_pos + 1 : last_newline_pos].replace("\n", "")
+            end = s[last_newline_pos:]
+            return start + middle + end
+
         found_empty_lines = False
         for elm in root:
-            if elm.tail and elm.tail.startswith("\n\n\n"):
+            if elm.tail and elm.tail.count("\n") > 2:
                 self.logger.info(
                     f"Error: More than one empty line found in {xml_file}."
                 )
                 found_empty_lines = True
+                if self.check_only:
+                    return False
+            if elm.tail is None or elm.tail.count("\n") == 0:
+                found_empty_lines = True
+                self.logger.info(f"Error: Two Elements in the sane line in {xml_file}.")
                 if self.check_only:
                     return False
 
@@ -326,14 +355,50 @@ class PackageXmlFormatter:
         if not found_empty_lines:
             self.logger.debug(f"No empty lines found in {xml_file}.")
             return True
-
-        # make sure there is no more than one empty line in the xml file
+        # elemts after last \n
+        indendantion = root[0].tail[root[0].tail.rfind("\n") + 1 :]
+        # correct the empty lines & missing newlines
         for elm in root:
-            while (
-                elm.tail and isinstance(elm.tail, str) and elm.tail.startswith("\n\n\n")
-            ):
-                elm.tail = elm.tail[1:]
+            if elm.tail and elm.tail.count("\n") > 2:
+                elm.tail = remove_inner_newlines(elm.tail)
+            elif elm.tail and elm.tail.count("\n") == 0:
+                elm.tail += "\n"
+            elif elm.tail is None:
+                elm.tail = "\n" + indendantion
         return False
+
+    def check_for_rosdeps(self, root, xml_file):
+        """extract list of rosdeps and check if they are valid"""
+        rosdeps = []
+        for elem in root:
+            if "depend" in elem.tag and elem.text:
+                rosdeps.append(elem.text.strip())
+        if not rosdeps:
+            self.logger.info(f"No ROS dependencies found in {xml_file}.")
+            return True
+        unresolvable = self.rosdep_validator.check_rosdeps(rosdeps)
+        if unresolvable:
+            self.logger.error(
+                f"Unresolvable ROS dependencies found in {xml_file}: {', '.join(unresolvable)}"
+            )
+            return False
+        self.logger.info(f"All ROS dependencies in {xml_file} are resolvable.")
+        return True
+
+    def check_for_non_existing_tags(self, root, xml_file):
+        """Check for non-existing tags in the XML file."""
+        non_existing_tags = []
+        valid_tags = [e[0] for e in ELEMENTS]
+        for elem in root:
+            if isinstance(elem.tag, str) and elem.tag not in valid_tags:
+                non_existing_tags.append(elem.tag)
+        if non_existing_tags:
+            self.logger.error(
+                f"Non-existing tags found in {xml_file}: {', '.join(non_existing_tags)}"
+            )
+            return False
+        self.logger.info(f"No non-existing tags found in {xml_file}.")
+        return True
 
     def check_and_format_files(self, package_xml_files):
         """Check and format package.xml files if self.check_only is False."""
@@ -341,9 +406,23 @@ class PackageXmlFormatter:
         for xml_file in package_xml_files:
             self.logger.info(f"Processing {xml_file}...")
 
+            if not os.path.exists(xml_file):
+                raise FileNotFoundError(f"{xml_file} does not exist.")
+            if not os.path.isfile(xml_file):
+                raise IsADirectoryError(f"{xml_file} is not a file.")
+
             parser = ET.XMLParser()
             tree = ET.parse(xml_file, parser)
             root = tree.getroot()
+
+            if not self.check_for_non_existing_tags(root, xml_file):
+                all_valid = False
+                self.encountered_unresolvable_error = True
+                self.logger.debug(f"Non-existing tags found in {xml_file}.")
+
+            if not self.check_for_empty_lines(root, xml_file):
+                all_valid = False
+                self.logger.debug(f"Empty lines found in {xml_file}.")
 
             if not self.check_for_duplicates(root, xml_file):
                 all_valid = False
@@ -374,6 +453,15 @@ class PackageXmlFormatter:
                     all_valid = False
                 else:
                     self.logger.info(f"XML validation passed {xml_file}.")
+            if self.check_rosdeps:
+                if not self.check_for_rosdeps(root, xml_file):
+                    all_valid = False
+                    self.encountered_unresolvable_error = True
+                    self.logger.debug(f"ROS dependencies in {xml_file} are incorrect.")
+        if self.encountered_unresolvable_error and not self.check_only:
+            self.logger.error(
+                "Some Package.xml files have unresolvable errors. Please check the logs."
+            )
         return all_valid
 
     def check_and_format(self, src):
@@ -404,6 +492,9 @@ def main():
     parser.add_argument(
         "--check_with_xmllint", action="store_true", help="Check XML with xmllint."
     )
+    parser.add_argument(
+        "--check_rosdeps", action="store_true", help="Check ROS dependencies."
+    )
 
     args = parser.parse_args()
 
@@ -411,6 +502,7 @@ def main():
         check_only=args.check,
         verbose=args.verbose,
         check_with_xmllint=args.check_with_xmllint,
+        check_rosdeps=args.check_rosdeps,
     )
 
     if args.file:
