@@ -207,7 +207,7 @@ class PackageXmlFormatter:
             root.remove(elem)
         return False
 
-    def check_occurrences(self, root, xml_file):
+    def check_element_occurrences(self, root, xml_file):
         """
         Check the min/max occurrences of elements in the XML file.
         If self.check_only is True, only check for errors without correcting.
@@ -377,7 +377,6 @@ class PackageXmlFormatter:
                 f"Unresolvable ROS dependencies found in {xml_file}: {', '.join(unresolvable)}"
             )
             return False
-        self.logger.debug(f"All ROS dependencies in {xml_file} are resolvable.")
         return True
 
     def check_for_non_existing_tags(self, root, xml_file):
@@ -432,7 +431,7 @@ class PackageXmlFormatter:
             else:
                 self.logger.debug(f"✅ [3/6] No duplicate elements found in {xml_file}.")
 
-            if not self.check_occurrences(root, xml_file):
+            if not self.check_element_occurrences(root, xml_file):
                 all_valid = False
                 self.logger.error(
                     f"❌ [4/6] Occurrences of elements in {xml_file} are incorrect."
@@ -461,17 +460,23 @@ class PackageXmlFormatter:
                 tree.write(
                     xml_file, encoding="utf-8", xml_declaration=True, pretty_print=True
                 )
+            if self.check_rosdeps:
+                if not self.check_for_rosdeps(root, xml_file):
+                    all_valid = False
+                    self.encountered_unresolvable_error = True
+                    self.logger.debug(
+                        f"❌ [7/6] ROS dependencies in {xml_file} are incorrect."
+                    )
+                else:
+                    self.logger.debug(
+                        f"✅ [7/6] All ROS dependencies in {xml_file} are valid."
+                    )
             if self.check_with_xmllint:
                 if not validate_xml_with_xmllint(xml_file):
                     self.logger.error(f"XML validation failed {xml_file}.")
                     all_valid = False
                 else:
                     self.logger.debug(f"XML validation passed {xml_file}.")
-            if self.check_rosdeps:
-                if not self.check_for_rosdeps(root, xml_file):
-                    all_valid = False
-                    self.encountered_unresolvable_error = True
-                    self.logger.debug(f"ROS dependencies in {xml_file} are incorrect.")
         if self.encountered_unresolvable_error and not self.check_only:
             self.logger.error(
                 "Some Package.xml files have unresolvable errors. Please check the logs."
