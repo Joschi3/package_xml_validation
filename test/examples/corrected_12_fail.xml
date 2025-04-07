@@ -4,7 +4,7 @@
   <name>hector_gamepad_manager</name>
   <version>0.0.0</version>
   <description>Package for managing gamepad inputs</description>
-  <maintainer email="todo.todo@stud.tu-darmstadt.de">TODO</maintainer>
+  <maintaisner email="todo.todo@stud.tu-darmstadt.de">TODO</maintaisner>
   <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

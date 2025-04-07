@@ -43,7 +43,7 @@ def get_logger(name: str = __name__, level: str = "normal") -> logging.Logger:
         ch.setLevel(logging.INFO)
 
     # Use our custom colored formatter
-    formatter = ColoredFormatter("%(levelname)s: %(message)s")
+    formatter = ColoredFormatter("%(message)s")
     ch.setFormatter(formatter)
 
     # Prevent adding multiple handlers if the logger already exists

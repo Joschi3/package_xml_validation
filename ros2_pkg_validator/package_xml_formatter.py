@@ -107,7 +107,7 @@ class PackageXmlFormatter:
         # Check type order mismatch
         order_mismatch = False
         if current_order != correct_order:
-            self.logger.info(f"Dependency order in {xml_file} is incorrect.")
+            self.logger.error(f"Dependency order in {xml_file} is incorrect.")
             order_mismatch = True
 
         if self.check_only and order_mismatch:
@@ -124,15 +124,13 @@ class PackageXmlFormatter:
                     break
 
         if self.check_only and order_mismatch:
-            self.logger.info(f"Dependency order in {xml_file} is incorrect.")
+            self.logger.error(f"Dependency order in {xml_file} is incorrect.")
             return False
 
         if self.check_only:
-            self.logger.info(f"Dependency order in {xml_file} is correct.")
             return True
 
         if not order_mismatch:
-            self.logger.info(f"Dependency order in {xml_file} is correct.")
             return True
 
         # Remove old dependency elements from root
@@ -199,7 +197,6 @@ class PackageXmlFormatter:
                 return False
 
         if self.check_only:
-            self.logger.info(f"No duplicate elements found in {xml_file}.")
             return True
 
         if not duplicates:
@@ -235,7 +232,6 @@ class PackageXmlFormatter:
                     return False
 
         if self.check_only:
-            self.logger.info(f"Occurrences of elements in {xml_file} are correct.")
             return True
 
         if not incorrect_occurrences:
@@ -268,15 +264,14 @@ class PackageXmlFormatter:
             ):
                 misplaced_elements.append(elem)
         if misplaced_elements:
-            self.logger.info(f"Element order in {xml_file} is incorrect.")
-            self.logger.info(
+            self.logger.error(f"Element order in {xml_file} is incorrect.")
+            self.logger.error(
                 f"Misplaced elements: {', '.join([elem.tag for elem in misplaced_elements])}"
             )
             if self.check_only:
                 return False
 
         if self.check_only:
-            self.logger.info(f"Element order in {xml_file} is correct.")
             return True
 
         if not misplaced_elements:
@@ -382,7 +377,7 @@ class PackageXmlFormatter:
                 f"Unresolvable ROS dependencies found in {xml_file}: {', '.join(unresolvable)}"
             )
             return False
-        self.logger.info(f"All ROS dependencies in {xml_file} are resolvable.")
+        self.logger.debug(f"All ROS dependencies in {xml_file} are resolvable.")
         return True
 
     def check_for_non_existing_tags(self, root, xml_file):
@@ -397,7 +392,6 @@ class PackageXmlFormatter:
                 f"Non-existing tags found in {xml_file}: {', '.join(non_existing_tags)}"
             )
             return False
-        self.logger.info(f"No non-existing tags found in {xml_file}.")
         return True
 
     def check_and_format_files(self, package_xml_files):
@@ -410,37 +404,57 @@ class PackageXmlFormatter:
                 raise FileNotFoundError(f"{xml_file} does not exist.")
             if not os.path.isfile(xml_file):
                 raise IsADirectoryError(f"{xml_file} is not a file.")
-
-            parser = ET.XMLParser()
-            tree = ET.parse(xml_file, parser)
-            root = tree.getroot()
+            try:
+                parser = ET.XMLParser()
+                tree = ET.parse(xml_file, parser)
+                root = tree.getroot()
+            except Exception as e:
+                self.logger.error(f"Error processing {xml_file}: {e}")
+                all_valid = False
+                continue
 
             if not self.check_for_non_existing_tags(root, xml_file):
                 all_valid = False
                 self.encountered_unresolvable_error = True
-                self.logger.debug(f"Non-existing tags found in {xml_file}.")
+                self.logger.debug(f"❌ [1/6] Non-existing tags found in {xml_file}.")
+            else:
+                self.logger.debug(f"✅ [1/6] All tags in {xml_file} are valid.")
 
             if not self.check_for_empty_lines(root, xml_file):
                 all_valid = False
-                self.logger.debug(f"Empty lines found in {xml_file}.")
+                self.logger.debug(f"❌ [2/6] Empty lines found in {xml_file}.")
+            else:
+                self.logger.debug(f"✅ [2/6] No empty lines found in {xml_file}.")
 
             if not self.check_for_duplicates(root, xml_file):
                 all_valid = False
-                self.logger.debug(f"Duplicate elements found in {xml_file}.")
+                self.logger.debug(f"❌ [3/6] Duplicate elements found in {xml_file}.")
+            else:
+                self.logger.debug(f"✅ [3/6] No duplicate elements found in {xml_file}.")
 
             if not self.check_occurrences(root, xml_file):
                 all_valid = False
+                self.logger.error(
+                    f"❌ [4/6] Occurrences of elements in {xml_file} are incorrect."
+                )
+            else:
                 self.logger.debug(
-                    f"Occurrences of elements in {xml_file} are incorrect."
+                    f"✅ [4/6] Occurrences of elements in {xml_file} are correct."
                 )
 
             if not self.check_element_order(root, xml_file):
                 all_valid = False
-                self.logger.debug(f"Element order in {xml_file} is incorrect.")
+                self.logger.debug(f"❌ [5/6] Element order in {xml_file} is incorrect.")
+            else:
+                self.logger.debug(f"✅ [5/6] Element order in {xml_file} is correct.")
 
             if not self.check_dependency_order(root, xml_file):
                 all_valid = False
-                self.logger.debug(f"Dependency order in {xml_file} is incorrect.")
+                self.logger.debug(
+                    f"❌ [6/6] Dependency order in {xml_file} is incorrect."
+                )
+            else:
+                self.logger.debug(f"✅ [6/6] Dependency order in {xml_file} is correct.")
 
             if not all_valid and not self.check_only:
                 # Write back to file
@@ -452,7 +466,7 @@ class PackageXmlFormatter:
                     self.logger.error(f"XML validation failed {xml_file}.")
                     all_valid = False
                 else:
-                    self.logger.info(f"XML validation passed {xml_file}.")
+                    self.logger.debug(f"XML validation passed {xml_file}.")
             if self.check_rosdeps:
                 if not self.check_for_rosdeps(root, xml_file):
                     all_valid = False
@@ -480,7 +494,9 @@ def main():
         "src", nargs="*", help="List of files or directories to process."
     )
     parser.add_argument(
-        "--check", action="store_true", help="Only check for errors without correcting."
+        "--check_only",
+        action="store_true",
+        help="Only check for errors without correcting.",
     )
     parser.add_argument(
         "--file",
@@ -493,16 +509,18 @@ def main():
         "--check_with_xmllint", action="store_true", help="Check XML with xmllint."
     )
     parser.add_argument(
-        "--check_rosdeps", action="store_true", help="Check ROS dependencies."
+        "--skip_rosdep_key_validation",
+        action="store_true",
+        help="Check if rosdeps are valid.",
     )
 
     args = parser.parse_args()
 
     formatter = PackageXmlFormatter(
-        check_only=args.check,
+        check_only=args.check_only,
         verbose=args.verbose,
         check_with_xmllint=args.check_with_xmllint,
-        check_rosdeps=args.check_rosdeps,
+        check_rosdeps=not args.skip_rosdep_key_validation,
     )
 
     if args.file:
@@ -512,14 +530,21 @@ def main():
         # Process whatever is found in src
         valid = formatter.check_and_format(args.src)
     # if not valid exit with error code
-    if not valid and args.check:
-        print("Some package.xml files have issues. Please review the messages above.")
+    if not valid and args.check_only:
+        print(
+            "❌ Some `package.xml` files have issues. Please review the messages above. 🛠️"
+        )
         exit(1)
     elif not valid:
-        print("Corrected package.xml files.")
+        if formatter.encountered_unresolvable_error:
+            print(
+                "⚠️ Some `package.xml` files have unresolvable errors. Please check the logs for details. 🔍"
+            )
+        else:
+            print("✅ Corrected `package.xml` files successfully. 🎉")
         exit(1)
     else:
-        print("All package.xml files are valid and correctly ordered.")
+        print("🎉 All `package.xml` files are valid and nicely formatted. 🚀")
 
 
 if __name__ == "__main__":
