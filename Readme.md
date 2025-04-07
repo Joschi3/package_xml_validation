@@ -3,12 +3,15 @@
 Validates and formats `package.xml` files to enforce consistency and ROS 2 schema compliance.
 
 ### ✅ What it does:
-- Validates against [package_format3.xsd](http://download.ros.org/schema/package_format3.xsd) using `xmllint`
+- Validates against [package_format3.xsd](http://download.ros.org/schema/package_format3.xsd)
+- Corrects erros such as
+  - wrong order of xml elements
 - Ensures dependencies are:
   - Grouped by type (e.g. `build_depend`, `test_depend`)
   - Sorted alphabetically within each group
 - Leaves comments and indentation **unchanged**
-- Removes **duplicate empty lines** between dependency groups
+- verifies that all rodsdep keys exist
+
 
 #### Example:
 ```xml
@@ -25,6 +28,37 @@ Validates and formats `package.xml` files to enforce consistency and ROS 2 schem
   <test_depend>ament_lint_common</test_depend>
   ...
 </package>
+```
+---
+
+## 🛠️ Usage Example
+
+```bash
+Validate and format ROS2 package.xml files.
+
+positional arguments:
+  src                   List of files or directories to process.
+
+options:
+  -h, --help            show this help message and exit
+  --check-only          Only check for errors without correcting.
+  --file FILE           Path to a single XML file to process. If provided, 'src' arguments are ignored.
+  --verbose             Enable verbose output.
+  --check-with-xmllint  Check XML with xmllint.
+  --skip-rosdep-key-validation
+                        Check if rosdeps are valid.
+```
+Example:
+```bash
+package-xml-formatter --file ~/hector/src/hector_gamepad_manager/hector_gamepad_manager/package.xml --check_only --skip_rosdep_key_validation --verbose
+Processing hector_gamepad_manager/package.xml...
+✅ [1/6] All tags in hector_gamepad_manager/package.xml are valid.
+✅ [2/6] No empty lines found in hector_gamepad_manager/package.xml.
+✅ [3/6] No duplicate elements found in hector_gamepad_manager/package.xml.
+✅ [4/6] Occurrences of elements in hector_gamepad_manager/package.xml are correct.
+✅ [5/6] Element order in hector_gamepad_manager/package.xml is correct.
+✅ [6/6] Dependency order in hector_gamepad_manager/package.xml is correct.
+🎉 All `package.xml` files are valid and nicely formatted. 🚀
 ```
 
 ---

@@ -493,13 +493,13 @@ class PackageXmlFormatter:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Validate and check ordering of ROS package.xml files."
+        description="Validate and format ROS2 package.xml files."
     )
     parser.add_argument(
         "src", nargs="*", help="List of files or directories to process."
     )
     parser.add_argument(
-        "--check_only",
+        "--check-only",
         action="store_true",
         help="Only check for errors without correcting.",
     )
@@ -511,10 +511,10 @@ def main():
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output.")
 
     parser.add_argument(
-        "--check_with_xmllint", action="store_true", help="Check XML with xmllint."
+        "--check-with-xmllint", action="store_true", help="Check XML with xmllint."
     )
     parser.add_argument(
-        "--skip_rosdep_key_validation",
+        "--skip-rosdep-key-validation",
         action="store_true",
         help="Check if rosdeps are valid.",
     )
