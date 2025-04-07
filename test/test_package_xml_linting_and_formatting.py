@@ -237,6 +237,9 @@ class TestPackageXmlFormatter(unittest.TestCase):
         Test the rosdep checking functionality.
         This is a placeholder for the actual implementation.
         """
+        # test if ros installed by testing whether the enivronment variable ROS_DISTRO is set
+        # if "ROS_DISTRO" not in os.environ:
+        #    self.skipTest("ROS is not installed, skipping rosdep checking test.")
         # Example dependencies to check
         dependencies = ["rclcpp", "nonexistent_dependency", "sensor_msgs"]
         validator = RosdepValidator()
