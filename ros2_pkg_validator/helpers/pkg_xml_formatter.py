@@ -343,6 +343,32 @@ class PackageXmlFormatter:
             return False
         return True
 
+    def retrieve_all_dependencies(self, root):
+        """Retrieve all dependencies from the XML file."""
+        dependencies = []
+        for elem in root:
+            if "depend" in elem.tag and elem.text:
+                dependencies.append(elem.text.strip())
+        return dependencies
+
+    def retrive_build_dependencies(self, root):
+        """Retrieve all build dependencies from the XML file."""
+        build_dependencies = []
+        build_deps = ["build_depend", "build_export_depend", "buildtool_depend"]
+        for elem in root:
+            if elem.tag in build_deps and elem.text:
+                build_dependencies.append(elem.text.strip())
+        return build_dependencies
+
+    def retrieve_test_dependencies(self, root):
+        """Retrieve all test dependencies from the XML file."""
+        test_dependencies = []
+        test_deps = ["test_depend"]
+        for elem in root:
+            if elem.tag in test_deps and elem.text:
+                test_dependencies.append(elem.text.strip())
+        return test_dependencies
+
     def check_and_format_files(self, package_xml_files) -> Tuple[bool, bool]:
         """Check and format package.xml files if self.check_only is False.
         Returns is_valid, changed_xml

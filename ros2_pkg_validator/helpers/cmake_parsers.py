@@ -179,6 +179,8 @@ def retrieve_cmake_dependencies(lines: List[str]) -> List[str]:
 
 def read_cmake_file(file_path: Path) -> List[str]:
     """Reads a CMake file and returns a list of lines."""
+    if isinstance(file_path, str):
+        file_path = Path(file_path)
     if not file_path.exists():
         print(f"File not found: {file_path}")
         return []
@@ -190,6 +192,13 @@ def read_cmake_file(file_path: Path) -> List[str]:
     # for line in lines:
     #    print(line)
     return lines
+
+
+def read_deps_from_cmake_file(file_path: Path) -> List[str]:
+    """Reads a CMake file and returns a list of dependencies."""
+    lines = read_cmake_file(file_path)
+    main_deps, test_deps = retrieve_cmake_dependencies(lines)
+    return main_deps, test_deps
 
 
 if __name__ == "__main__":

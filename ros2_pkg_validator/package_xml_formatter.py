@@ -1,5 +1,6 @@
 import argparse
 import os
+from typing import List
 from lxml import etree as ET
 from copy import deepcopy
 
@@ -7,10 +8,12 @@ try:
     from .helpers.logger import get_logger
     from .helpers.rosdep_validator import RosdepValidator
     from .helpers.pkg_xml_formatter import PackageXmlFormatter
+    from .helpers.cmake_parsers import read_deps_from_cmake_file
 except ImportError:
     from helpers.logger import get_logger
     from helpers.rosdep_validator import RosdepValidator
     from helpers.pkg_xml_formatter import PackageXmlFormatter
+    from helpers.cmake_parsers import read_deps_from_cmake_file
 import subprocess
 
 # Order and min/max occurrences of elements
@@ -63,7 +66,7 @@ class PackageXmlValidator:
 
         # calculate num checks
         self.num_checks = 6
-        self.check_count = 0
+        self.check_count = 1
         if self.check_rosdeps:
             self.num_checks += 1
         if self.check_with_xmllint:
@@ -83,12 +86,8 @@ class PackageXmlValidator:
                         package_xml_files.append(os.path.join(root, "package.xml"))
         return package_xml_files
 
-    def check_for_rosdeps(self, root, xml_file):
+    def check_for_rosdeps(self, rosdeps: List[str], xml_file: str):
         """extract list of rosdeps and check if they are valid"""
-        rosdeps = []
-        for elem in root:
-            if "depend" in elem.tag and elem.text:
-                rosdeps.append(elem.text.strip())
         if not rosdeps:
             self.logger.info(f"No ROS dependencies found in {xml_file}.")
             return True
@@ -100,6 +99,30 @@ class PackageXmlValidator:
             return False
         return True
 
+    def check_for_cmake(
+        self, build_deps: List[str], test_deps: List[str], xml_file: str
+    ):
+        cmake_file = os.path.join(os.path.dirname(xml_file), "CMakeLists.txt")
+        if not os.path.exists(cmake_file):
+            self.logger.error(
+                f"Cannot check for CMake dependencies, {cmake_file} does not exist."
+            )
+            return False
+        valid_xml = True
+        build_deps_cmake, test_deps_cmake = read_deps_from_cmake_file(cmake_file)
+        # make sure that all cmake dependencies are in the package.xml if they can be resolved
+        unresolvable = self.rosdep_validator.check_rosdeps(build_deps_cmake)
+        for dep in build_deps_cmake:
+            if dep not in unresolvable and dep not in build_deps:
+                self.logger.error(f"Missing dependency {dep} in {xml_file}.")
+                valid_xml = False
+        unresolvable = self.rosdep_validator.check_rosdeps(test_deps_cmake)
+        for dep in test_deps_cmake:
+            if dep not in unresolvable and dep not in test_deps:
+                self.logger.error(f"Missing test dependency {dep} in {xml_file}.")
+                valid_xml = False
+        return valid_xml
+
     def log_check_result(self, check_name, result):
         """Log the result of a check."""
         if result:
@@ -107,16 +130,29 @@ class PackageXmlValidator:
                 f"✅ [{self.check_count}/{self.num_checks}] {check_name} passed."
             )
         else:
-            self.logger.error(f"❌ [{self.check_count}/{self.num_checks}] failed.")
+            self.logger.debug(
+                f"❌ [{self.check_count}/{self.num_checks}] {check_name} failed."
+            )
+        self.check_count += 1
+        if self.check_count > self.num_checks:
+            self.check_count = 1
+
+    def perform_check(self, check_name, check_function, *args):
+        """Perform a single check, log the result, and update validation flags."""
+        result = check_function(*args)
+        self.log_check_result(check_name, result)
+        self.all_valid &= result
+        return result
 
     def check_and_format_files(self, package_xml_files):
         """Check and format package.xml files if self.check_only is False.
         Returns is_valid, changed_xml
         """
 
-        all_valid = True
+        self.all_valid = True
         for xml_file in package_xml_files:
-            self.logger.info(f"Processing {xml_file}...")
+            pkg_name = os.path.basename(os.path.dirname(xml_file))
+            self.logger.info(f"Processing {pkg_name}...")
 
             if not os.path.exists(xml_file):
                 raise FileNotFoundError(f"{xml_file} does not exist.")
@@ -128,94 +164,86 @@ class PackageXmlValidator:
                 root = tree.getroot()
             except Exception as e:
                 self.logger.error(f"Error processing {xml_file}: {e}")
-                all_valid = False
+                self.all_valid = False
                 continue
 
-            check = self.formatter.check_for_non_existing_tags(root, xml_file)
-            all_valid &= check
-            self.encountered_unresolvable_error &= check
-            self.log_check_result("Check for invalid tags", check)
+            # Perform xml checks
+            valid = self.perform_check(
+                "Check for invalid tags",
+                self.formatter.check_for_non_existing_tags,
+                root,
+                xml_file,
+            )
+            self.encountered_unresolvable_error &= not valid
+            self.perform_check(
+                "Check for empty lines",
+                self.formatter.check_for_empty_lines,
+                root,
+                xml_file,
+            )
+            self.perform_check(
+                "Check for duplicate elements",
+                self.formatter.check_for_duplicates,
+                root,
+                xml_file,
+            )
+            self.perform_check(
+                "Check element occurrences",
+                self.formatter.check_element_occurrences,
+                root,
+                xml_file,
+            )
+            self.perform_check(
+                "Check element order",
+                self.formatter.check_element_order,
+                root,
+                xml_file,
+            )
+            self.perform_check(
+                "Check dependency order",
+                self.formatter.check_dependency_order,
+                root,
+                xml_file,
+            )
 
-            if not self.formatter.check_for_empty_lines(root, xml_file):
-                all_valid = False
-                self.logger.debug(
-                    f"❌ [2/{self.num_checks}] Empty lines found in {xml_file}."
-                )
-            else:
-                self.logger.debug(
-                    f"✅ [2/{self.num_checks}] No empty lines found in {xml_file}."
-                )
-
-            if not self.formatter.check_for_duplicates(root, xml_file):
-                all_valid = False
-                self.logger.debug(
-                    f"❌ [3/{self.num_checks}] Duplicate elements found in {xml_file}."
-                )
-            else:
-                self.logger.debug(
-                    f"✅ [3/{self.num_checks}] No duplicate elements found in {xml_file}."
-                )
-
-            if not self.formatter.check_element_occurrences(root, xml_file):
-                all_valid = False
-                self.logger.error(
-                    f"❌ [4/{self.num_checks}] Occurrences of elements in {xml_file} are incorrect."
-                )
-            else:
-                self.logger.debug(
-                    f"✅ [4/{self.num_checks}] Occurrences of elements in {xml_file} are correct."
-                )
-
-            if not self.formatter.check_element_order(root, xml_file):
-                all_valid = False
-                self.logger.debug(
-                    f"❌ [5/{self.num_checks}] Element order in {xml_file} is incorrect."
-                )
-            else:
-                self.logger.debug(
-                    f"✅ [5/{self.num_checks}] Element order in {xml_file} is correct."
-                )
-
-            if not self.formatter.check_dependency_order(root, xml_file):
-                all_valid = False
-                self.logger.debug(
-                    f"❌ [6/{self.num_checks}] Dependency order in {xml_file} is incorrect."
-                )
-            else:
-                self.logger.debug(
-                    f"✅ [6/{self.num_checks}] Dependency order in {xml_file} is correct."
-                )
-
-            if not all_valid and not self.check_only:
-                # Write back to file
+            # Write back to file if not in check-only mode
+            if not self.all_valid and not self.check_only:
                 tree.write(
                     xml_file, encoding="utf-8", xml_declaration=True, pretty_print=True
                 )
-            if self.check_rosdeps:
-                print(f"Check ROS dependencies in {xml_file}")
-                if not self.check_for_rosdeps(root, xml_file):
-                    all_valid = False
-                    self.encountered_unresolvable_error = True
-                    self.logger.debug(
-                        f"❌ [7/{self.num_checks}] ROS dependencies in {xml_file} are incorrect."
-                    )
-                else:
-                    self.logger.debug(
-                        f"✅ [7/{self.num_checks}] All ROS dependencies in {xml_file} are valid."
-                    )
-            # if self.formatter.check_with_xmllint:
-            #     if not validate_xml_with_xmllint(xml_file):
-            #         self.logger.error(f"XML validation failed {xml_file}.")
-            #         all_valid = False
-            #     else:
-            #         self.logger.debug(f"XML validation passed {xml_file}.")
 
-        if not all_valid and self.check_only:
+            # Check rosdeps if enabled
+            if self.check_rosdeps:
+                rosdeps = self.formatter.retrieve_all_dependencies(root)
+                valid = self.perform_check(
+                    "Check ROS dependencies", self.check_for_rosdeps, rosdeps, xml_file
+                )
+                self.encountered_unresolvable_error &= not valid
+            # Check with xmllint if enabled
+            if self.check_with_xmllint:
+                valid = self.perform_check(
+                    "Check with xmllint", validate_xml_with_xmllint, xml_file
+                )
+                self.encountered_unresolvable_error &= not valid
+            # Check for CMake dependencies if enabled
+            if self.compare_with_cmake:
+                build_deps = self.formatter.retrive_build_dependencies(root)
+                test_deps = self.formatter.retrieve_test_dependencies(root)
+                valid = self.perform_check(
+                    "Check CMake dependencies",
+                    self.check_for_cmake,
+                    build_deps,
+                    test_deps,
+                    xml_file,
+                )
+                self.encountered_unresolvable_error &= not valid
+        # Final result messages
+        if not self.all_valid and self.check_only:
             print(
                 "❌ Some `package.xml` files have issues. Please review the messages above. 🛠️"
             )
             return False, True
-        elif not all_valid:
+        elif not self.all_valid:
             if self.encountered_unresolvable_error:
                 print(
                     "⚠️ Some `package.xml` files have unresolvable errors. Please check the logs for details. 🔍"
@@ -264,6 +292,12 @@ def main():
         help="Check if rosdeps are valid.",
     )
 
+    parser.add_argument(
+        "--compare-with-cmake",
+        action="store_true",
+        help="Check if all CMake dependencies are in package.xml.",
+    )
+
     args = parser.parse_args()
 
     formatter = PackageXmlValidator(
@@ -271,6 +305,7 @@ def main():
         verbose=args.verbose,
         check_with_xmllint=args.check_with_xmllint,
         check_rosdeps=not args.skip_rosdep_key_validation,
+        compare_with_cmake=args.compare_with_cmake,
     )
 
     if args.file:
