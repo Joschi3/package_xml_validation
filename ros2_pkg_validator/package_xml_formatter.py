@@ -92,9 +92,10 @@ class PackageXmlValidator:
             self.logger.info(f"No ROS dependencies found in {xml_file}.")
             return True
         unresolvable = self.rosdep_validator.check_rosdeps(rosdeps)
+        pkg_name = os.path.basename(os.path.dirname(xml_file))
         if unresolvable:
             self.logger.error(
-                f"Unresolvable ROS dependencies found in {xml_file}: {', '.join(unresolvable)}"
+                f"Unresolvable ROS dependencies found in {pkg_name}/package.xml: {', '.join(unresolvable)}"
             )
             return False
         return True
@@ -108,19 +109,32 @@ class PackageXmlValidator:
                 f"Cannot check for CMake dependencies, {cmake_file} does not exist."
             )
             return False
+        pkg_name = os.path.basename(os.path.dirname(xml_file))
         valid_xml = True
         build_deps_cmake, test_deps_cmake = read_deps_from_cmake_file(cmake_file)
         # make sure that all cmake dependencies are in the package.xml if they can be resolved
         unresolvable = self.rosdep_validator.check_rosdeps(build_deps_cmake)
-        for dep in build_deps_cmake:
-            if dep not in unresolvable and dep not in build_deps:
-                self.logger.error(f"Missing dependency {dep} in {xml_file}.")
-                valid_xml = False
+        missing_deps = [
+            dep
+            for dep in build_deps_cmake
+            if dep not in unresolvable and dep not in build_deps
+        ]
+        if missing_deps:
+            self.logger.error(
+                f"Missing dependencies in {pkg_name}/package.xml: \n\t\t{'\n\t\t'.join(missing_deps)}"
+            )
+            valid_xml = False
         unresolvable = self.rosdep_validator.check_rosdeps(test_deps_cmake)
-        for dep in test_deps_cmake:
-            if dep not in unresolvable and dep not in test_deps:
-                self.logger.error(f"Missing test dependency {dep} in {xml_file}.")
-                valid_xml = False
+        missing_deps = [
+            dep
+            for dep in test_deps_cmake
+            if dep not in unresolvable and dep not in test_deps
+        ]
+        if missing_deps:
+            self.logger.error(
+                f"Missing test dependencies in {pkg_name}/package.xml: \n\t\t{'\n\t\t'.join(missing_deps)}"
+            )
+            valid_xml = False
         return valid_xml
 
     def log_check_result(self, check_name, result):
@@ -242,19 +256,19 @@ class PackageXmlValidator:
             print(
                 "❌ Some `package.xml` files have issues. Please review the messages above. 🛠️"
             )
-            return False, True
+            return False
         elif not self.all_valid:
             if self.encountered_unresolvable_error:
                 print(
                     "⚠️ Some `package.xml` files have unresolvable errors. Please check the logs for details. 🔍"
                 )
-                return False, True
+                return False
             else:
                 print("✅ Corrected `package.xml` files successfully. 🎉")
-                return True, True
+                return False
         else:
             print("🎉 All `package.xml` files are valid and nicely formatted. 🚀")
-            return True, False
+            return True
 
     def check_and_format(self, src):
         package_xml_files = self.find_package_xml_files(src)

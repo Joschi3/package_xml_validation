@@ -7,7 +7,7 @@ import subprocess
 from lxml import etree as ET
 
 from ros2_pkg_validator.package_xml_formatter import (
-    PackageXmlFormatter,
+    PackageXmlValidator,
     RosdepValidator,
 )
 
@@ -32,7 +32,7 @@ def validate_xml_with_xmllint(xml_file):
         return False
 
 
-class TestPackageXmlFormatter(unittest.TestCase):
+class TestPackageXmlValidator(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """
@@ -133,7 +133,7 @@ class TestPackageXmlFormatter(unittest.TestCase):
             #  - 'original_XX_correct.xml' => returns True (all_valid=True), file unchanged
             #  - 'original_XX_fail.xml'    => returns False (all_valid=False), file unchanged
 
-            formatter = PackageXmlFormatter(check_only=True, verbose=True)
+            formatter = PackageXmlValidator(check_only=True, verbose=True)
             with open(original_path, "rb") as f_before:
                 original_bytes_before_check = f_before.read()
 
@@ -164,7 +164,7 @@ class TestPackageXmlFormatter(unittest.TestCase):
             #  - For fail   files => corrected to match `corrected_XX.xml`
             # Then we verify the final result is valid with xmllint.
 
-            formatter = PackageXmlFormatter(check_only=False, verbose=True)
+            formatter = PackageXmlValidator(check_only=False, verbose=True)
 
             # Reload the file from disk (in case some other step changed it).
             with open(original_path, "rb") as f_before:
@@ -254,7 +254,7 @@ class TestPackageXmlFormatter(unittest.TestCase):
         correct_rosdep = os.path.join(self.examples_dir, "no_incorrect_rosdeps.xml")
         incorrect_rosdep = os.path.join(self.examples_dir, "incorrect_rosdeps.xml")
         # Check the correct file
-        formatter = PackageXmlFormatter(
+        formatter = PackageXmlValidator(
             check_only=True, verbose=True, check_rosdeps=True
         )
         all_valid_check = formatter.check_and_format_files([correct_rosdep])
@@ -272,7 +272,7 @@ class TestPackageXmlFormatter(unittest.TestCase):
         Test the behavior when an invalid path is provided.
         """
         invalid_path = os.path.join(self.examples_dir, "nonexistent.xml")
-        formatter = PackageXmlFormatter(check_only=True, verbose=True)
+        formatter = PackageXmlValidator(check_only=True, verbose=True)
         with self.assertRaises(FileNotFoundError):
             formatter.check_and_format_files([invalid_path])
 

@@ -158,7 +158,7 @@ class PackageXmlFormatter:
 
         if duplicates:
             self.logger.info(
-                f"Duplicate elements found in {xml_file}: {', '.join(duplicates)}"
+                f"Duplicate elements found in {xml_file}: {', '.join([elem.tag for elem in duplicates])}"
             )
             if self.check_only:
                 return False
@@ -347,7 +347,7 @@ class PackageXmlFormatter:
         """Retrieve all dependencies from the XML file."""
         dependencies = []
         for elem in root:
-            if "depend" in elem.tag and elem.text:
+            if isinstance(elem.tag, str) and "depend" in elem.tag and elem.text:
                 dependencies.append(elem.text.strip())
         return dependencies
 
@@ -356,7 +356,7 @@ class PackageXmlFormatter:
         build_dependencies = []
         build_deps = ["build_depend", "build_export_depend", "buildtool_depend"]
         for elem in root:
-            if elem.tag in build_deps and elem.text:
+            if isinstance(elem.tag, str) and elem.tag in build_deps and elem.text:
                 build_dependencies.append(elem.text.strip())
         return build_dependencies
 
@@ -365,7 +365,7 @@ class PackageXmlFormatter:
         test_dependencies = []
         test_deps = ["test_depend"]
         for elem in root:
-            if elem.tag in test_deps and elem.text:
+            if isinstance(elem.tag, str) and elem.tag in test_deps and elem.text:
                 test_dependencies.append(elem.text.strip())
         return test_dependencies
 

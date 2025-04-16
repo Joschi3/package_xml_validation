@@ -11,11 +11,12 @@ class ColoredFormatter(logging.Formatter):
     RED = "\033[31m"
     GREEN = "\033[32m"
     YELLOW = "\033[33m"
+    BLUE = "\033[34m"
 
     # You can map each log level to a specific color
     LOG_COLORS = {
         logging.DEBUG: GREEN,
-        logging.INFO: RESET,  # Normal color
+        logging.INFO: BLUE,
         logging.WARNING: YELLOW,
         logging.ERROR: RED,
         logging.CRITICAL: RED,
@@ -23,7 +24,8 @@ class ColoredFormatter(logging.Formatter):
 
     def format(self, record):
         log_color = self.LOG_COLORS.get(record.levelno, self.RESET)
-        record.msg = f"{log_color}{record.msg}{self.RESET}"
+        indent = "\t" if record.levelno == logging.ERROR else ""
+        record.msg = f"{indent}{log_color}{record.msg}{self.RESET}"
         return super().format(record)
 
 
