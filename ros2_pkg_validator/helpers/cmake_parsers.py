@@ -200,9 +200,6 @@ if __name__ == "__main__":
     cmake_file = Path(
         "/home/aljoscha-schmidt/hector/src/hector_base_velocity_manager/hector_base_velocity_manager/CMakeLists.txt"
     )
-    cmake_file = Path(
-        "/home/aljoscha-schmidt/hector/src/hector_math/hector_math/CMakeLists.txt"
-    )
     lines = read_cmake_file(cmake_file)
     main_deps, test_deps = retrieve_cmake_dependencies(lines)
     print("Main dependencies:", main_deps)
