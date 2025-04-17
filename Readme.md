@@ -83,7 +83,7 @@ pip install pre-commit
 ```yaml
 repos:
   - repo: git@github.com:Joschi3/package_xml_validation.git
-    rev: v1.0.2
+    rev: v1.0.4
     hooks:
       - id: format-package-xml
         name: Format package.xml

@@ -97,7 +97,7 @@ class PackageXmlValidator:
         ]
         if missing_deps:
             self.logger.error(
-                f"Missing dependencies in {pkg_name}/package.xml: \n\t\t{'\n\t\t'.join(missing_deps)}"
+                f"Missing dependencies in {pkg_name}/package.xml compared to {pkg_name}/CMakeList.txt: \n\t\t{'\n\t\t'.join(missing_deps)}"
             )
             valid_xml = False
         unresolvable = self.rosdep_validator.check_rosdeps(test_deps_cmake)
@@ -108,7 +108,7 @@ class PackageXmlValidator:
         ]
         if missing_deps:
             self.logger.error(
-                f"Missing test dependencies in {pkg_name}/package.xml: \n\t\t{'\n\t\t'.join(missing_deps)}"
+                f"Missing test dependencies in {pkg_name}/package.xml compared to {pkg_name}/CMakeList.txt: \n\t\t{'\n\t\t'.join(missing_deps)}"
             )
             valid_xml = False
         return valid_xml
