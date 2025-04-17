@@ -349,8 +349,14 @@ class PackageXmlFormatter:
 
     def retrive_build_dependencies(self, root):
         """Retrieve all build dependencies from the XML file."""
+        build_deps = [
+            "buildtool_depend",
+            "buildtool_export_depend",
+            "build_depend",
+            "build_export_depend",
+            "depend",
+        ]
         build_dependencies = []
-        build_deps = ["build_depend", "build_export_depend", "buildtool_depend"]
         for elem in root:
             if isinstance(elem.tag, str) and elem.tag in build_deps and elem.text:
                 build_dependencies.append(elem.text.strip())
