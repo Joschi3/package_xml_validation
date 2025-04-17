@@ -132,7 +132,9 @@ class TestPackageXmlValidator(unittest.TestCase):
             #  - 'original_XX_correct.xml' => returns True (all_valid=True), file unchanged
             #  - 'original_XX_fail.xml'    => returns False (all_valid=False), file unchanged
 
-            formatter = PackageXmlValidator(check_only=True, verbose=True)
+            formatter = PackageXmlValidator(
+                check_only=True, verbose=True, check_rosdeps=False
+            )
             with open(original_path, "rb") as f_before:
                 original_bytes_before_check = f_before.read()
 
@@ -163,7 +165,9 @@ class TestPackageXmlValidator(unittest.TestCase):
             #  - For fail   files => corrected to match `corrected_XX.xml`
             # Then we verify the final result is valid with xmllint.
 
-            formatter = PackageXmlValidator(check_only=False, verbose=True)
+            formatter = PackageXmlValidator(
+                check_only=False, verbose=True, check_rosdeps=False
+            )
 
             # Reload the file from disk (in case some other step changed it).
             with open(original_path, "rb") as f_before:

@@ -35,7 +35,7 @@ Validates and formats `package.xml` files to enforce consistency and ROS 2 schem
 ## 🛠️ Usage Example
 
 ```bash
-ackage-xml-validator [-h] [--check-only] [--file FILE] [--verbose] [--check-with-xmllint] [--skip-rosdep-key-validation] [--compare-with-cmake] [src ...]
+package-xml-validator [-h] [--check-only] [--file FILE] [--verbose] [--check-with-xmllint] [--skip-rosdep-key-validation] [--compare-with-cmake] [src ...]
 
 Validate and format ROS2 package.xml files.
 
