@@ -153,7 +153,7 @@ class PackageXmlValidator:
         # )
         result = check_function(*args)
         self.log_check_result(check_name, result)
-        self.all_valid &= result
+        self.xml_valid &= result
         return result
 
     def check_and_format_files(self, package_xml_files):
@@ -163,6 +163,7 @@ class PackageXmlValidator:
 
         self.all_valid = True
         for xml_file in package_xml_files:
+            self.xml_valid = True
             pkg_name = os.path.basename(os.path.dirname(xml_file))
             self.logger.info(f"Processing {pkg_name}...")
 
@@ -176,7 +177,7 @@ class PackageXmlValidator:
                 root = tree.getroot()
             except Exception as e:
                 self.logger.error(f"Error processing {xml_file}: {e}")
-                self.all_valid = False
+                self.xml_valid = False
                 continue
 
             # Perform xml checks
@@ -186,7 +187,7 @@ class PackageXmlValidator:
                 root,
                 xml_file,
             )
-            self.encountered_unresolvable_error &= not valid
+            self.encountered_unresolvable_error |= not valid
             self.perform_check(
                 "Check for empty lines",
                 self.formatter.check_for_empty_lines,
@@ -219,7 +220,7 @@ class PackageXmlValidator:
             )
 
             # Write back to file if not in check-only mode
-            if not self.all_valid and not self.check_only:
+            if not self.xml_valid and not self.check_only:
                 tree.write(
                     xml_file, encoding="utf-8", xml_declaration=True, pretty_print=True
                 )
@@ -230,13 +231,13 @@ class PackageXmlValidator:
                 valid = self.perform_check(
                     "Check ROS dependencies", self.check_for_rosdeps, rosdeps, xml_file
                 )
-                self.encountered_unresolvable_error &= not valid
+                self.encountered_unresolvable_error |= not valid
             # Check with xmllint if enabled
             if self.check_with_xmllint:
                 valid = self.perform_check(
                     "Check with xmllint", self.validate_xml_with_xmllint, xml_file
                 )
-                self.encountered_unresolvable_error &= not valid
+                self.encountered_unresolvable_error |= not valid
             # Check for CMake dependencies if enabled
             if self.compare_with_cmake:
                 build_deps = self.formatter.retrive_build_dependencies(root)
@@ -248,24 +249,27 @@ class PackageXmlValidator:
                     test_deps,
                     xml_file,
                 )
-                self.encountered_unresolvable_error &= not valid
+                self.encountered_unresolvable_error |= not valid
+            self.all_valid &= self.xml_valid
         # Final result messages
         if not self.all_valid and self.check_only:
-            print(
+            self.logger.warning(
                 "❌ Some `package.xml` files have issues. Please review the messages above. 🛠️"
             )
             return False
         elif not self.all_valid:
             if self.encountered_unresolvable_error:
-                print(
+                self.logger.warning(
                     "⚠️ Some `package.xml` files have unresolvable errors. Please check the logs for details. 🔍"
                 )
                 return False
             else:
-                print("✅ Corrected `package.xml` files successfully. 🎉")
+                self.logger.info("✅ Corrected `package.xml` files successfully. 🎉")
                 return False
         else:
-            print("🎉 All `package.xml` files are valid and nicely formatted. 🚀")
+            self.logger.info(
+                "🎉 All `package.xml` files are valid and nicely formatted. 🚀"
+            )
             return True
 
     def check_and_format(self, src):
@@ -328,6 +332,8 @@ def main():
     else:
         # Process whatever is found in src
         valid = formatter.check_and_format(args.src)
+    if not valid:
+        exit(1)
 
 
 if __name__ == "__main__":

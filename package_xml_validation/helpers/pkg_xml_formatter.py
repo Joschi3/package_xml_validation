@@ -200,7 +200,6 @@ class PackageXmlFormatter:
             return True
 
         if not incorrect_occurrences:
-            self.logger.debug(f"Occurrences of elements in {xml_file} are correct.")
             return True
 
         # Correct the occurrences
@@ -313,7 +312,6 @@ class PackageXmlFormatter:
         if self.check_only:
             return True
         if not found_empty_lines:
-            self.logger.debug(f"No empty lines found in {xml_file}.")
             return True
         # elemts after last \n
         indendantion = root[0].tail[root[0].tail.rfind("\n") + 1 :]
