@@ -5,10 +5,8 @@ from copy import deepcopy
 
 try:
     from .logger import get_logger
-    from .rosdep_validator import RosdepValidator
 except ImportError:
     from helpers.logger import get_logger
-    from helpers.rosdep_validator import RosdepValidator
 
 ELEMENTS = [
     ("name", 1, 1),

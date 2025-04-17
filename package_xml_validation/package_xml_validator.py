@@ -2,7 +2,6 @@ import argparse
 import os
 from typing import List
 from lxml import etree as ET
-from copy import deepcopy
 
 try:
     from .helpers.logger import get_logger
@@ -15,8 +14,6 @@ except ImportError:
     from helpers.pkg_xml_formatter import PackageXmlFormatter
     from helpers.cmake_parsers import read_deps_from_cmake_file
 import subprocess
-
-# TODO: rename to PackageXmlValidator + rename repository to ros2_pkg_xml_validator ??
 
 
 class PackageXmlValidator:

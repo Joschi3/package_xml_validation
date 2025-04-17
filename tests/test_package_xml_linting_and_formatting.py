@@ -2,7 +2,6 @@ import os
 import unittest
 import tempfile
 import shutil
-import filecmp
 import subprocess
 from lxml import etree as ET
 
