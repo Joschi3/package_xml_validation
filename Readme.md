@@ -1,4 +1,4 @@
-# ROS2 Package Validator
+# ROS2 Package Xml Validator
 
 Validates and formats `package.xml` files to enforce consistency and ROS 2 schema compliance.
 
@@ -10,7 +10,8 @@ Validates and formats `package.xml` files to enforce consistency and ROS 2 schem
   - Grouped by type (e.g. `build_depend`, `test_depend`)
   - Sorted alphabetically within each group
 - Leaves comments and indentation **unchanged**
-- verifies that all rodsdep keys exist
+- verifies that all rodsdep keys exist (optional)
+- compares build dependencies and test dependencies with dependencies in the CMakeLists.txt (optional)
 
 
 #### Example:
@@ -34,19 +35,21 @@ Validates and formats `package.xml` files to enforce consistency and ROS 2 schem
 ## 🛠️ Usage Example
 
 ```bash
+ackage-xml-validator [-h] [--check-only] [--file FILE] [--verbose] [--check-with-xmllint] [--skip-rosdep-key-validation] [--compare-with-cmake] [src ...]
+
 Validate and format ROS2 package.xml files.
 
 positional arguments:
-  src                   List of files or directories to process.
+  src                           List of files or directories to process.
 
 options:
-  -h, --help            show this help message and exit
-  --check-only          Only check for errors without correcting.
-  --file FILE           Path to a single XML file to process. If provided, 'src' arguments are ignored.
-  --verbose             Enable verbose output.
-  --check-with-xmllint  Check XML with xmllint.
-  --skip-rosdep-key-validation
-                        Check if rosdeps are valid.
+  -h, --help                    show this help message and exit
+  --check-only                  Only check for errors without correcting.
+  --file FILE                   Path to a single XML file to process. If provided, 'src' arguments are ignored.
+  --verbose                     Enable verbose output.
+  --check-with-xmllint          Recheck XML schema using xmllint.
+  --skip-rosdep-key-validation  Check if rosdeps are valid.
+  --compare-with-cmake  Check if all CMake dependencies are in package.xml.
 ```
 Example:
 ```bash
@@ -105,13 +108,16 @@ pre-commit run --all-files
 If you're running in CI and want to **fail on violations without modifying files**, use:
 
 ```bash
-package-xml-formatter --check .
+package-xml-formatter --check-only --compare-with-cmake .
 ```
 
 This will:
 - Validate all `package.xml` files
 - Print any formatting/schema issues
+- check validity of rosdep keys
+- compare the depenedencies with the dependencies listed in the CMakeList.txt
 - Exit non-zero if any problems are found  
 → **No files will be modified**
+- if rosdep is not available in the CI environment use the `--skip-rosdep-key-validation` flag
 
 

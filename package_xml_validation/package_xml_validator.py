@@ -294,7 +294,9 @@ def main():
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output.")
 
     parser.add_argument(
-        "--check-with-xmllint", action="store_true", help="Check XML with xmllint."
+        "--check-with-xmllint",
+        action="store_true",
+        help="Recheck XML schema using xmllint.",
     )
     parser.add_argument(
         "--skip-rosdep-key-validation",
