@@ -1,4 +1,4 @@
-# ROS2 Package Xml Validator
+# ROS2 Package Xml Validator & Formatter
 
 Validates and formats `package.xml` files to enforce consistency and ROS 2 schema compliance.
 
@@ -14,7 +14,7 @@ Validates and formats `package.xml` files to enforce consistency and ROS 2 schem
 - compares build dependencies and test dependencies with dependencies in the CMakeLists.txt (optional)
 
 
-#### Example:
+#### Example: Enforced Grouping of the dependencies
 ```xml
 <package format="3">
   ...
@@ -80,7 +80,7 @@ pip install pre-commit
 
 ```yaml
 repos:
-  - repo: git@github.com:Joschi3/ros_pkg_validator.git
+  - repo: git@github.com:Joschi3/package_xml_validation.git
     rev: v0.1.5
     hooks:
       - id: format-package-xml
