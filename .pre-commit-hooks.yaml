@@ -1,6 +1,7 @@
 -   id: format-package-xml
     name: Format package.xml files
     description: Verify the package xml schema and ordering of dependencies
-    entry: package-xml-formatter
+    entry: package-xml-validator
     language: python
     files: ^.*package\.xml$
+    args: [--compare-with-cmake]
