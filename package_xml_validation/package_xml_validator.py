@@ -88,8 +88,6 @@ class PackageXmlValidator:
         pkg_name = os.path.basename(os.path.dirname(xml_file))
         valid_xml = True
         build_deps_cmake, test_deps_cmake = read_deps_from_cmake_file(cmake_file)
-        print(f"build_deps_cmake: {build_deps_cmake}, build_deps: {build_deps}")
-        print(f"test_deps_cmake: {test_deps_cmake}, test_deps: {test_deps}")
         # make sure that all cmake dependencies are in the package.xml if they can be resolved
         unresolvable = self.rosdep_validator.check_rosdeps(build_deps_cmake)
         missing_deps = [
