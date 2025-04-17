@@ -39,7 +39,6 @@ class PackageXmlValidator:
             verbose=verbose,
         )
         self.encountered_unresolvable_error = False
-        print(f"Check ROS dependencies: {self.check_rosdeps}")
 
         # calculate num checks
         self.num_checks = 6
@@ -149,9 +148,9 @@ class PackageXmlValidator:
 
     def perform_check(self, check_name, check_function, *args):
         """Perform a single check, log the result, and update validation flags."""
-        self.logger.debug(
-            f"🛠️ [{self.check_count}/{self.num_checks}] Performing {check_name}."
-        )
+        # self.logger.debug(
+        #    f"🛠️ [{self.check_count}/{self.num_checks}] Performing {check_name}."
+        # )
         result = check_function(*args)
         self.log_check_result(check_name, result)
         self.all_valid &= result

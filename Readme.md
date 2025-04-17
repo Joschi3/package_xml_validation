@@ -51,16 +51,18 @@ options:
   --skip-rosdep-key-validation  Check if rosdeps are valid.
   --compare-with-cmake  Check if all CMake dependencies are in package.xml.
 ```
-Example:
-```bash
-package-xml-formatter --file ~/hector/src/hector_gamepad_manager/hector_gamepad_manager/package.xml --check_only --skip_rosdep_key_validation --verbose
-Processing hector_gamepad_manager/package.xml...
-✅ [1/6] All tags in hector_gamepad_manager/package.xml are valid.
-✅ [2/6] No empty lines found in hector_gamepad_manager/package.xml.
-✅ [3/6] No duplicate elements found in hector_gamepad_manager/package.xml.
-✅ [4/6] Occurrences of elements in hector_gamepad_manager/package.xml are correct.
-✅ [5/6] Element order in hector_gamepad_manager/package.xml is correct.
-✅ [6/6] Dependency order in hector_gamepad_manager/package.xml is correct.
+Example with verbose logging:
+```
+package-xml-validator ~/hector/src/hector_gamepad_manager/hector_gamepad_plugin_interface --check-only --compare-with-cmake --verbose
+Processing hector_gamepad_plugin_interface...
+✅ [1/8] Check for invalid tags passed.
+✅ [2/8] Check for empty lines passed.
+✅ [3/8] Check for duplicate elements passed.
+✅ [4/8] Check element occurrences passed.
+✅ [5/8] Check element order passed.
+✅ [6/8] Check dependency order passed.
+✅ [7/8] Check ROS dependencies passed.
+✅ [8/8] Check CMake dependencies passed.
 🎉 All `package.xml` files are valid and nicely formatted. 🚀
 ```
 
