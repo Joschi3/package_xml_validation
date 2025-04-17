@@ -6,7 +6,7 @@ import filecmp
 import subprocess
 from lxml import etree as ET
 
-from ros2_pkg_validator.package_xml_formatter import (
+from ros2_pkg_validator.package_xml_validator import (
     PackageXmlValidator,
     RosdepValidator,
 )

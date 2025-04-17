@@ -16,27 +16,7 @@ except ImportError:
     from helpers.cmake_parsers import read_deps_from_cmake_file
 import subprocess
 
-# Order and min/max occurrences of elements
-
-
-def validate_xml_with_xmllint(xml_file):
-    """Validate XML file against the ROS package_format3.xsd schema using xmllint."""
-    schema_url = "http://download.ros.org/schema/package_format3.xsd"
-    try:
-        result = subprocess.run(
-            ["xmllint", "--noout", "--schema", schema_url, xml_file],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            print(f"XML validation error in {xml_file}:\n{result.stderr}")
-            return False
-        return True
-    except FileNotFoundError:
-        print(
-            "Error: xmllint not found. Please ensure it's installed and in your PATH."
-        )
-        return False
+# TODO: rename to PackageXmlValidator + rename repository to ros2_pkg_xml_validator ??
 
 
 class PackageXmlValidator:
@@ -137,6 +117,25 @@ class PackageXmlValidator:
             valid_xml = False
         return valid_xml
 
+    def validate_xml_with_xmllint(self, xml_file):
+        """Validate XML file against the ROS package_format3.xsd schema using xmllint."""
+        schema_url = "http://download.ros.org/schema/package_format3.xsd"
+        try:
+            result = subprocess.run(
+                ["xmllint", "--noout", "--schema", schema_url, xml_file],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                self.logger.error(
+                    f"XML validation error in {xml_file}:\n{result.stderr}"
+                )
+                return False
+            return True
+        except Exception as e:
+            self.logger.error(f"Error running xmllint on {xml_file}: {e}")
+            return False
+
     def log_check_result(self, check_name, result):
         """Log the result of a check."""
         if result:
@@ -236,7 +235,7 @@ class PackageXmlValidator:
             # Check with xmllint if enabled
             if self.check_with_xmllint:
                 valid = self.perform_check(
-                    "Check with xmllint", validate_xml_with_xmllint, xml_file
+                    "Check with xmllint", self.validate_xml_with_xmllint, xml_file
                 )
                 self.encountered_unresolvable_error &= not valid
             # Check for CMake dependencies if enabled
