@@ -196,7 +196,11 @@ def read_cmake_file(file_path: Path) -> List[str]:
 def read_deps_from_cmake_file(file_path: Path) -> List[str]:
     """Reads a CMake file and returns a list of dependencies."""
     lines = read_cmake_file(file_path)
-    main_deps, test_deps = retrieve_cmake_dependencies(lines)
+    try:
+        main_deps, test_deps = retrieve_cmake_dependencies(lines)
+    except Exception as e:
+        print(f"Error processing file {file_path}: {e}")
+        return [], []
     return main_deps, test_deps
 
 
