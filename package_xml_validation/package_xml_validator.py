@@ -107,12 +107,14 @@ class PackageXmlValidator:
                     f"Missing dependencies in {pkg_name}/package.xml compared to {pkg_name}/CMakeList.txt: \n\t\t{'\n\t\t'.join(missing_deps)}"
                 )
             else:
-                self.logger.warning(f"Auto-filling missing dependencies in {pkg_name}/package.xml: \n\t\t{'\n\t\t'.join(missing_deps)}")
+                self.logger.warning(
+                    f"Auto-filling missing dependencies in {pkg_name}/package.xml: \n\t\t{'\n\t\t'.join(missing_deps)}"
+                )
                 self.formatter.add_dependencies(root, missing_deps, "depend")
         unresolvable = self.rosdep_validator.check_rosdeps_and_local_pkgs(
             test_deps_cmake
         )
-        
+
         missing_deps = [
             dep
             for dep in test_deps_cmake
@@ -125,7 +127,9 @@ class PackageXmlValidator:
                     f"Missing test dependencies in {pkg_name}/package.xml compared to {pkg_name}/CMakeList.txt: \n\t\t{'\n\t\t'.join(missing_deps)}"
                 )
             else:
-                self.logger.warning(f"Auto-filling missing test dependencies in {pkg_name}/package.xml: \n\t\t{'\n\t\t'.join(missing_deps)}")
+                self.logger.warning(
+                    f"Auto-filling missing test dependencies in {pkg_name}/package.xml: \n\t\t{'\n\t\t'.join(missing_deps)}"
+                )
                 self.formatter.add_dependencies(root, missing_deps, "test_depend")
         return valid_xml
 
@@ -260,7 +264,8 @@ class PackageXmlValidator:
                     xml_file,
                     root,
                 )
-                self.encountered_unresolvable_error |= not valid
+                if not self.auto_fill_missing_deps:
+                    self.encountered_unresolvable_error |= not valid
 
             # Write back to file if not in check-only mode
             if not self.xml_valid and not self.check_only:
