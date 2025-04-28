@@ -371,6 +371,59 @@ class PackageXmlFormatter:
                 test_dependencies.append(elem.text.strip())
         return test_dependencies
 
+    def add_dependencies(self, root, dependencies, dep_type):
+        """Add dependencies to the XML file."""
+        dep_types = [dep[0] for dep in ELEMENTS if "depend" in dep[0]]
+        elements = [dep[0] for dep in ELEMENTS]
+        if dep_type not in dep_types:
+            raise ValueError(f"Invalid dependency type: {dep_type}")
+        indendantion = root[0].tail.replace("\n", "")
+        for dep in dependencies:
+            new_elem = ET.Element(dep_type)
+            new_elem.text = dep
+            new_elem.tail = "\n" + indendantion
+            # add element to root at correct position -> correct dep group and alphabetical order
+            # case 1: dependency group is empty
+            if not root.findall(dep_type):
+                previous_element = elements[elements.index(dep_type) - 1]
+                while not root.findall(previous_element):
+                    previous_element = elements[elements.index(previous_element) - 1]
+                # find last element with previous_element tag
+                last_element_count = 0
+                for count, elm in enumerate(root):
+                    if isinstance(elm.tag, str) and elm.tag == previous_element:
+                        last_element_count = count
+                insert_position = last_element_count + 1
+                first_of_group = insert_position
+            # case 2: dependency group is not empty
+            else:
+                # assume list is sorted -> insert at correct position
+                insert_position = 0
+                first_of_group = None
+                for i, elm in enumerate(root):
+                    if (
+                        isinstance(elm.tag, str)
+                        and elm.tag == dep_type
+                    ):
+                        if first_of_group is None:
+                            first_of_group = i
+                            insert_position = i
+                        if elm.text < new_elem.text:
+                            insert_position = i+1
+            root.insert(insert_position, new_elem)
+            # adapt empty lines -> in case element prior ends with empty line move it to the new element
+            if insert_position > 0 and insert_position > first_of_group:
+                previous_element = root[insert_position - 1]
+                if previous_element.tail and previous_element.tail.count("\n") > 1:
+                    new_elem.tail = previous_element.tail
+                    previous_element.tail = "\n" + indendantion
+            if insert_position < len(root) - 1:
+                # if next tag is different than the new element, add empty line
+                next_element = root[insert_position + 1]
+                if next_element.tag != new_elem.tag:
+                    new_elem.tail = "\n\n" + indendantion
+                
+
     def check_and_format_files(self, package_xml_files) -> Tuple[bool, bool]:
         """Check and format package.xml files if self.check_only is False.
         Returns is_valid, changed_xml

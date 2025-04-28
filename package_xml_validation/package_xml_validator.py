@@ -23,6 +23,8 @@ class PackageXmlValidator:
         check_with_xmllint=False,
         check_rosdeps=True,
         compare_with_cmake=False,
+        auto_fill_missing_deps=False,
+        path=None,
         verbose=False,
     ):
         self.verbose = verbose
@@ -30,9 +32,10 @@ class PackageXmlValidator:
         self.check_with_xmllint = check_with_xmllint
         self.check_rosdeps = check_rosdeps
         self.compare_with_cmake = compare_with_cmake
+        self.auto_fill_missing_deps = auto_fill_missing_deps
         self.logger = get_logger(__name__, level="verbose" if verbose else "normal")
         if self.check_rosdeps:
-            self.rosdep_validator = RosdepValidator()
+            self.rosdep_validator = RosdepValidator(pkg_path=path)
         self.formatter = PackageXmlFormatter(
             check_only=check_only,
             check_with_xmllint=check_with_xmllint,
@@ -67,7 +70,7 @@ class PackageXmlValidator:
         if not rosdeps:
             self.logger.info(f"No ROS dependencies found in {xml_file}.")
             return True
-        unresolvable = self.rosdep_validator.check_rosdeps(rosdeps)
+        unresolvable = self.rosdep_validator.check_rosdeps_and_local_pkgs(rosdeps)
         pkg_name = os.path.basename(os.path.dirname(xml_file))
         if unresolvable:
             self.logger.error(
@@ -77,7 +80,7 @@ class PackageXmlValidator:
         return True
 
     def check_for_cmake(
-        self, build_deps: List[str], test_deps: List[str], xml_file: str
+        self, build_deps: List[str], test_deps: List[str], xml_file: str, root
     ):
         cmake_file = os.path.join(os.path.dirname(xml_file), "CMakeLists.txt")
         if not os.path.exists(cmake_file):
@@ -89,28 +92,45 @@ class PackageXmlValidator:
         valid_xml = True
         build_deps_cmake, test_deps_cmake = read_deps_from_cmake_file(cmake_file)
         # make sure that all cmake dependencies are in the package.xml if they can be resolved
-        unresolvable = self.rosdep_validator.check_rosdeps(build_deps_cmake)
+        unresolvable = self.rosdep_validator.check_rosdeps_and_local_pkgs(
+            build_deps_cmake
+        )
         missing_deps = [
             dep
             for dep in build_deps_cmake
             if dep not in unresolvable and dep not in build_deps
         ]
         if missing_deps:
-            self.logger.error(
-                f"Missing dependencies in {pkg_name}/package.xml compared to {pkg_name}/CMakeList.txt: \n\t\t{'\n\t\t'.join(missing_deps)}"
-            )
             valid_xml = False
-        unresolvable = self.rosdep_validator.check_rosdeps(test_deps_cmake)
+            if self.check_only or not self.auto_fill_missing_deps:
+                self.logger.error(
+                    f"Missing dependencies in {pkg_name}/package.xml compared to {pkg_name}/CMakeList.txt: \n\t\t{'\n\t\t'.join(missing_deps)}"
+                )
+            else:
+                self.logger.warning(
+                    f"Auto-filling missing dependencies in {pkg_name}/package.xml: \n\t\t{'\n\t\t'.join(missing_deps)}"
+                )
+                self.formatter.add_dependencies(root, missing_deps, "depend")
+        unresolvable = self.rosdep_validator.check_rosdeps_and_local_pkgs(
+            test_deps_cmake
+        )
+
         missing_deps = [
             dep
             for dep in test_deps_cmake
             if dep not in unresolvable and dep not in test_deps
         ]
         if missing_deps:
-            self.logger.error(
-                f"Missing test dependencies in {pkg_name}/package.xml compared to {pkg_name}/CMakeList.txt: \n\t\t{'\n\t\t'.join(missing_deps)}"
-            )
             valid_xml = False
+            if self.check_only or not self.auto_fill_missing_deps:
+                self.logger.error(
+                    f"Missing test dependencies in {pkg_name}/package.xml compared to {pkg_name}/CMakeList.txt: \n\t\t{'\n\t\t'.join(missing_deps)}"
+                )
+            else:
+                self.logger.warning(
+                    f"Auto-filling missing test dependencies in {pkg_name}/package.xml: \n\t\t{'\n\t\t'.join(missing_deps)}"
+                )
+                self.formatter.add_dependencies(root, missing_deps, "test_depend")
         return valid_xml
 
     def validate_xml_with_xmllint(self, xml_file):
@@ -219,12 +239,6 @@ class PackageXmlValidator:
                 xml_file,
             )
 
-            # Write back to file if not in check-only mode
-            if not self.xml_valid and not self.check_only:
-                tree.write(
-                    xml_file, encoding="utf-8", xml_declaration=True, pretty_print=True
-                )
-
             # Check rosdeps if enabled
             if self.check_rosdeps:
                 rosdeps = self.formatter.retrieve_all_dependencies(root)
@@ -248,8 +262,17 @@ class PackageXmlValidator:
                     build_deps,
                     test_deps,
                     xml_file,
+                    root,
                 )
-                self.encountered_unresolvable_error |= not valid
+                if not self.auto_fill_missing_deps:
+                    self.encountered_unresolvable_error |= not valid
+
+            # Write back to file if not in check-only mode
+            if not self.xml_valid and not self.check_only:
+                tree.write(
+                    xml_file, encoding="utf-8", xml_declaration=True, pretty_print=True
+                )
+
             self.all_valid &= self.xml_valid
         # Final result messages
         if not self.all_valid and self.check_only:
@@ -316,6 +339,12 @@ def main():
         help="Check if all CMake dependencies are in package.xml.",
     )
 
+    parser.add_argument(
+        "--auto-fill-missing-deps",
+        action="store_true",
+        help="Automatically fill missing dependencies in package.xml [--compare-with-cmake must be set].",
+    )
+
     args = parser.parse_args()
 
     formatter = PackageXmlValidator(
@@ -324,6 +353,8 @@ def main():
         check_with_xmllint=args.check_with_xmllint,
         check_rosdeps=not args.skip_rosdep_key_validation,
         compare_with_cmake=args.compare_with_cmake,
+        auto_fill_missing_deps=args.auto_fill_missing_deps,
+        path=args.file if args.file else args.src[0],
     )
 
     if args.file:
