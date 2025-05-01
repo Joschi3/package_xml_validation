@@ -4,4 +4,4 @@
     entry: package-xml-validator
     language: python
     files: ^.*package\.xml$
-    args: [--compare-with-cmake]
+    args: [--compare-with-cmake --auto-fill-missing-deps]
