@@ -12,6 +12,7 @@ Validates and formats `package.xml` files to enforce consistency and ROS 2 schem
 - Leaves comments and indentation **unchanged**
 - verifies that all rodsdep keys exist (optional)
 - compares build dependencies and test dependencies with dependencies in the CMakeLists.txt (optional)
+- automatically inserts missing package xml dependencies from the CMakeList as `<depend>` or `<build_depend>` (optional)
 
 
 #### Example: Enforced Grouping of the dependencies
@@ -49,7 +50,8 @@ options:
   --verbose                     Enable verbose output.
   --check-with-xmllint          Recheck XML schema using xmllint.
   --skip-rosdep-key-validation  Check if rosdeps are valid.
-  --compare-with-cmake  Check if all CMake dependencies are in package.xml.
+  --compare-with-cmake          Check if all CMake dependencies are in package.xml.
+  --auto-fill-missing-deps      Automatically fill missing dependencies in package.xml. Note: --compare-with-cmake must be set.
 ```
 Example with verbose logging:
 ```
