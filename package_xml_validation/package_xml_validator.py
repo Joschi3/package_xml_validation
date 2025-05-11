@@ -354,6 +354,13 @@ def main():
     # if file not given and src is empty, assume current directory
     if not args.file and not args.src:
         args.src = [os.getcwd()]
+        
+    # if env var ROS_DISTRO not avilable, force skip rosdep key validation
+    if not args.skip_rosdep_key_validation and "ROS_DISTRO" not in os.environ:
+        args.skip_rosdep_key_validation = True
+        print(
+            "ROS_DISTRO environment variable not set. Skipping rosdep key validation."
+        )
 
     formatter = PackageXmlValidator(
         check_only=args.check_only,
