@@ -100,15 +100,17 @@ class PackageXmlValidator:
             for dep in build_deps_cmake
             if dep not in unresolvable and dep not in build_deps
         ]
+        separator = "\n\t\t"
         if missing_deps:
             valid_xml = False
+            deps = separator.join(missing_deps)
             if self.check_only or not self.auto_fill_missing_deps:
                 self.logger.error(
-                    f"Missing dependencies in {pkg_name}/package.xml compared to {pkg_name}/CMakeList.txt: \n\t\t{'\n\t\t'.join(missing_deps)}"
+                    f"Missing dependencies in {pkg_name}/package.xml compared to {pkg_name}/CMakeList.txt: {separator}{deps}"
                 )
             else:
                 self.logger.warning(
-                    f"Auto-filling missing dependencies in {pkg_name}/package.xml: \n\t\t{'\n\t\t'.join(missing_deps)}"
+                    f"Auto-filling missing dependencies in {pkg_name}/package.xml: {separator}{deps}"
                 )
                 self.formatter.add_dependencies(root, missing_deps, "depend")
         unresolvable = self.rosdep_validator.check_rosdeps_and_local_pkgs(
@@ -122,13 +124,14 @@ class PackageXmlValidator:
         ]
         if missing_deps:
             valid_xml = False
+            deps = separator.join(missing_deps)
             if self.check_only or not self.auto_fill_missing_deps:
                 self.logger.error(
-                    f"Missing test dependencies in {pkg_name}/package.xml compared to {pkg_name}/CMakeList.txt: \n\t\t{'\n\t\t'.join(missing_deps)}"
+                    f"Missing test dependencies in {pkg_name}/package.xml compared to {pkg_name}/CMakeList.txt: {separator}{deps}"
                 )
             else:
                 self.logger.warning(
-                    f"Auto-filling missing test dependencies in {pkg_name}/package.xml: \n\t\t{'\n\t\t'.join(missing_deps)}"
+                    f"Auto-filling missing test dependencies in {pkg_name}/package.xml: {separator}{deps}"
                 )
                 self.formatter.add_dependencies(root, missing_deps, "test_depend")
         return valid_xml
@@ -144,8 +147,9 @@ class PackageXmlValidator:
             )
             if result.returncode != 0:
                 self.logger.error(
-                    f"XML validation error in {xml_file}:\n{result.stderr}"
+                    f"XML validation error in {xml_file}:"
                 )
+                self.logger.error(result.stderr)
                 return False
             return True
         except Exception as e:
