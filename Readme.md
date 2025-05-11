@@ -112,7 +112,7 @@ pre-commit run --all-files
 If you're running in CI and want to **fail on violations without modifying files**, use:
 
 ```bash
-package-xml-formatter --check-only --compare-with-cmake .
+package-xml-validator --check-only --compare-with-cmake .
 ```
 
 This will:

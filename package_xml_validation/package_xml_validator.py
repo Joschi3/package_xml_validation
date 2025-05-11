@@ -346,6 +346,10 @@ def main():
     )
 
     args = parser.parse_args()
+    
+    # if file not given and src is empty, assume current directory
+    if not args.file and not args.src:
+        args.src = [os.getcwd()]
 
     formatter = PackageXmlValidator(
         check_only=args.check_only,
