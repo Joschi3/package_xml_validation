@@ -361,6 +361,20 @@ def main():
         print(
             "ROS_DISTRO environment variable not set. Skipping rosdep key validation."
         )
+    
+    # if --skip-rosdep-key-validation is set -> compare with cmake and auto-fill missing deps are not possible
+    if args.skip_rosdep_key_validation and args.compare_with_cmake:
+        print(
+            "Cannot use --compare-with-cmake with --skip-rosdep-key-validation."
+        )
+        args.compare_with_cmake = False
+    
+    # --auto-fill-missing-deps is only possible with --compare-with-cmake
+    if not args.compare_with_cmake and args.auto_fill_missing_deps:
+        print(
+            "Cannot use --auto-fill-missing-deps without --compare-with-cmake."
+        )
+        args.auto_fill_missing_deps = False
 
     formatter = PackageXmlValidator(
         check_only=args.check_only,
