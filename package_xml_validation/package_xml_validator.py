@@ -59,10 +59,16 @@ class PackageXmlValidator:
         for path in paths:
             if os.path.isfile(path) and os.path.basename(path) == "package.xml":
                 package_xml_files.append(path)
+            elif os.path.isfile(path) and os.path.basename(path) == "CMakeLists.txt":
+                package_xml_files.append(
+                    os.path.join(os.path.dirname(path), "package.xml")
+                )
             elif os.path.isdir(path):
                 for root, _, files in os.walk(path):
                     if "package.xml" in files:
                         package_xml_files.append(os.path.join(root, "package.xml"))
+        # Filter out duplicates
+        package_xml_files = list(set(package_xml_files))
         return package_xml_files
 
     def check_for_rosdeps(self, rosdeps: List[str], xml_file: str):

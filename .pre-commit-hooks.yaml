@@ -3,5 +3,5 @@
     description: Verify the package xml schema and ordering of dependencies
     entry: package-xml-validator
     language: python
-    files: ^.*package\.xml$
+    files: ^.*package\.xml$|^.*CMakeLists\.txt$
     args: [--compare-with-cmake, --auto-fill-missing-deps]
