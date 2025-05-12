@@ -23,7 +23,6 @@ class RosdepValidator:
         )
         self.local_pkgs = []
         if pkg_path:
-            print(f"Checking local packages in {pkg_path}")
             self.local_pkgs = get_pkgs_in_wrs(pkg_path)
 
     def check_rosdeps(self, dependencies) -> list[str]:
