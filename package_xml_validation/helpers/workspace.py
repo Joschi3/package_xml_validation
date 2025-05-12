@@ -15,6 +15,7 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Dict, List
+import os
 
 
 def find_package_dir(path: Path) -> Path:
@@ -113,11 +114,16 @@ def get_pkgs_in_wrs(path: Path) -> List[str]:
     try:
         pkg_dir = find_package_dir(path)
         ws_root = find_workspace_root(pkg_dir)
-
-        pkgs = pkg_iterator(ws_root / "src")
+        src_dir = ws_root / "src"
     except Exception as e:
         print(f"Exception extracting local pkgs: {e}")
-        return []
+        if pkg_dir and os.path.exists(pkg_dir.absolute()):
+            print(f"Attempting to extract local pkgs from {pkg_dir}")
+            src_dir = pkg_dir.parent
+        else:
+            print(f"Unable to extract local pkgs")
+            return []
+    pkgs = pkg_iterator(src_dir)
     return sorted(pkgs)
 
 
