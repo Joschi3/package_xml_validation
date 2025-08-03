@@ -3,16 +3,22 @@
 Validates and formats `package.xml` files to enforce consistency and ROS 2 schema compliance.
 
 ### ✅ What it does:
-- Validates against [package_format3.xsd](http://download.ros.org/schema/package_format3.xsd)
-- Corrects erros such as
-  - wrong order of xml elements
-- Ensures dependencies are:
+- XML Schema Validation & Correction
+  - Validates against [package_format3.xsd](http://download.ros.org/schema/package_format3.xsd)
+  - Fixes ordering errors, formatting errors, ...
+- Dependency Grouping & Sorting
   - Grouped by type (e.g. `build_depend`, `test_depend`)
   - Sorted alphabetically within each group
-- Leaves comments and indentation **unchanged**
-- verifies that all rodsdep keys exist (optional)
-- compares build dependencies and test dependencies with dependencies in the CMakeLists.txt (optional)
-- automatically inserts missing package xml dependencies from the CMakeList as `<depend>` or `<build_depend>` (optional)
+- Non-Destructive Edits
+  - Leaves comments and indentation **unchanged**
+- Launch-File Dependency Validation
+  - Scans Python (.py), YAML (.yaml/.yml), and XML (.xml) launch files for package references
+  - validates and corrects that all referenced pkgs are declared in the package xml (as `<exec_depend>` or `<depend>`)
+- Rosdep Key Checking
+  - verifies that all declared pkgs exist as rodsdep key (optional)
+- CMakeFile Comparison and Synchronization
+  - compares build dependencies and test dependencies with dependencies in the CMakeLists.txt (optional)
+  - automatically inserts missing package xml dependencies from the CMakeList as `<depend>` or `<build_depend>` (optional)
 
 
 #### Example: Enforced Grouping of the dependencies
@@ -57,14 +63,15 @@ Example with verbose logging:
 ```
 package-xml-validator ~/hector/src/hector_gamepad_manager/hector_gamepad_plugin_interface --check-only --compare-with-cmake --verbose
 Processing hector_gamepad_plugin_interface...
-✅ [1/8] Check for invalid tags passed.
-✅ [2/8] Check for empty lines passed.
-✅ [3/8] Check for duplicate elements passed.
-✅ [4/8] Check element occurrences passed.
-✅ [5/8] Check element order passed.
-✅ [6/8] Check dependency order passed.
-✅ [7/8] Check ROS dependencies passed.
-✅ [8/8] Check CMake dependencies passed.
+✅ [1/9] Check for invalid tags passed.
+✅ [2/9] Check for empty lines passed.
+✅ [3/9] Check for duplicate elements passed.
+✅ [4/9] Check element occurrences passed.
+✅ [5/9] Check element order passed.
+✅ [6/9] Check dependency order passed.
+✅ [7/9] Check launch dependencies passed.
+✅ [8/9] Check ROS dependencies passed.
+✅ [9/9] Check CMake dependencies passed.
 🎉 All `package.xml` files are valid and nicely formatted. 🚀
 ```
 
