@@ -16,6 +16,11 @@ class TestFindLaunchDependencies(unittest.TestCase):
             "ros_gz_sim",
             "ros_gz_bridge",
         ],
+        "python_gazebo_launch.py": [
+            "simulation_scenario_robocup_gazebo",
+            "ros_gz_sim",
+            "ros_gz_bridge",
+        ],
     }
 
     # Directory where example launch files live
