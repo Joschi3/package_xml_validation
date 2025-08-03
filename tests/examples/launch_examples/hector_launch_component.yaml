@@ -1,0 +1,5 @@
+description: Announcer for Athena Multi Robot
+provides: announcement
+launch:
+  package: athena_announcer
+  executable: athena_announcer

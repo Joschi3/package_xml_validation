@@ -55,7 +55,7 @@ def find_package_dir(path: Path) -> Path:
 
     raise ValueError(
         f"No *package.xml* found relative to '{path}'. Is it really part of a "
-        "ROS 2 workspace?"
+        "ROS 2 workspace?"
     )
 
 
@@ -78,7 +78,7 @@ def find_workspace_root(start: Path) -> Path:
         here = here.parent
 
     raise ValueError(
-        f"Could not locate a ROS 2 workspace root above {start}. "
+        f"Could not locate a ROS 2 workspace root above {start}. "
         "Does the path actually reside in a <ws>/src/<pkg> hierarchy?"
     )
 

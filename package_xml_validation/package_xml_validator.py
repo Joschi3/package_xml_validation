@@ -166,14 +166,24 @@ class PackageXmlValidator:
         self, root, package_xml_file: str, package_name: str, exec_deps: List[str]
     ):
         """Validate launch dependencies in the package.xml file."""
-        launch_dir = os.path.join(os.path.dirname(package_xml_file), "launch")
-        if not os.path.exists(launch_dir):
+
+        def extract_launch_deps(folder_names: List[str]) -> List[str]:
+            """Extract launch dependencies from the folder names."""
+            launch_deps = []
+            for folder in folder_names:
+                launch_dir = os.path.join(os.path.dirname(package_xml_file), folder)
+                if os.path.isdir(launch_dir):
+                    launch_deps.extend(scan_files(launch_dir))
+            return launch_deps
+
+        launch_folder_names = ["launch", "components"]
+        launch_deps = extract_launch_deps(launch_folder_names)
+        if not launch_deps:
             self.logger.debug(
-                f"No launch directory found for {package_xml_file}. Skipping launch dependency validation."
+                f"No launch dependencies found in {package_name}/package.xml."
             )
             return True
 
-        launch_deps = scan_files(launch_dir)
         missing_deps = [
             dep for dep in launch_deps if dep not in exec_deps and dep != package_name
         ]

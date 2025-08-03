@@ -13,7 +13,7 @@ import argparse
 
 REGEX_EXPR = [
     # YAML-style:  pkg: <pkg_name>
-    r"pkg\s*:\s*['\"]?([A-Za-z0-9_]+)['\"]?",
+    r"(?:package|pkg)\s*:\s*['\"]?([A-Za-z0-9_]+)['\"]?",
     # Python/XML attribute:  package = <pkg_name>  or  pkg = <pkg_name>
     r"(?:package|pkg)\s*=\s*['\"]?([A-Za-z0-9_]+)['\"]?",
     # get_package_share_directory('foo')
@@ -28,12 +28,14 @@ REGEX_EXPR = [
 COMPILED = [re.compile(rx) for rx in REGEX_EXPR]
 
 
-def scan_file(path, found):
+def scan_file(path, found: set[str]):
     """Apply every regex to the file and add matches to `found`."""
     try:
-        text = open(path, encoding="utf-8").read()
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
     except (UnicodeDecodeError, OSError):
         return
+
     for rx in COMPILED:
         for m in rx.finditer(text):
             found.add(m.group(1))
@@ -48,7 +50,8 @@ def scan_files(launch_dir: str) -> list[str]:
 
     for root, _, files in os.walk(launch_dir):
         for fn in files:
-            scan_file(os.path.join(root, fn), pkgs)
+            if fn.endswith((".py", ".xml", ".yaml", ".launch", ".yml")):
+                scan_file(os.path.join(root, fn), pkgs)
     return list(pkgs)
 
 
