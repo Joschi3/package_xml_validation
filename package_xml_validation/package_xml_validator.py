@@ -8,11 +8,13 @@ try:
     from .helpers.rosdep_validator import RosdepValidator
     from .helpers.pkg_xml_formatter import PackageXmlFormatter
     from .helpers.cmake_parsers import read_deps_from_cmake_file
+    from .helpers.find_launch_dependencies import scan_files
 except ImportError:
     from helpers.logger import get_logger
     from helpers.rosdep_validator import RosdepValidator
     from helpers.pkg_xml_formatter import PackageXmlFormatter
     from helpers.cmake_parsers import read_deps_from_cmake_file
+    from helpers.find_launch_dependencies import scan_files
 import subprocess
 
 
@@ -44,7 +46,7 @@ class PackageXmlValidator:
         self.encountered_unresolvable_error = False
 
         # calculate num checks
-        self.num_checks = 6
+        self.num_checks = 7
         self.check_count = 1
         if self.check_rosdeps:
             self.num_checks += 1
@@ -161,6 +163,38 @@ class PackageXmlValidator:
         except Exception as e:
             self.logger.error(f"Error running xmllint on {xml_file}: {e}")
             return False
+        
+    def validate_launch_dependencies(self, root, package_xml_file: str, package_name:str, exec_deps: List[str]):
+        """Validate launch dependencies in the package.xml file."""
+        launch_dir = os.path.join(
+            os.path.dirname(package_xml_file), "launch"
+        )
+        if not os.path.exists(launch_dir):
+            self.logger.debug(
+                f"No launch directory found for {package_xml_file}. Skipping launch dependency validation."
+            )
+            return True
+        
+        launch_deps = scan_files(launch_dir)
+        missing_deps = [
+            dep for dep in launch_deps if dep not in exec_deps and dep != package_name
+        ]
+        if missing_deps:
+            self.logger.warning(
+                f"Missing launch dependencies in {package_name}/package.xml: \n\t - {'\n\t - '.join(missing_deps)}"
+            )
+        
+            if self.check_only:
+                return False
+            else:
+                self.logger.info(
+                    f"Auto-filling {len(missing_deps)} missing launch dependencies in {package_name}/package.xml."
+                )
+                self.formatter.add_dependencies(
+                    root, missing_deps, "exec_depend"
+                )
+                return False
+        return True
 
     def log_check_result(self, check_name, result):
         """Log the result of a check."""
@@ -247,6 +281,15 @@ class PackageXmlValidator:
                 self.formatter.check_dependency_order,
                 root,
                 xml_file,
+            )
+            
+            self.perform_check(
+                "Check launch dependencies",
+                self.validate_launch_dependencies,
+                root,
+                xml_file,
+                self.formatter.get_package_name(root),
+                self.formatter.retrieve_exec_dependencies(root),
             )
 
             # Check rosdeps if enabled

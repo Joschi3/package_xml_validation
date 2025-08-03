@@ -370,6 +370,22 @@ class PackageXmlFormatter:
             if isinstance(elem.tag, str) and elem.tag in test_deps and elem.text:
                 test_dependencies.append(elem.text.strip())
         return test_dependencies
+    
+    def retrieve_exec_dependencies(self, root):
+        """Retrieve all exec dependencies from the XML file."""
+        exec_dependencies = []
+        exec_deps = ["exec_depend", "depend"]
+        for elem in root:
+            if isinstance(elem.tag, str) and elem.tag in exec_deps and elem.text:
+                exec_dependencies.append(elem.text.strip())
+        return exec_dependencies
+
+    def get_package_name(self, root) -> str | None:
+        """Retrieve the package name from the XML file."""
+        name_elem = root.find("name")
+        if name_elem is not None and name_elem.text:
+            return name_elem.text.strip()
+        return None
 
     def add_dependencies(self, root, dependencies, dep_type):
         """Add dependencies to the XML file."""
