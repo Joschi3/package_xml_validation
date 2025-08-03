@@ -27,15 +27,17 @@ REGEX_EXPR = [
 # Compile once for speed
 COMPILED = [re.compile(rx) for rx in REGEX_EXPR]
 
+
 def scan_file(path, found):
     """Apply every regex to the file and add matches to `found`."""
     try:
-        text = open(path, encoding='utf-8').read()
+        text = open(path, encoding="utf-8").read()
     except (UnicodeDecodeError, OSError):
         return
     for rx in COMPILED:
         for m in rx.finditer(text):
             found.add(m.group(1))
+
 
 def scan_files(launch_dir: str) -> list[str]:
     if not os.path.isdir(launch_dir):
@@ -54,13 +56,13 @@ def parse_args():
     p = argparse.ArgumentParser(
         description="Extract referenced ROS 2 package names from launch files via regex."
     )
-    p.add_argument("launch_dir",
-                   help="Path to your package's launch/ directory")
+    p.add_argument("launch_dir", help="Path to your package's launch/ directory")
     args = p.parse_args()
     pkgs = scan_files(args.launch_dir)
     print("Found packages:")
     for pkg in sorted(pkgs):
         print(f"  - {pkg}")
+
 
 if __name__ == "__main__":
     parse_args()
