@@ -371,6 +371,22 @@ class PackageXmlFormatter:
                 test_dependencies.append(elem.text.strip())
         return test_dependencies
 
+    def retrieve_exec_dependencies(self, root):
+        """Retrieve all exec dependencies from the XML file."""
+        exec_dependencies = []
+        exec_deps = ["exec_depend", "depend"]
+        for elem in root:
+            if isinstance(elem.tag, str) and elem.tag in exec_deps and elem.text:
+                exec_dependencies.append(elem.text.strip())
+        return exec_dependencies
+
+    def get_package_name(self, root) -> str | None:
+        """Retrieve the package name from the XML file."""
+        name_elem = root.find("name")
+        if name_elem is not None and name_elem.text:
+            return name_elem.text.strip()
+        return None
+
     def add_dependencies(self, root, dependencies, dep_type):
         """Add dependencies to the XML file."""
         dep_types = [dep[0] for dep in ELEMENTS if "depend" in dep[0]]
@@ -401,15 +417,12 @@ class PackageXmlFormatter:
                 insert_position = 0
                 first_of_group = None
                 for i, elm in enumerate(root):
-                    if (
-                        isinstance(elm.tag, str)
-                        and elm.tag == dep_type
-                    ):
+                    if isinstance(elm.tag, str) and elm.tag == dep_type:
                         if first_of_group is None:
                             first_of_group = i
                             insert_position = i
                         if elm.text < new_elem.text:
-                            insert_position = i+1
+                            insert_position = i + 1
             root.insert(insert_position, new_elem)
             # adapt empty lines -> in case element prior ends with empty line move it to the new element
             if insert_position > 0 and insert_position > first_of_group:
@@ -422,7 +435,6 @@ class PackageXmlFormatter:
                 next_element = root[insert_position + 1]
                 if next_element.tag != new_elem.tag:
                     new_elem.tail = "\n\n" + indendantion
-                
 
     def check_and_format_files(self, package_xml_files) -> Tuple[bool, bool]:
         """Check and format package.xml files if self.check_only is False.
@@ -463,7 +475,9 @@ class PackageXmlFormatter:
                 all_valid = False
                 self.logger.debug(f"❌ [3/6] Duplicate elements found in {xml_file}.")
             else:
-                self.logger.debug(f"✅ [3/6] No duplicate elements found in {xml_file}.")
+                self.logger.debug(
+                    f"✅ [3/6] No duplicate elements found in {xml_file}."
+                )
 
             if not self.check_element_occurrences(root, xml_file):
                 all_valid = False
@@ -487,7 +501,9 @@ class PackageXmlFormatter:
                     f"❌ [6/6] Dependency order in {xml_file} is incorrect."
                 )
             else:
-                self.logger.debug(f"✅ [6/6] Dependency order in {xml_file} is correct.")
+                self.logger.debug(
+                    f"✅ [6/6] Dependency order in {xml_file} is correct."
+                )
 
             if not all_valid and not self.check_only:
                 # Write back to file

@@ -8,11 +8,13 @@ try:
     from .helpers.rosdep_validator import RosdepValidator
     from .helpers.pkg_xml_formatter import PackageXmlFormatter
     from .helpers.cmake_parsers import read_deps_from_cmake_file
+    from .helpers.find_launch_dependencies import scan_files
 except ImportError:
     from helpers.logger import get_logger
     from helpers.rosdep_validator import RosdepValidator
     from helpers.pkg_xml_formatter import PackageXmlFormatter
     from helpers.cmake_parsers import read_deps_from_cmake_file
+    from helpers.find_launch_dependencies import scan_files
 import subprocess
 
 
@@ -44,7 +46,7 @@ class PackageXmlValidator:
         self.encountered_unresolvable_error = False
 
         # calculate num checks
-        self.num_checks = 6
+        self.num_checks = 7
         self.check_count = 1
         if self.check_rosdeps:
             self.num_checks += 1
@@ -152,15 +154,53 @@ class PackageXmlValidator:
                 text=True,
             )
             if result.returncode != 0:
-                self.logger.error(
-                    f"XML validation error in {xml_file}:"
-                )
+                self.logger.error(f"XML validation error in {xml_file}:")
                 self.logger.error(result.stderr)
                 return False
             return True
         except Exception as e:
             self.logger.error(f"Error running xmllint on {xml_file}: {e}")
             return False
+
+    def validate_launch_dependencies(
+        self, root, package_xml_file: str, package_name: str, exec_deps: List[str]
+    ):
+        """Validate launch dependencies in the package.xml file."""
+
+        def extract_launch_deps(folder_names: List[str]) -> List[str]:
+            """Extract launch dependencies from the folder names."""
+            launch_deps = []
+            for folder in folder_names:
+                launch_dir = os.path.join(os.path.dirname(package_xml_file), folder)
+                if os.path.isdir(launch_dir):
+                    launch_deps.extend(scan_files(launch_dir))
+            return launch_deps
+
+        launch_folder_names = ["launch", "components"]
+        launch_deps = extract_launch_deps(launch_folder_names)
+        if not launch_deps:
+            self.logger.debug(
+                f"No launch dependencies found in {package_name}/package.xml."
+            )
+            return True
+
+        missing_deps = [
+            dep for dep in launch_deps if dep not in exec_deps and dep != package_name
+        ]
+        if missing_deps:
+            self.logger.warning(
+                f"Missing launch dependencies in {package_name}/package.xml: \n\t - {'\n\t - '.join(missing_deps)}"
+            )
+
+            if self.check_only:
+                return False
+            else:
+                self.logger.info(
+                    f"Auto-filling {len(missing_deps)} missing launch dependencies in {package_name}/package.xml."
+                )
+                self.formatter.add_dependencies(root, missing_deps, "exec_depend")
+                return False
+        return True
 
     def log_check_result(self, check_name, result):
         """Log the result of a check."""
@@ -247,6 +287,15 @@ class PackageXmlValidator:
                 self.formatter.check_dependency_order,
                 root,
                 xml_file,
+            )
+
+            self.perform_check(
+                "Check launch dependencies",
+                self.validate_launch_dependencies,
+                root,
+                xml_file,
+                self.formatter.get_package_name(root),
+                self.formatter.retrieve_exec_dependencies(root),
             )
 
             # Check rosdeps if enabled
@@ -356,30 +405,26 @@ def main():
     )
 
     args = parser.parse_args()
-    
+
     # if file not given and src is empty, assume current directory
     if not args.file and not args.src:
         args.src = [os.getcwd()]
-        
+
     # if env var ROS_DISTRO not avilable, force skip rosdep key validation
     if not args.skip_rosdep_key_validation and "ROS_DISTRO" not in os.environ:
         args.skip_rosdep_key_validation = True
         print(
             "ROS_DISTRO environment variable not set. Skipping rosdep key validation."
         )
-    
+
     # if --skip-rosdep-key-validation is set -> compare with cmake and auto-fill missing deps are not possible
     if args.skip_rosdep_key_validation and args.compare_with_cmake:
-        print(
-            "Cannot use --compare-with-cmake with --skip-rosdep-key-validation."
-        )
+        print("Cannot use --compare-with-cmake with --skip-rosdep-key-validation.")
         args.compare_with_cmake = False
-    
+
     # --auto-fill-missing-deps is only possible with --compare-with-cmake
     if not args.compare_with_cmake and args.auto_fill_missing_deps:
-        print(
-            "Cannot use --auto-fill-missing-deps without --compare-with-cmake."
-        )
+        print("Cannot use --auto-fill-missing-deps without --compare-with-cmake.")
         args.auto_fill_missing_deps = False
 
     formatter = PackageXmlValidator(
