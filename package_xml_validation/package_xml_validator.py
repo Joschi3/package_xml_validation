@@ -189,7 +189,7 @@ class PackageXmlValidator:
         ]
         if missing_deps:
             sep = "\n\t - "
-            self.logger.error(
+            self.logger.warning(
                 f"Missing launch dependencies in {package_name}/package.xml: {sep}{sep.join(missing_deps)}"
             )
 
