@@ -198,6 +198,18 @@ class PackageXmlValidator:
                 self.logger.info(
                     f"Auto-filling {len(missing_deps)} missing launch dependencies in {package_name}/package.xml."
                 )
+                # before adding dependencies make sure they are valid rosdeps
+                if self.check_rosdeps:
+                    invalid_deps = self.rosdep_validator.check_rosdeps_and_local_pkgs(
+                        missing_deps
+                    )
+                    valid_deps = [d for d in missing_deps if d not in invalid_deps]
+                    if invalid_deps:
+                        self.logger.error(
+                            f"Cannot auto-fill invalid launch dependencies: {', '.join(invalid_deps)}"
+                        )
+                        return False
+                    missing_deps = valid_deps
                 self.formatter.add_dependencies(root, missing_deps, "exec_depend")
                 return False
         return True

@@ -17,7 +17,7 @@ REGEX_EXPR = [
     # Hector launch component:  package: <pkg_name>
     r"package\s*:\s*['\"]?([A-Za-z0-9_]+)['\"]?",
     # Python Node call: Node(..., package='<pkg_name>', ...)
-    r"Node\s*\(\s*[^)]*?package\s*=\s*['\"]?([A-Za-z0-9_]+)['\"]?",
+    r"Node\s*\(\s*[^)]*?package\s*=\s*['\"]([A-Za-z0-9_]+)['\"]",
     # XML node tag: <node pkg="foo" ...>
     r"<node[^>]*?\bpkg\s*=\s*['\"]?([A-Za-z0-9_]+)['\"]?",
     # get_package_share_directory('foo')

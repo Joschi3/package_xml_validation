@@ -21,6 +21,8 @@ class TestFindLaunchDependencies(unittest.TestCase):
             "ros_gz_sim",
             "ros_gz_bridge",
         ],
+        "python_example_bad.launch.py": [],  # ["demo_nodes_cpp", "turtlesim"],
+        "yaml_example_bad.launch.yml": [],  # ["demo_nodes_cpp", "turtlesim"],
     }
 
     # Directory where example launch files live
