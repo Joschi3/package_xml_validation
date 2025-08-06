@@ -9,7 +9,6 @@ from launch_ros.substitutions import FindPackageShare
 def generate_launch_description():
     my_package = "demo_nodes_cpp"
     turtle_pkg = "turtlesim"
-    package = "something_else"  # Placeholder for the package name
     launch_dir = PathJoinSubstitution(
         [FindPackageShare(my_package), "launch", "topics"]
     )

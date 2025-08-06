@@ -313,7 +313,7 @@ class PackageXmlFormatter:
             return True
         if not found_empty_lines:
             return True
-        # elemts after last \n
+        # elements after last \n
         indendantion = root[0].tail[root[0].tail.rfind("\n") + 1 :]
         # correct the empty lines & missing newlines
         for elm in root:
@@ -347,7 +347,7 @@ class PackageXmlFormatter:
                 dependencies.append(elem.text.strip())
         return dependencies
 
-    def retrive_build_dependencies(self, root):
+    def retrieve_build_dependencies(self, root):
         """Retrieve all build dependencies from the XML file."""
         build_deps = [
             "buildtool_depend",

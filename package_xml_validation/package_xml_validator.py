@@ -188,8 +188,9 @@ class PackageXmlValidator:
             dep for dep in launch_deps if dep not in exec_deps and dep != package_name
         ]
         if missing_deps:
-            self.logger.warning(
-                f"Missing launch dependencies in {package_name}/package.xml: \n\t - {'\n\t - '.join(missing_deps)}"
+            sep = "\n\t - "
+            self.logger.error(
+                f"Missing launch dependencies in {package_name}/package.xml: {sep}{sep.join(missing_deps)}"
             )
 
             if self.check_only:
@@ -325,7 +326,7 @@ class PackageXmlValidator:
                 self.encountered_unresolvable_error |= not valid
             # Check for CMake dependencies if enabled
             if self.compare_with_cmake:
-                build_deps = self.formatter.retrive_build_dependencies(root)
+                build_deps = self.formatter.retrieve_build_dependencies(root)
                 test_deps = self.formatter.retrieve_test_dependencies(root)
                 valid = self.perform_check(
                     "Check CMake dependencies",
@@ -422,7 +423,7 @@ def main():
     if not args.file and not args.src:
         args.src = [os.getcwd()]
 
-    # if env var ROS_DISTRO not avilable, force skip rosdep key validation
+    # if env var ROS_DISTRO not available, force skip rosdep key validation
     if not args.skip_rosdep_key_validation and "ROS_DISTRO" not in os.environ:
         args.skip_rosdep_key_validation = True
         print(

@@ -43,7 +43,7 @@ class RosdepValidator:
                 )
                 if installer is None:
                     unresolvable.append(dep)
-            except:
+            except Exception:
                 unresolvable.append(dep)
 
         return unresolvable

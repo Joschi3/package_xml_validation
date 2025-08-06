@@ -41,7 +41,7 @@ def read_cmake_lines_with_parens_joined(raw_lines: List[str]) -> list[str]:
     return lines
 
 
-def resolve_for_eachs(raw_lines: List[str]) -> List[str]:
+def resolve_for_each(raw_lines: List[str]) -> List[str]:
     """Expands CMake's foreach() loops in a list of lines."""
     foreach_stack = []
 
@@ -144,7 +144,7 @@ def retrieve_cmake_dependencies(lines: List[str]) -> List[str]:
         # ---------- Parse endif lines ----------
         if endif_pattern.match(stripped):
             if if_stack:
-                popped = if_stack.pop()
+                if_stack.pop()
             # Recompute in_test_block
             in_test_block = any(item == "BUILD_TESTING" for item in if_stack)
             continue
@@ -187,7 +187,7 @@ def read_cmake_file(file_path: Path) -> List[str]:
         raw_lines = f.readlines()
     lines = remove_comments(raw_lines)
     lines = read_cmake_lines_with_parens_joined(lines)
-    lines = resolve_for_eachs(lines)
+    lines = resolve_for_each(lines)
     # for line in lines:
     #    print(line)
     return lines
