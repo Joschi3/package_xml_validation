@@ -1,18 +1,17 @@
 from launch import LaunchDescription
-from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch.substitutions import LaunchConfiguration
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import PathJoinSubstitution, TextSubstitution
-from launch_ros.substitutions import FindPackageShare, FindPackage
-from launch.actions import AppendEnvironmentVariable, SetEnvironmentVariable
+from launch_ros.substitutions import FindPackageShare
+from launch.actions import AppendEnvironmentVariable
 from ament_index_python.packages import get_package_share_directory
 from launch_ros.actions import Node, SetParameter
 import os
 
 
 def generate_launch_description():
-
     # Use simulation time
     set_use_sim_time = SetParameter(name="use_sim_time", value=True)
 

@@ -12,7 +12,6 @@ import argparse
 import sys
 import os
 from pathlib import Path
-import re
 from typing import List
 import xml.etree.ElementTree as ET
 from helpers.cmake_parsers import retrieve_cmake_dependencies

@@ -22,7 +22,7 @@ launch:
     name: "chatter_yaml_ns"
     default: "chatter/yaml/ns"
 - arg:
-    name: "pkg_name_demo"   
+    name: "pkg_name_demo"
     default: "$(var pkg_name_demo)"
 - arg:
     name: "pkg_name_turtle"

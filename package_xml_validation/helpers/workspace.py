@@ -8,6 +8,7 @@ $ python3 find_ros_ws_pkgs.py /abs/path/to/some_pkg    # prints package names
 $ python3 find_ros_ws_pkgs.py --full-paths .           # prints names + paths
 
 """
+
 from __future__ import annotations
 
 import argparse
@@ -43,7 +44,7 @@ def find_package_dir(path: Path) -> Path:
     pkg_xml_paths = [
         xml
         for xml in pkg_xml_paths
-        if not "build" in xml.parts and not "install" in xml.parts
+        if "build" not in xml.parts and "install" not in xml.parts
     ]
     for xml in pkg_xml_paths:
         return xml.parent  # first match wins
@@ -121,7 +122,7 @@ def get_pkgs_in_wrs(path: Path) -> List[str]:
             print(f"Attempting to extract local pkgs from {pkg_dir}")
             src_dir = pkg_dir.parent
         else:
-            print(f"Unable to extract local pkgs")
+            print("Unable to extract local pkgs")
             return []
     pkgs = pkg_iterator(src_dir)
     return sorted(pkgs)

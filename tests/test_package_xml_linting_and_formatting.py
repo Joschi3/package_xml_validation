@@ -242,7 +242,7 @@ class TestPackageXmlValidator(unittest.TestCase):
         Test the rosdep checking functionality.
         This is a placeholder for the actual implementation.
         """
-        # test if ros installed by testing whether the enivronment variable ROS_DISTRO is set
+        # test if ros installed by testing whether the environment variable ROS_DISTRO is set
         # if "ROS_DISTRO" not in os.environ:
         #    self.skipTest("ROS is not installed, skipping rosdep checking test.")
         # Example dependencies to check
@@ -315,7 +315,7 @@ class TestPackageXmlValidator(unittest.TestCase):
                 except ET.XMLSyntaxError as e:
                     self.fail(f"XML Syntax Error in {package_xml_file}: {e}")
                 formatter = PackageXmlFormatter()
-                xml_build_deps = formatter.retrive_build_dependencies(root)
+                xml_build_deps = formatter.retrieve_build_dependencies(root)
                 xml_test_deps = formatter.retrieve_test_dependencies(root)
                 # Compare the dependencies
                 for dep in main_deps:

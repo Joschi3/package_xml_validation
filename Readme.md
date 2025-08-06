@@ -127,8 +127,6 @@ This will:
 - Print any formatting/schema issues
 - check validity of rosdep keys
 - compare the depenedencies with the dependencies listed in the CMakeList.txt
-- Exit non-zero if any problems are found  
+- Exit non-zero if any problems are found
 → **No files will be modified**
 - if rosdep is not available in the CI environment use the `--skip-rosdep-key-validation` flag
-
-
