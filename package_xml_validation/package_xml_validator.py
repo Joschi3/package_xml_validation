@@ -176,44 +176,53 @@ class PackageXmlValidator:
                     launch_deps.extend(scan_files(launch_dir))
             return launch_deps
 
-        launch_folder_names = ["launch", "components"]
-        launch_deps = extract_launch_deps(launch_folder_names)
-        if not launch_deps:
-            self.logger.debug(
-                f"No launch dependencies found in {package_name}/package.xml."
-            )
+        def validate_launch_folders(launch_folder_names: List[str], depend_tag) -> bool:
+            launch_deps = extract_launch_deps(launch_folder_names)
+            if not launch_deps:
+                self.logger.debug(
+                    f"No launch dependencies found in {package_name}/package.xml."
+                )
+                return True
+
+            missing_deps = [
+                dep
+                for dep in launch_deps
+                if dep not in exec_deps and dep != package_name
+            ]
+            if missing_deps:
+                sep = "\n\t - "
+                self.logger.warning(
+                    f"Missing <{depend_tag}> dependencies in {package_name}/package.xml: {sep}{sep.join(missing_deps)}"
+                )
+
+                if self.check_only:
+                    return False
+                else:
+                    self.logger.info(
+                        f"Auto-filling {len(missing_deps)} missing <{depend_tag}> dependencies in {package_name}/package.xml."
+                    )
+                    # before adding dependencies make sure they are valid rosdeps
+                    if self.check_rosdeps:
+                        invalid_deps = (
+                            self.rosdep_validator.check_rosdeps_and_local_pkgs(
+                                missing_deps
+                            )
+                        )
+                        valid_deps = [d for d in missing_deps if d not in invalid_deps]
+                        if invalid_deps:
+                            self.logger.error(
+                                f"Cannot auto-fill invalid launch dependencies: {', '.join(invalid_deps)}"
+                            )
+                            return False
+                        missing_deps = valid_deps
+                    self.formatter.add_dependencies(root, missing_deps, depend_tag)
+                    return False
             return True
 
-        missing_deps = [
-            dep for dep in launch_deps if dep not in exec_deps and dep != package_name
-        ]
-        if missing_deps:
-            sep = "\n\t - "
-            self.logger.warning(
-                f"Missing launch dependencies in {package_name}/package.xml: {sep}{sep.join(missing_deps)}"
-            )
-
-            if self.check_only:
-                return False
-            else:
-                self.logger.info(
-                    f"Auto-filling {len(missing_deps)} missing launch dependencies in {package_name}/package.xml."
-                )
-                # before adding dependencies make sure they are valid rosdeps
-                if self.check_rosdeps:
-                    invalid_deps = self.rosdep_validator.check_rosdeps_and_local_pkgs(
-                        missing_deps
-                    )
-                    valid_deps = [d for d in missing_deps if d not in invalid_deps]
-                    if invalid_deps:
-                        self.logger.error(
-                            f"Cannot auto-fill invalid launch dependencies: {', '.join(invalid_deps)}"
-                        )
-                        return False
-                    missing_deps = valid_deps
-                self.formatter.add_dependencies(root, missing_deps, "exec_depend")
-                return False
-        return True
+        launch_folder_names = ["launch", "components"]
+        launch_deps_valid = validate_launch_folders(launch_folder_names, "exec_depend")
+        test_deps_valid = validate_launch_folders(["test"], "test_depend")
+        return launch_deps_valid and test_deps_valid
 
     def validate_ament_exports(self, root, xml_file: str):
         """Validate ament_export tags in the package.xml file.
