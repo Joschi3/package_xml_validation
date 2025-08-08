@@ -19,6 +19,8 @@ Validates and formats `package.xml` files to enforce consistency and ROS 2 schem
 - CMakeFile Comparison and Synchronization
   - compares build dependencies and test dependencies with dependencies in the CMakeLists.txt (optional)
   - automatically inserts missing package xml dependencies from the CMakeList as `<depend>` or `<build_depend>` (optional)
+- Export Build Type Validation
+  - makes sure the package.xml includes the appropriate build_type export (e.g. ament_cmake, ament_python)
 
 
 #### Example: Enforced Grouping of the dependencies
@@ -35,6 +37,9 @@ Validates and formats `package.xml` files to enforce consistency and ROS 2 schem
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
   ...
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
 </package>
 ```
 ---
@@ -63,15 +68,16 @@ Example with verbose logging:
 ```
 package-xml-validator ~/hector/src/hector_gamepad_manager/hector_gamepad_plugin_interface --check-only --compare-with-cmake --verbose
 Processing hector_gamepad_plugin_interface...
-✅ [1/9] Check for invalid tags passed.
-✅ [2/9] Check for empty lines passed.
-✅ [3/9] Check for duplicate elements passed.
-✅ [4/9] Check element occurrences passed.
-✅ [5/9] Check element order passed.
-✅ [6/9] Check dependency order passed.
-✅ [7/9] Check launch dependencies passed.
-✅ [8/9] Check ROS dependencies passed.
-✅ [9/9] Check CMake dependencies passed.
+✅ [1/10] Check for invalid tags passed.
+✅ [2/10] Check for empty lines passed.
+✅ [3/10] Check for duplicate elements passed.
+✅ [4/10] Check element occurrences passed.
+✅ [5/10] Check element order passed.
+✅ [6/10] Check dependency order passed.
+✅ [7/10] Check launch dependencies passed.
+✅ [8/10] Check build type export passed.
+✅ [8/10] Check ROS dependencies passed.
+✅ [9/10] Check CMake dependencies passed.
 🎉 All `package.xml` files are valid and nicely formatted. 🚀
 ```
 
