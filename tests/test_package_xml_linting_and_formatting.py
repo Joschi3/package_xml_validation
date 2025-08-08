@@ -64,8 +64,7 @@ class TestPackageXmlValidator(unittest.TestCase):
 
     def tearDown(self):
         """Clean up the temporary directory after each test."""
-        # shutil.rmtree(self.test_dir)
-        pass
+        shutil.rmtree(self.test_dir)
 
     def _is_fail_file(self, filename: str) -> bool:
         """

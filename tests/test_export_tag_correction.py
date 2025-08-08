@@ -126,4 +126,6 @@ class TestPackageXmlValidator(unittest.TestCase):
                 )
 
 
-unittest.main()
+if __name__ == "__main__":
+    # Run the tests
+    unittest.main()
