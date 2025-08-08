@@ -43,6 +43,7 @@ class TestPackageXmlValidator(unittest.TestCase):
             check_only=False,
             verbose=True,
             auto_fill_missing_deps=True,
+            check_rosdeps=False,
         )
 
     def setUp(self):
@@ -108,12 +109,16 @@ class TestPackageXmlValidator(unittest.TestCase):
                 if not pkg == "pkg_correct":
                     self.assertFalse(
                         valid,
-                        f"XML file {xml_file} is expected to be invalid but was valid.",
+                        "XML file "
+                        + xml_file
+                        + " is expected to be invalid but was valid.",
                     )
                 else:
                     self.assertTrue(
                         valid,
-                        f"XML file {xml_file} is expected to be valid but was invalid.",
+                        "XML file "
+                        + xml_file
+                        + " is expected to be valid but was invalid.",
                     )
                 self.assertTrue(
                     self._compare_xml_files(xml_file, correct_xml),
