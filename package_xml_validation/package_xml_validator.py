@@ -163,7 +163,12 @@ class PackageXmlValidator:
             return False
 
     def validate_launch_dependencies(
-        self, root, package_xml_file: str, package_name: str, exec_deps: List[str]
+        self,
+        root,
+        package_xml_file: str,
+        package_name: str,
+        exec_deps: List[str],
+        test_deps: List[str] = [],
     ):
         """Validate launch dependencies in the package.xml file."""
 
@@ -176,7 +181,9 @@ class PackageXmlValidator:
                     launch_deps.extend(scan_files(launch_dir))
             return launch_deps
 
-        def validate_launch_folders(launch_folder_names: List[str], depend_tag) -> bool:
+        def validate_launch_folders(
+            launch_folder_names: List[str], xml_deps: List[str], depend_tag: str
+        ) -> bool:
             launch_deps = extract_launch_deps(launch_folder_names)
             if not launch_deps:
                 self.logger.debug(
@@ -187,7 +194,7 @@ class PackageXmlValidator:
             missing_deps = [
                 dep
                 for dep in launch_deps
-                if dep not in exec_deps and dep != package_name
+                if dep not in xml_deps and dep != package_name
             ]
             if missing_deps:
                 sep = "\n\t - "
@@ -220,8 +227,10 @@ class PackageXmlValidator:
             return True
 
         launch_folder_names = ["launch", "components"]
-        launch_deps_valid = validate_launch_folders(launch_folder_names, "exec_depend")
-        test_deps_valid = validate_launch_folders(["test"], "test_depend")
+        launch_deps_valid = validate_launch_folders(
+            launch_folder_names, exec_deps, "exec_depend"
+        )
+        test_deps_valid = validate_launch_folders(["test"], test_deps, "test_depend")
         return launch_deps_valid and test_deps_valid
 
     def validate_ament_exports(self, root, xml_file: str):
@@ -368,6 +377,7 @@ class PackageXmlValidator:
                 xml_file,
                 self.formatter.get_package_name(root),
                 self.formatter.retrieve_exec_dependencies(root),
+                self.formatter.retrieve_test_dependencies(root),
             )
 
             self.perform_check(

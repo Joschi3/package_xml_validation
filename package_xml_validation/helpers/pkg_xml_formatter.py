@@ -363,7 +363,7 @@ class PackageXmlFormatter:
     def retrieve_test_dependencies(self, root):
         """Retrieve all test dependencies from the XML file."""
         test_dependencies = []
-        test_deps = ["test_depend"]
+        test_deps = ["test_depend", "depend"]
         for elem in root:
             if isinstance(elem.tag, str) and elem.tag in test_deps and elem.text:
                 test_dependencies.append(elem.text.strip())
