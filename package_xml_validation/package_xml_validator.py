@@ -46,7 +46,7 @@ class PackageXmlValidator:
         self.encountered_unresolvable_error = False
 
         # calculate num checks
-        self.num_checks = 7
+        self.num_checks = 8
         self.check_count = 1
         if self.check_rosdeps:
             self.num_checks += 1
@@ -215,6 +215,56 @@ class PackageXmlValidator:
                 return False
         return True
 
+    def validate_ament_exports(self, root, xml_file: str):
+        """Validate ament_export tags in the package.xml file.
+        if a CMakeLists.txt file exists:  <export><build_type>ament_cmake</build_type></export> must be present
+        if a setup.py file exists: <export><build_type>ament_python</build_type></export> must be present
+        """
+        cmake_file = os.path.join(os.path.dirname(xml_file), "CMakeLists.txt")
+        setup_file = os.path.join(os.path.dirname(xml_file), "setup.py")
+        cmake_present = os.path.exists(cmake_file)
+        setup_present = os.path.exists(setup_file)
+        export = root.find("export")
+        export_exists = export is not None
+        build_type = export.find("build_type") if export_exists else None
+        build_type_correct = (
+            (
+                cmake_present
+                and build_type is not None
+                and build_type.text == "ament_cmake"
+            )
+            or (
+                setup_present
+                and build_type is not None
+                and build_type.text == "ament_python"
+            )
+            or (not cmake_present and not setup_present)
+        )
+        if build_type_correct:
+            return True
+        else:
+            if not export_exists:
+                self.logger.error(
+                    f"Missing <export> tag in package.xml. Please include {'<export><build_type>ament_cmake</build_type></export>' if cmake_present else '<export><build_type>ament_python</build_type></export>'}."
+                )
+            else:
+                self.logger.error(
+                    f"Incorrect <build_type> in <export> tag in package.xml. Expected {'ament_cmake' if cmake_present else 'ament_python'}, found {build_type.text if build_type is not None else 'None'}."
+                )
+        if self.check_only:
+            return False
+        if not self.auto_fill_missing_deps:
+            self.encountered_unresolvable_error = True
+            return False
+        else:
+            self.formatter.add_build_type_export(
+                root, "ament_cmake" if cmake_present else "ament_python"
+            )
+            self.logger.warning(
+                f"Auto-filling <export><build_type>{'ament_cmake' if cmake_present else 'ament_python'}</build_type></export> in {os.path.basename(os.path.dirname(xml_file))}/package.xml."
+            )
+            return False  # Indicate that changes were made
+
     def log_check_result(self, check_name, result):
         """Log the result of a check."""
         if result:
@@ -311,6 +361,13 @@ class PackageXmlValidator:
                 self.formatter.retrieve_exec_dependencies(root),
             )
 
+            self.perform_check(
+                "Check build type export",
+                self.validate_ament_exports,
+                root,
+                xml_file,
+            )
+
             # Check rosdeps if enabled
             if self.check_rosdeps:
                 rosdeps = self.formatter.retrieve_all_dependencies(root)
@@ -341,6 +398,7 @@ class PackageXmlValidator:
 
             # Write back to file if not in check-only mode
             if not self.xml_valid and not self.check_only:
+                # ET.indent(root, space="  ")
                 tree.write(
                     xml_file, encoding="utf-8", xml_declaration=True, pretty_print=True
                 )

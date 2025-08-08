@@ -1,5 +1,3 @@
-import os
-from typing import Tuple
 from lxml import etree as ET
 from copy import deepcopy
 
@@ -436,122 +434,31 @@ class PackageXmlFormatter:
                 if next_element.tag != new_elem.tag:
                     new_elem.tail = "\n\n" + indendantion
 
-    def check_and_format_files(self, package_xml_files) -> Tuple[bool, bool]:
-        """Check and format package.xml files if self.check_only is False.
-        Returns is_valid, changed_xml
+    def add_build_type_export(self, root, build_type: str):
         """
-        return
-        all_valid = True
-        for xml_file in package_xml_files:
-            self.logger.info(f"Processing {xml_file}...")
-
-            if not os.path.exists(xml_file):
-                raise FileNotFoundError(f"{xml_file} does not exist.")
-            if not os.path.isfile(xml_file):
-                raise IsADirectoryError(f"{xml_file} is not a file.")
-            try:
-                parser = ET.XMLParser()
-                tree = ET.parse(xml_file, parser)
-                root = tree.getroot()
-            except Exception as e:
-                self.logger.error(f"Error processing {xml_file}: {e}")
-                all_valid = False
-                continue
-
-            if not self.check_for_non_existing_tags(root, xml_file):
-                all_valid = False
-                self.encountered_unresolvable_error = True
-                self.logger.debug(f"❌ [1/6] Non-existing tags found in {xml_file}.")
-            else:
-                self.logger.debug(f"✅ [1/6] All tags in {xml_file} are valid.")
-
-            if not self.check_for_empty_lines(root, xml_file):
-                all_valid = False
-                self.logger.debug(f"❌ [2/6] Empty lines found in {xml_file}.")
-            else:
-                self.logger.debug(f"✅ [2/6] No empty lines found in {xml_file}.")
-
-            if not self.check_for_duplicates(root, xml_file):
-                all_valid = False
-                self.logger.debug(f"❌ [3/6] Duplicate elements found in {xml_file}.")
-            else:
-                self.logger.debug(
-                    f"✅ [3/6] No duplicate elements found in {xml_file}."
-                )
-
-            if not self.check_element_occurrences(root, xml_file):
-                all_valid = False
-                self.logger.error(
-                    f"❌ [4/6] Occurrences of elements in {xml_file} are incorrect."
-                )
-            else:
-                self.logger.debug(
-                    f"✅ [4/6] Occurrences of elements in {xml_file} are correct."
-                )
-
-            if not self.check_element_order(root, xml_file):
-                all_valid = False
-                self.logger.debug(f"❌ [5/6] Element order in {xml_file} is incorrect.")
-            else:
-                self.logger.debug(f"✅ [5/6] Element order in {xml_file} is correct.")
-
-            if not self.check_dependency_order(root, xml_file):
-                all_valid = False
-                self.logger.debug(
-                    f"❌ [6/6] Dependency order in {xml_file} is incorrect."
-                )
-            else:
-                self.logger.debug(
-                    f"✅ [6/6] Dependency order in {xml_file} is correct."
-                )
-
-            if not all_valid and not self.check_only:
-                # Write back to file
-                tree.write(
-                    xml_file, encoding="utf-8", xml_declaration=True, pretty_print=True
-                )
-            # if self.check_rosdeps:
-            #     if not self.check_for_rosdeps(root, xml_file):
-            #         all_valid = False
-            #         self.encountered_unresolvable_error = True
-            #         self.logger.debug(
-            #             f"❌ [7/6] ROS dependencies in {xml_file} are incorrect."
-            #         )
-            #     else:
-            #         self.logger.debug(
-            #             f"✅ [7/6] All ROS dependencies in {xml_file} are valid."
-            #         )
-            # if self.check_with_xmllint:
-            #     if not validate_xml_with_xmllint(xml_file):
-            #         self.logger.error(f"XML validation failed {xml_file}.")
-            #         all_valid = False
-            #     else:
-            #         self.logger.debug(f"XML validation passed {xml_file}.")
-
-        if not all_valid and self.check_only:
-            print(
-                "❌ Some `package.xml` files have issues. Please review the messages above. 🛠️"
-            )
-            return False, True
-        elif not all_valid:
-            if formatter.encountered_unresolvable_error:
-                print(
-                    "⚠️ Some `package.xml` files have unresolvable errors. Please check the logs for details. 🔍"
-                )
-                return False, True
-            else:
-                print("✅ Corrected `package.xml` files successfully. 🎉")
-                return True, True
-        else:
-            print("🎉 All `package.xml` files are valid and nicely formatted. 🚀")
-            return True, False
-
-    def check_and_format(self, src):
-        package_xml_files = self.find_package_xml_files(src)
-        if not package_xml_files:
-            self.logger.info("No package.xml files found in the provided paths.")
-            return
-        return self.check_and_format_files(package_xml_files)
+        Add the build type export to the XML file.
+        If the build type export already exists, it will be updated.
+        If it does not exist, it will be created.
+        Other exports will not be changed(besides the build_type export).
+        """
+        indendantion = root[0].tail.replace("\n", "")
+        export = root.find("export")
+        if export is None:
+            export = ET.Element("export")
+            # get last element in root
+            if len(root) > 0:
+                last_element = root[-1]
+                if last_element.tail:
+                    last_element.tail = "\n\n" + indendantion
+            export.tail = "\n"
+            root.append(export)
+        build_type_elem = export.find("build_type")
+        if build_type_elem is None:
+            build_type_elem = ET.Element("build_type")
+            build_type_elem.tail = "\n" + indendantion
+            export.append(build_type_elem)
+        build_type_elem.text = build_type
+        export.text = "\n" + 2 * indendantion
 
 
 if __name__ == "__main__":
@@ -561,6 +468,4 @@ if __name__ == "__main__":
         check_only=False,
         verbose=True,
         check_with_xmllint=True,
-        check_rosdeps=True,
     )
-    formatter.check_and_format_files([pkg])
