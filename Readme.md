@@ -14,6 +14,7 @@ Validates and formats `package.xml` files to enforce consistency and ROS 2 schem
 - Launch-File Dependency Validation
   - Scans Python (.py), YAML (.yaml/.yml), and XML (.xml) launch files for package references
   - validates and corrects that all referenced pkgs are declared in the package xml (as `<exec_depend>` or `<depend>`)
+  - similarly the test folder is parsed to extract missing `<test_depend>` dependencies
 - Rosdep Key Checking
   - verifies that all declared pkgs exist as rodsdep key (optional)
 - CMakeFile Comparison and Synchronization
