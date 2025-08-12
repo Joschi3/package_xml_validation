@@ -441,6 +441,7 @@ class PackageXmlValidator:
             self.xml_valid = True
             pkg_name = os.path.basename(os.path.dirname(xml_file))
             self.logger.info(f"Processing {pkg_name}...")
+            self.logger.debug(f"Checking {xml_file}...")
 
             if not os.path.exists(xml_file):
                 raise FileNotFoundError(f"{xml_file} does not exist.")
