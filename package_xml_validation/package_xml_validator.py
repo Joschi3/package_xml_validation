@@ -206,6 +206,9 @@ class PackageXmlValidator:
                 launch_dir = os.path.join(os.path.dirname(package_xml_file), folder)
                 if os.path.isdir(launch_dir):
                     launch_deps.extend(scan_files(launch_dir))
+            self.logger.info(
+                f"Extracted launch dependencies from {package_name}/package.xml: {launch_deps}"
+            )
             return launch_deps
 
         def validate_launch_folders(
