@@ -58,6 +58,10 @@ class TestPackageXmlValidator(unittest.TestCase):
         """Clean up the temporary directory after each test."""
         shutil.rmtree(self.test_dir)
 
+    def prettyprint(self, element, **kwargs):
+        xml = ET.tostring(element, pretty_print=True, **kwargs)
+        print(xml.decode(), end="")
+
     def _compare_xml_files(self, file1: str, file2: str) -> bool:
         """
         Compare two XML files for equality.
@@ -105,11 +109,17 @@ class TestPackageXmlValidator(unittest.TestCase):
                 # apply the formatter
                 valid = self.formatter.check_and_format_files([xml_file])
                 if not pkg == "pkg_correct":
+                    if valid:
+                        with open(xml_file) as f:
+                            print(f"Formatted XML file {xml_file}:\n{f.read()}")
                     self.assertFalse(
                         valid,
                         f"XML file {xml_file} is expected to be invalid but was valid.",
                     )
                 else:
+                    if not valid:
+                        with open(xml_file) as f:
+                            print(f"Invalid XML file {xml_file}:\n{f.read()}")
                     self.assertTrue(
                         valid,
                         f"XML file {xml_file} is expected to be valid but was invalid.",
