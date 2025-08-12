@@ -1,7 +1,7 @@
 import argparse
 import os
 from typing import List
-from lxml import etree as ET
+import lxml.etree as ET
 from enum import Enum
 
 try:

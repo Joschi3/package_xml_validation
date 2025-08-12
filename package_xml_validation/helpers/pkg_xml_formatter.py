@@ -1,4 +1,4 @@
-from lxml import etree as ET
+import lxml.etree as ET
 from copy import deepcopy
 
 

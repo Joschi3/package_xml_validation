@@ -3,7 +3,7 @@ import unittest
 import tempfile
 import shutil
 import subprocess
-from lxml import etree as ET
+import lxml.etree as ET
 
 from package_xml_validation.package_xml_validator import (
     PackageXmlValidator,
