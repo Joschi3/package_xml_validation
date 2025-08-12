@@ -96,7 +96,7 @@ class TestPackageXmlValidator(unittest.TestCase):
         """
         Iterate over all example packages in the test directory,
         """
-        build_types = ["ament_cmake"]  #  "ament_python"
+        build_types = ["ament_cmake", "msg_pkg"]  #  "ament_python"
         for build_type in build_types:
             correct_xml = os.path.join(
                 self.examples_dir, build_type, "pkg_correct", "package.xml"

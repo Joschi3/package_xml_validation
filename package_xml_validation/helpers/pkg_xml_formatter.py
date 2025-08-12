@@ -382,7 +382,6 @@ class PackageXmlFormatter:
                 )
                 if not self.check_only:
                     string = fix_indentation(string, expected_indent)
-                    print(f"Corrected indentation for element '{name}': {string}")
                 return string, True
             return string, False
 
@@ -414,7 +413,6 @@ class PackageXmlFormatter:
                     if not self.check_only:
                         elem.text = elem.text.replace(NEW_LINE, " ").strip()
 
-        self.logger.info(f"Checked indentation for XML file. Correct: {is_correct}")
         return is_correct
 
     def check_for_non_existing_tags(self, root, xml_file):
