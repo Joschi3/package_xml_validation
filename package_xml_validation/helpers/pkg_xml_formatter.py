@@ -484,6 +484,7 @@ class PackageXmlFormatter:
         if dep_type not in dep_types:
             raise ValueError(f"Invalid dependency type: {dep_type}")
         indendantion = root[0].tail.replace(NEW_LINE, "")
+        insert_position, first_of_group = 0, 0
         for dep in dependencies:
             new_elem = ET.Element(dep_type)
             new_elem.text = dep
@@ -515,7 +516,11 @@ class PackageXmlFormatter:
                             insert_position = i + 1
             root.insert(insert_position, new_elem)
             # adapt empty lines -> in case element prior ends with empty line move it to the new element
-            if insert_position > 0 and insert_position > first_of_group:
+            if (
+                insert_position > 0
+                and first_of_group is not None
+                and insert_position > first_of_group
+            ):
                 previous_element = root[insert_position - 1]
                 if previous_element.tail and previous_element.tail.count(NEW_LINE) > 1:
                     new_elem.tail = previous_element.tail

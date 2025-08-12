@@ -97,11 +97,11 @@ def resolve_for_each(raw_lines: List[str]) -> List[str]:
     return lines
 
 
-def retrieve_cmake_dependencies(lines: List[str]) -> List[str]:
+def retrieve_cmake_dependencies(lines: List[str]) -> tuple[List[str], List[str]]:
     if isinstance(lines, Path):
         lines = read_cmake_file(lines)
-    main_deps = []
-    test_deps = []
+    main_deps: list[str] = []
+    test_deps: list[str] = []
 
     # We'll track blocks of 'if(BUILD_TESTING)' with a small stack
     if_stack = []
@@ -193,8 +193,10 @@ def read_cmake_file(file_path: Path) -> List[str]:
     return lines
 
 
-def read_deps_from_cmake_file(file_path: Path) -> List[str]:
+def read_deps_from_cmake_file(file_path: Path | str) -> tuple[List[str], List[str]]:
     """Reads a CMake file and returns a list of dependencies."""
+    if isinstance(file_path, str):
+        file_path = Path(file_path)
     lines = read_cmake_file(file_path)
     try:
         main_deps, test_deps = retrieve_cmake_dependencies(lines)
