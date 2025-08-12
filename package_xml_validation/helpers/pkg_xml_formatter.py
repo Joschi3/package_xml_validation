@@ -377,9 +377,9 @@ class PackageXmlFormatter:
         def check_and_correct(string, expected_indent, name) -> tuple[str, bool]:
             """Check and correct the indentation of the string."""
             if not check_indentation_string(string, expected_indent):
-                self.logger.error(
-                    f"Incorrect indentation for element '{name}'. Expected: '{expected_indent}', Found: '{string.replace(NEW_LINE, '') if string else 'None'}'"
-                )
+                # self.logger.error(
+                #    f"Incorrect indentation for element '{name}'. Expected: '{expected_indent}', Found: '{string.replace(NEW_LINE, '') if string else 'None'}'"
+                # )
                 if not self.check_only:
                     string = fix_indentation(string, expected_indent)
                 return string, True
@@ -396,7 +396,9 @@ class PackageXmlFormatter:
                 indentation * (level - 1) if is_last else indentation * level
             )
             elem.tail, corrected = check_and_correct(
-                elem.tail, expected_indent, f"{elem.tag}-{elem.text[:15]}"
+                elem.tail,
+                expected_indent,
+                f"{elem.tag}-{elem.text[:15] if elem.text else 'None'}",
             )
             is_correct &= not corrected
             if len(elem) > 0:  # has children
@@ -412,7 +414,12 @@ class PackageXmlFormatter:
                     is_correct = False
                     if not self.check_only:
                         elem.text = elem.text.replace(NEW_LINE, " ").strip()
-
+        if not is_correct and self.check_only:
+            self.logger.error(
+                "Incorrect indentation found in package.xml. Please fix the indentations."
+            )
+        elif not is_correct:
+            self.logger.warning("Auto-corrected indentation in package.xml.")
         return is_correct
 
     def check_for_non_existing_tags(self, root, xml_file):
