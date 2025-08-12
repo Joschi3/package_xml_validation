@@ -108,21 +108,22 @@ class TestPackageXmlValidator(unittest.TestCase):
                 xml_file = os.path.join(build_type_dir, pkg, "package.xml")
                 # apply the formatter
                 valid = self.formatter.check_and_format_files([xml_file])
+                msg = ""
                 if not pkg == "pkg_correct":
                     if valid:
                         with open(xml_file) as f:
-                            print(f"Formatted XML file {xml_file}:\n{f.read()}")
+                            msg = f"Formatted XML file {xml_file}:\n'{f.read()}'"
                     self.assertFalse(
                         valid,
-                        f"XML file {xml_file} is expected to be invalid but was valid.",
+                        f"XML file {xml_file} is expected to be invalid but was valid. {msg}",
                     )
                 else:
                     if not valid:
                         with open(xml_file) as f:
-                            print(f"Invalid XML file {xml_file}:\n{f.read()}")
+                            msg = f"Invalid XML file {xml_file}:\n{f.read()}"
                     self.assertTrue(
                         valid,
-                        f"XML file {xml_file} is expected to be valid but was invalid.",
+                        f"XML file {xml_file} is expected to be valid but was invalid. {msg}",
                     )
                 self.assertTrue(
                     self._compare_xml_files(xml_file, correct_xml),
