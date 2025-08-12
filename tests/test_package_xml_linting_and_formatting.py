@@ -142,6 +142,9 @@ class TestPackageXmlValidator(unittest.TestCase):
             all_valid_check = formatter.check_and_format_files([original_path])
 
             if self._is_correct_file(fname):
+                if not all_valid_check:
+                    with open(original_path, "r") as f_after:
+                        print(f"File content after check:\n{f_after.read()}")
                 self.assertTrue(
                     all_valid_check,
                     f"Expected correct file {fname} to pass in check-only mode.",

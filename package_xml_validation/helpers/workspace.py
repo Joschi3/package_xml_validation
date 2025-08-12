@@ -112,6 +112,7 @@ def get_pkgs_in_wrs(path: Path) -> List[str]:
         path = Path(path).resolve(strict=True)
     if not path.exists():
         raise ValueError(f"Path does not exist: {path}")
+    pkg_dir = None
     try:
         pkg_dir = find_package_dir(path)
         ws_root = find_workspace_root(pkg_dir)

@@ -1,11 +1,15 @@
 from lxml import etree as ET
 from copy import deepcopy
 
+
 try:
     from .logger import get_logger
 except ImportError:
     from helpers.logger import get_logger
 
+# tuple of (element_name, min_occurrences, max_occurrences)
+# min_occurrences is 1 if the element is required, 0 if it can be missing
+# max_occurrences is None if there is no limit, otherwise it is a positive integer
 ELEMENTS = [
     ("name", 1, 1),
     ("version", 1, 1),
@@ -25,6 +29,18 @@ ELEMENTS = [
     ("group_depend", 0, None),
     ("member_of_group", 0, None),
     ("export", 0, 1),
+]
+
+NEW_LINE_BEFORE = [
+    "buildtool_depend",
+    "build_depend",
+    "depend",
+    "exec_depend",
+    "doc_depend",
+    "test_depend",
+    "group_depend",
+    "member_of_group",
+    "export",
 ]
 
 
@@ -48,7 +64,7 @@ class PackageXmlFormatter:
     def check_dependency_order(self, root, xml_file):
         """Check and optionally correct the order of dependencies in the package.xml file (with comment preservation using lxml)."""
 
-        dependency_order = [elm[0] for elm in ELEMENTS if "depend" in elm[0]]
+        dependency_order = [elm[0] for elm in ELEMENTS]
         dependencies_with_comments = {dep: [] for dep in dependency_order}
         current_order = []
 
@@ -96,42 +112,37 @@ class PackageXmlFormatter:
         if not order_mismatch:
             return True
 
+        indentation = root[0].tail.replace("\n", "")
         # Remove old dependency elements from root
         for dep_type in dependency_order:
             for elem in dependencies_with_comments[dep_type]:
                 for comment in elem[1]:
                     root.remove(comment)
                 root.remove(elem[0])
-
-        # Find index of <export> or append at end
-        export_index = next(
-            (i for i, elem in enumerate(root) if elem.tag == "export"), len(root)
-        )
-        member_of_group_index = next(
-            (i for i, elem in enumerate(root) if elem.tag == "member_of_group"),
-            len(root),
-        )
-        group_dep_index = next(
-            (i for i, elem in enumerate(root) if elem.tag == "group_depend"), len(root)
-        )
-
-        indendantion = root[0].tail.replace("\n", "")
-        # Reinsert sorted dependencies before <export>, <member_of_group>, or <group_depend>
-        insert_index = min(export_index, member_of_group_index, group_dep_index)
-        for dep_type in dependency_order:
+        # filter out empty lists from dependency order
+        dependency_order = [
+            dep for dep in dependency_order if dependencies_with_comments[dep]
+        ]
+        insert_index = 0
+        for index, dep_type in enumerate(dependency_order):
             sorted_elems = sorted(
                 dependencies_with_comments[dep_type], key=lambda x: x[0].text
             )
             for i, elem_with_comment in enumerate(sorted_elems):
-                if i != len(sorted_elems) - 1:
-                    elem_with_comment[0].tail = "\n" + indendantion
+                if (
+                    i == len(sorted_elems) - 1
+                    and index + 1 < len(dependency_order)
+                    and dependency_order[index + 1] in NEW_LINE_BEFORE
+                ):
+                    elem_with_comment[0].tail = "\n\n" + indentation
                 else:
-                    elem_with_comment[0].tail = "\n\n" + indendantion
+                    elem_with_comment[0].tail = "\n" + indentation
                 for comment in elem_with_comment[1]:
                     root.insert(insert_index, comment)
                     insert_index += 1
                 root.insert(insert_index, elem_with_comment[0])
                 insert_index += 1
+        root[-1].tail = "\n"
 
         self.logger.info(f"Corrected dependency order in {xml_file}.")
         return False
@@ -251,13 +262,26 @@ class PackageXmlFormatter:
         elements_with_comments = []
         current_comments = []
 
+        last_tail = ""
+        indentation = root[0].tail.replace("\n", "")
         for elem in root:
             if elem.tag is ET.Comment:
-                current_comments.append(deepcopy(elem))
                 self.logger.error(f"Found comment: {elem.text}")
+                if last_tail and last_tail[-1] == "\n":
+                    # inline comment -> append to previous element
+                    elements_with_comments[-1][0].tail = elem.tail
+                    elem.tail = "\n" + indentation
+                    elements_with_comments[-1][1].append(deepcopy(elem))
+                else:
+                    # Ensure only one '\n' in elem.tail
+                    elem.tail = "\n" + (
+                        elem.tail.replace("\n", "") if elem.tail else ""
+                    )
+                    current_comments.append(deepcopy(elem))
             else:
                 elements_with_comments.append((deepcopy(elem), current_comments))
                 current_comments = []
+            last_tail = elem.tail if elem.tail else ""
 
         # Sort the elements based on the expected order
         elements_with_comments.sort(key=lambda x: sort_key(x[0]))
@@ -322,6 +346,80 @@ class PackageXmlFormatter:
             elif elm.tail is None:
                 elm.tail = "\n" + indendantion
         return False
+
+    def check_indentation(self, root, level=1, indentation="  "):
+        """
+        Check if the indentation of the XML file is correct.
+        recursively checks the indentation of each element.
+        """
+        is_correct = True
+
+        def check_indentation_string(string, expected_indent) -> bool:
+            """The string should be indented with the expected_indent and contain a newline."""
+            if not string or not isinstance(string, str):
+                return False
+            parsed_indentation = string.replace("\n", "")
+            return parsed_indentation == expected_indent and "\n" in string
+
+        def fix_indentation(string, expected_indent) -> str:
+            """Fix the indentation of the string to match the expected_indent."""
+            indent = string.replace(" ", "") if string and "\n" in string else "\n"
+            return indent + expected_indent
+
+        def check_and_correct(string, expected_indent, name):
+            """Check and correct the indentation of the string."""
+            if not check_indentation_string(string, expected_indent):
+                self.logger.error(
+                    f"Incorrect indentation for element '{name}'. Expected: '{expected_indent}', Found: '{string.replace('\n', '') if string else 'None'}'"
+                )
+                is_correct = False
+                if not self.check_only:
+                    string = fix_indentation(string, expected_indent)
+
+        for index, elem in enumerate(root):
+            is_last = index == len(root) - 1
+            expected_indent = (
+                indentation * (level - 1) if is_last else indentation * level
+            )
+            if not check_indentation_string(elem.tail, expected_indent):
+                print(
+                    f"elem.text: {elem.text if elem.text else 'None'}, elem.tail: {elem.tail if elem.tail else 'None'}, expected_indent: {expected_indent}"
+                )
+                self.logger.error(
+                    f"Incorrect indentation for element '{elem.tag}'. Expected: '{expected_indent}', Found: '{elem.tail.replace('\n', '') if elem.tail else 'None'}'"
+                )
+                is_correct = False
+                if not self.check_only:
+                    elem.tail = fix_indentation(elem.tail, expected_indent)
+            if len(elem) > 0:  # has children
+                # Check indentation of first child (indentation will be in text of parent element)
+                expected_indent = indentation * (level + 1)
+                if not check_indentation_string(elem.text, expected_indent):
+                    self.logger.error(
+                        f"Incorrect indentation for element '{elem.tag}'. Expected: '{expected_indent}', Found: '{elem.text.replace('\n', '')}'"
+                    )
+                    is_correct = False
+                    if not self.check_only:
+                        elem.text = fix_indentation(elem.text, expected_indent)
+                # check children recursively
+                if not self.check_indentation(elem, level + 1, indentation):
+                    is_correct = False
+            else:
+                # make sure there are no new lines in texts
+                if elem.text and "\n" in elem.text:
+                    self.logger.error(
+                        f"Element '{elem.tag}' has new lines in its text: '{elem.text}'"
+                    )
+                    is_correct = False
+                    if not self.check_only:
+                        elem.text = elem.text.replace("\n", " ").strip()
+
+        def prettyprint(element, **kwargs):
+            xml = ET.tostring(element, pretty_print=True, **kwargs)
+            print(xml.decode(), end="")
+
+        prettyprint(root)
+        return is_correct
 
     def check_for_non_existing_tags(self, root, xml_file):
         """Check for non-existing tags in the XML file."""
@@ -459,6 +557,49 @@ class PackageXmlFormatter:
             export.append(build_type_elem)
         build_type_elem.text = build_type
         export.text = "\n" + 2 * indendantion
+
+    def add_buildtool_depends(self, root, buildtool: list[str]):
+        """
+        Add the buildtool_depend to the XML file.
+        If the buildtool_depend already exists, it will be updated.
+        If it does not exist, it will be created.
+        """
+        indendantion = root[0].tail.replace("\n", "")
+        # 1. clear existing buildtool_depend elements
+        for elem in root.findall("buildtool_depend"):
+            root.remove(elem)
+        # 2. insertposition -> after license, url, or author element
+        insert_position = 0
+        for i, elem in enumerate(root):
+            if isinstance(elem.tag, str) and elem.tag == "license":
+                insert_position = i + 1
+            elif isinstance(elem.tag, str) and elem.tag == "url":
+                insert_position = i + 1
+            elif isinstance(elem.tag, str) and elem.tag == "author":
+                insert_position = i + 1
+        # 3. add buildtool_depend elements
+        for i, tool in enumerate(buildtool):
+            is_last = i == len(buildtool) - 1
+            new_elem = ET.Element("buildtool_depend")
+            new_elem.text = tool
+            new_elem.tail = "\n\n" if is_last else "\n"
+            new_elem.tail += indendantion
+            root.insert(insert_position, new_elem)
+            insert_position += 1
+
+    def add_member_of_group(self, root, group_name: str):
+        """Add member_of_group element to the XML file."""
+        indendantion = root[0].tail.replace("\n", "")
+        member_of_group = ET.Element("member_of_group")
+        member_of_group.text = group_name
+        member_of_group.tail = "\n\n" + indendantion
+        # insert position -> right before export or at the end
+        insert_position = len(root)
+        for i, elem in enumerate(root):
+            if isinstance(elem.tag, str) and elem.tag == "export":
+                insert_position = i
+                break
+        root.insert(insert_position, member_of_group)
 
 
 if __name__ == "__main__":

@@ -4,16 +4,14 @@
   <name>srdfdom</name>
   <version>2.0.7</version>
   <description>Parser for Semantic Robot Description Format (SRDF).</description>
-
   <maintainer email="moveit_releasers@googlegroups.com">MoveIt Release Team</maintainer>
-
   <license>BSD</license>
   <url type="website">http://ros.org/wiki/srdfdom</url>
-  <url type="bugtracker">https://github.com/ros-planning/srdfdom/issues</url>
   <url type="repository">https://github.com/ros-planning/srdfdom</url>
-
-  <author email="isucan@willowgarage.com">Ioan Sucan</author>
+  <url type="bugtracker">https://github.com/ros-planning/srdfdom/issues</url>
   <author email="gwalck@techfak.uni-bielefeld.de">Guillaume Walck</author>
+  <author email="isucan@willowgarage.com">Ioan Sucan</author>
+
   <buildtool_depend>ament_cmake</buildtool_depend>
   <buildtool_depend>ament_cmake_python</buildtool_depend>
 
@@ -34,7 +32,6 @@
   <test_depend>ament_cmake_pytest</test_depend>
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_cmake</test_depend>
-
   <export>
       <build_type>ament_cmake</build_type>
   </export>
