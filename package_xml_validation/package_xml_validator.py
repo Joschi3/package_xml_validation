@@ -1,7 +1,7 @@
 import argparse
 import os
-from typing import List
-from lxml import etree as ET
+import lxml.etree as ET
+from enum import Enum
 
 try:
     from .helpers.logger import get_logger
@@ -16,6 +16,13 @@ except ImportError:
     from helpers.cmake_parsers import read_deps_from_cmake_file
     from helpers.find_launch_dependencies import scan_files
 import subprocess
+import re
+
+
+class PackageType(Enum):
+    CMAKE_PKG = "ament_cmake"
+    PYTHON_PKG = "ament_python"
+    MSG_PKG = "rosidl_default_generators"
 
 
 class PackageXmlValidator:
@@ -46,7 +53,7 @@ class PackageXmlValidator:
         self.encountered_unresolvable_error = False
 
         # calculate num checks
-        self.num_checks = 8
+        self.num_checks = 11
         self.check_count = 1
         if self.check_rosdeps:
             self.num_checks += 1
@@ -73,7 +80,26 @@ class PackageXmlValidator:
         package_xml_files = list(set(package_xml_files))
         return package_xml_files
 
-    def check_for_rosdeps(self, rosdeps: List[str], xml_file: str):
+    def get_package_type(self, xml_file: str) -> tuple[PackageType, bool]:
+        """Determine the package type based on the presence of CMakeLists.txt or setup.py.
+        Returns <PackageType, bool> where bool indicates if the package is a message package."""
+        cmake_file = os.path.join(os.path.dirname(xml_file), "CMakeLists.txt")
+        setup_file = os.path.join(os.path.dirname(xml_file), "setup.py")
+        is_msg_pkg = False
+        pkg_type = PackageType.CMAKE_PKG
+        if os.path.exists(cmake_file):
+            # check if rosidl_generate_interfaces is in CMakeLists.txt using regex
+            regex = r"rosidl_generate_interfaces\s*\(\s*.*?\)"
+            with open(cmake_file) as f:
+                content = f.read()
+                if re.search(regex, content, re.DOTALL):
+                    is_msg_pkg = True
+            pkg_type = PackageType.CMAKE_PKG
+        elif os.path.exists(setup_file):
+            pkg_type = PackageType.PYTHON_PKG
+        return pkg_type, is_msg_pkg
+
+    def check_for_rosdeps(self, rosdeps: list[str], xml_file: str):
         """extract list of rosdeps and check if they are valid"""
         if not rosdeps:
             self.logger.info(f"No ROS dependencies found in {xml_file}.")
@@ -88,7 +114,7 @@ class PackageXmlValidator:
         return True
 
     def check_for_cmake(
-        self, build_deps: List[str], test_deps: List[str], xml_file: str, root
+        self, build_deps: list[str], test_deps: list[str], xml_file: str, root
     ):
         cmake_file = os.path.join(os.path.dirname(xml_file), "CMakeLists.txt")
         if not os.path.exists(cmake_file):
@@ -167,12 +193,12 @@ class PackageXmlValidator:
         root,
         package_xml_file: str,
         package_name: str,
-        exec_deps: List[str],
-        test_deps: List[str] = [],
+        exec_deps: list[str],
+        test_deps: list[str] = [],
     ):
         """Validate launch dependencies in the package.xml file."""
 
-        def extract_launch_deps(folder_names: List[str]) -> List[str]:
+        def extract_launch_deps(folder_names: list[str]) -> list[str]:
             """Extract launch dependencies from the folder names."""
             launch_deps = []
             for folder in folder_names:
@@ -182,13 +208,10 @@ class PackageXmlValidator:
             return launch_deps
 
         def validate_launch_folders(
-            launch_folder_names: List[str], xml_deps: List[str], depend_tag: str
+            launch_folder_names: list[str], xml_deps: list[str], depend_tag: str
         ) -> bool:
             launch_deps = extract_launch_deps(launch_folder_names)
             if not launch_deps:
-                self.logger.debug(
-                    f"No launch dependencies found in {package_name}/package.xml."
-                )
                 return True
 
             missing_deps = [
@@ -201,8 +224,24 @@ class PackageXmlValidator:
                 self.logger.warning(
                     f"Missing <{depend_tag}> dependencies in {package_name}/package.xml: {sep}{sep.join(missing_deps)}"
                 )
+            missing_deps = [
+                dep
+                for dep in launch_deps
+                if dep not in xml_deps and dep != package_name
+            ]
+            if missing_deps:
+                sep = "\n\t - "
+                self.logger.warning(
+                    f"Missing <{depend_tag}> dependencies in {package_name}/package.xml: {sep}{sep.join(missing_deps)}"
+                )
 
                 if self.check_only:
+                    return False
+                elif not self.auto_fill_missing_deps:
+                    self.encountered_unresolvable_error = True
+                    self.logger.error(
+                        f"Cannot auto-fill missing <{depend_tag}> dependencies: {missing_deps} in {package_name}/package.xml. Please add them manually."
+                    )
                     return False
                 else:
                     self.logger.info(
@@ -233,41 +272,96 @@ class PackageXmlValidator:
         test_deps_valid = validate_launch_folders(["test"], test_deps, "test_depend")
         return launch_deps_valid and test_deps_valid
 
-    def validate_ament_exports(self, root, xml_file: str):
-        """Validate ament_export tags in the package.xml file.
-        if a CMakeLists.txt file exists:  <export><build_type>ament_cmake</build_type></export> must be present
-        if a setup.py file exists: <export><build_type>ament_python</build_type></export> must be present
+    def validate_buildtool_depend(self, root, xml_file: str):
+        """Validate build_tool depend tags in the package.xml file.
+        Note: for interface packages 2 buildtool_depend tags are required: ament_cmake and rosidl_default_generators
         """
-        cmake_file = os.path.join(os.path.dirname(xml_file), "CMakeLists.txt")
-        setup_file = os.path.join(os.path.dirname(xml_file), "setup.py")
-        cmake_present = os.path.exists(cmake_file)
-        setup_present = os.path.exists(setup_file)
+        pkg_type, is_msg_pkg = self.get_package_type(xml_file)
+        buildtool = root.findall("buildtool_depend")
+        buildtool = [tool.text for tool in buildtool]
+        is_buildtool_correct = (
+            len(buildtool) > 0
+            and (
+                (
+                    pkg_type == PackageType.CMAKE_PKG
+                    and PackageType.CMAKE_PKG.value in buildtool
+                )
+                or (
+                    pkg_type == PackageType.PYTHON_PKG
+                    and PackageType.PYTHON_PKG.value in buildtool
+                )
+            )
+            and (not is_msg_pkg or PackageType.MSG_PKG.value in buildtool)
+        )
+
+        if is_buildtool_correct:
+            return True
+        else:
+            corrected_buildtool_str = f"<buildtool_depend>{'ament_cmake' if pkg_type == PackageType.CMAKE_PKG else 'ament_python'}</buildtool_depend>"
+            if is_msg_pkg:
+                corrected_buildtool_str += (
+                    f" <buildtool_depend>{PackageType.MSG_PKG.value}</buildtool_depend>"
+                )
+            if len(buildtool) == 0:
+                self.logger.error(
+                    f"Missing <buildtool_depend> tag in package.xml. Please include {corrected_buildtool_str}."
+                )
+            else:
+                self.logger.error(
+                    f"Incorrect <buildtool_depend> in package.xml. Expected {corrected_buildtool_str}, found {buildtool if buildtool is not None else 'None'}."
+                )
+        if self.check_only:
+            return False
+        if not self.auto_fill_missing_deps:
+            self.logger.error(
+                f"Cannot auto-fill missing <buildtool_depend> in {os.path.basename(os.path.dirname(xml_file))}/package.xml. Please add it manually."
+            )
+            self.encountered_unresolvable_error = True
+            return False
+        else:
+            self.formatter.add_buildtool_depends(
+                root,
+                [pkg_type.value, PackageType.MSG_PKG.value]
+                if is_msg_pkg
+                else [pkg_type.value],
+            )
+            self.logger.warning(
+                f"Auto-filling {corrected_buildtool_str} in {os.path.basename(os.path.dirname(xml_file))}/package.xml."
+            )
+            return False  # Indicate that changes were made
+
+    def validate_ament_exports(self, root, xml_file: str):
+        """Validate ament_export tags in the package.xml file."""
+        pkg_type, _ = self.get_package_type(xml_file)
         export = root.find("export")
         export_exists = export is not None
         build_type = export.find("build_type") if export_exists else None
         build_type_correct = (
             (
-                cmake_present
+                pkg_type == PackageType.CMAKE_PKG
                 and build_type is not None
                 and build_type.text == "ament_cmake"
             )
             or (
-                setup_present
+                pkg_type == PackageType.PYTHON_PKG
                 and build_type is not None
                 and build_type.text == "ament_python"
             )
-            or (not cmake_present and not setup_present)
+            or (
+                not pkg_type == PackageType.CMAKE_PKG
+                and not pkg_type == PackageType.PYTHON_PKG
+            )
         )
         if build_type_correct:
             return True
         else:
             if not export_exists:
                 self.logger.error(
-                    f"Missing <export> tag in package.xml. Please include {'<export><build_type>ament_cmake</build_type></export>' if cmake_present else '<export><build_type>ament_python</build_type></export>'}."
+                    f"Missing <export> tag in package.xml. Please include {'<export><build_type>ament_cmake</build_type></export>' if pkg_type == PackageType.CMAKE_PKG else '<export><build_type>ament_python</build_type></export>'}."
                 )
             else:
                 self.logger.error(
-                    f"Incorrect <build_type> in <export> tag in package.xml. Expected {'ament_cmake' if cmake_present else 'ament_python'}, found {build_type.text if build_type is not None else 'None'}."
+                    f"Incorrect <build_type> in <export> tag in package.xml. Expected {'ament_cmake' if pkg_type == PackageType.CMAKE_PKG else 'ament_python'}, found {build_type.text if build_type is not None else 'None'}."
                 )
         if self.check_only:
             return False
@@ -276,12 +370,39 @@ class PackageXmlValidator:
             return False
         else:
             self.formatter.add_build_type_export(
-                root, "ament_cmake" if cmake_present else "ament_python"
+                root,
+                "ament_cmake" if pkg_type == PackageType.CMAKE_PKG else "ament_python",
             )
             self.logger.warning(
-                f"Auto-filling <export><build_type>{'ament_cmake' if cmake_present else 'ament_python'}</build_type></export> in {os.path.basename(os.path.dirname(xml_file))}/package.xml."
+                f"Auto-filling <export><build_type>{'ament_cmake' if pkg_type == PackageType.CMAKE_PKG else 'ament_python'}</build_type></export> in {os.path.basename(os.path.dirname(xml_file))}/package.xml."
             )
             return False  # Indicate that changes were made
+
+    def validate_member_of_group(self, root, xml_file: str):
+        """Validate member_of_group tag in the package.xml file.
+        -> interface packages must include <member_of_group>rosidl_interface_packages</member_of_group>
+        """
+        member_of_group = root.find("member_of_group")
+        _, is_msg_pkg = self.get_package_type(xml_file)
+        if is_msg_pkg and (
+            member_of_group is None
+            or member_of_group.text != "rosidl_interface_packages"
+        ):
+            self.logger.error(
+                f"Missing or incorrect <member_of_group> in package.xml. Expected <member_of_group>rosidl_interface_packages</member_of_group>, found {member_of_group.text if member_of_group is not None else 'None'}."
+            )
+            if self.check_only:
+                return False
+            if not self.auto_fill_missing_deps:
+                self.encountered_unresolvable_error = True
+                return False
+            else:
+                self.formatter.add_member_of_group(root, "rosidl_interface_packages")
+                self.logger.warning(
+                    f"Auto-filling <member_of_group>rosidl_interface_packages</member_of_group> in {os.path.basename(os.path.dirname(xml_file))}/package.xml."
+                )
+                return False  # Indicate that changes were made
+        return True
 
     def log_check_result(self, check_name, result):
         """Log the result of a check."""
@@ -317,6 +438,7 @@ class PackageXmlValidator:
             self.xml_valid = True
             pkg_name = os.path.basename(os.path.dirname(xml_file))
             self.logger.info(f"Processing {pkg_name}...")
+            self.logger.debug(f"Checking {xml_file}...")
 
             if not os.path.exists(xml_file):
                 raise FileNotFoundError(f"{xml_file} does not exist.")
@@ -369,6 +491,11 @@ class PackageXmlValidator:
                 root,
                 xml_file,
             )
+            self.perform_check(
+                "Check indentation",
+                self.formatter.check_indentation,
+                root,
+            )
 
             self.perform_check(
                 "Check launch dependencies",
@@ -378,6 +505,20 @@ class PackageXmlValidator:
                 self.formatter.get_package_name(root),
                 self.formatter.retrieve_exec_dependencies(root),
                 self.formatter.retrieve_test_dependencies(root),
+            )
+
+            self.perform_check(
+                "Check build tool depend",
+                self.validate_buildtool_depend,
+                root,
+                xml_file,
+            )
+
+            self.perform_check(
+                "Check member of group",
+                self.validate_member_of_group,
+                root,
+                xml_file,
             )
 
             self.perform_check(
@@ -511,11 +652,6 @@ def main():
     if args.skip_rosdep_key_validation and args.compare_with_cmake:
         print("Cannot use --compare-with-cmake with --skip-rosdep-key-validation.")
         args.compare_with_cmake = False
-
-    # --auto-fill-missing-deps is only possible with --compare-with-cmake
-    if not args.compare_with_cmake and args.auto_fill_missing_deps:
-        print("Cannot use --auto-fill-missing-deps without --compare-with-cmake.")
-        args.auto_fill_missing_deps = False
 
     formatter = PackageXmlValidator(
         check_only=args.check_only,

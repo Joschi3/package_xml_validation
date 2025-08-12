@@ -3,7 +3,7 @@ import unittest
 import tempfile
 import shutil
 import subprocess
-from lxml import etree as ET
+import lxml.etree as ET
 
 from package_xml_validation.package_xml_validator import (
     PackageXmlValidator,
@@ -142,6 +142,9 @@ class TestPackageXmlValidator(unittest.TestCase):
             all_valid_check = formatter.check_and_format_files([original_path])
 
             if self._is_correct_file(fname):
+                if not all_valid_check:
+                    with open(original_path) as f_after:
+                        print(f"File content after check:\n{f_after.read()}")
                 self.assertTrue(
                     all_valid_check,
                     f"Expected correct file {fname} to pass in check-only mode.",
@@ -216,7 +219,7 @@ class TestPackageXmlValidator(unittest.TestCase):
                     comparison = self._compare_xml_files(final_path, corrected_path)
                     if not comparison:
                         # print corrected file to console
-                        with open(final_path, "r") as f_corrected:
+                        with open(final_path) as f_corrected:
                             corrected_content = f_corrected.read()
                         print(f"Corrected file content:\n{corrected_content}")
                     self.assertTrue(

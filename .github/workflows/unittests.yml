@@ -19,7 +19,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: '3.12'
 
       - name: Install system dependencies
         run: |
@@ -40,4 +40,4 @@ jobs:
 
       - name: Run unit tests
         run: |
-          python -m unittest discover
+          python -u -m unittest discover -v

@@ -3,8 +3,7 @@ import unittest
 import tempfile
 import shutil
 import subprocess
-from lxml import etree as ET
-
+import lxml.etree as ET
 from package_xml_validation.package_xml_validator import (
     PackageXmlValidator,
 )
@@ -38,7 +37,7 @@ class TestPackageXmlValidator(unittest.TestCase):
         Adjust the directory path to match your actual setup.
         """
         current_dir = os.path.dirname(__file__)
-        cls.examples_dir = os.path.join(current_dir, "examples", "export_tag_examples")
+        cls.examples_dir = os.path.join(current_dir, "examples", "launch_pkg_examples")
         cls.formatter = PackageXmlValidator(
             check_only=False,
             verbose=True,
@@ -59,6 +58,10 @@ class TestPackageXmlValidator(unittest.TestCase):
     def tearDown(self):
         """Clean up the temporary directory after each test."""
         shutil.rmtree(self.test_dir)
+
+    def prettyprint(self, element, **kwargs):
+        xml = ET.tostring(element, pretty_print=True, **kwargs)
+        print(xml.decode(), end="")
 
     def _compare_xml_files(self, file1: str, file2: str) -> bool:
         """
@@ -96,35 +99,50 @@ class TestPackageXmlValidator(unittest.TestCase):
         """
         Iterate over all example packages in the test directory,
         """
-        build_types = ["ament_cmake"]  #  "ament_python"
-        for build_type in build_types:
+        example_pkgs = os.listdir(self.examples_dir)
+        for example_pkg in example_pkgs:
             correct_xml = os.path.join(
-                self.examples_dir, build_type, "pkg_correct", "package.xml"
+                self.examples_dir, example_pkg, "pkg_correct", "package.xml"
             )
-            build_type_dir = os.path.join(self.test_dir, build_type)
+            build_type_dir = os.path.join(self.test_dir, example_pkg)
             for pkg in os.listdir(build_type_dir):
                 xml_file = os.path.join(build_type_dir, pkg, "package.xml")
-                # apply the formatter
-                valid = self.formatter.check_and_format_files([xml_file])
-                if not pkg == "pkg_correct":
-                    self.assertFalse(
-                        valid,
-                        f"XML file {xml_file} is expected to be invalid but was valid.",
-                    )
-                else:
+
+                # Use subTest to continue testing other files even if this one fails
+                with self.subTest(example_pkg=example_pkg, pkg=pkg, xml_file=xml_file):
+                    # apply the formatter
+                    with open(xml_file) as f:
+                        xml_content = f.read()
+                    valid = self.formatter.check_and_format_files([xml_file])
+                    msg = ""
+
+                    if not pkg == "pkg_correct":
+                        if valid:
+                            with open(xml_file) as f:
+                                msg = f"Formatted XML file {xml_file}:\n'{f.read()}'"
+                        self.assertFalse(
+                            valid,
+                            f"XML file {xml_file} is expected to be invalid but was valid. {msg} \n vs original: \n{xml_content}",
+                        )
+                    else:
+                        if not valid:
+                            with open(xml_file) as f:
+                                msg = f"Invalid XML file {xml_file}:\n{f.read()}"
+                        self.assertTrue(
+                            valid,
+                            f"XML file {xml_file} is expected to be valid but was invalid. {msg} \n vs original: \n{xml_content}",
+                        )
+
                     self.assertTrue(
-                        valid,
-                        f"XML file {xml_file} is expected to be valid but was invalid.",
+                        self._compare_xml_files(xml_file, correct_xml),
+                        f"XML files do not match: {xml_file} != {correct_xml}",
                     )
-                self.assertTrue(
-                    self._compare_xml_files(xml_file, correct_xml),
-                    f"XML files do not match: {xml_file} != {correct_xml}",
-                )
-                # validate the XML file with xmllint
-                self.assertTrue(
-                    validate_xml_with_xmllint(xml_file),
-                    f"XML file {xml_file} failed xmllint validation.",
-                )
+
+                    # validate the XML file with xmllint
+                    self.assertTrue(
+                        validate_xml_with_xmllint(xml_file),
+                        f"XML file {xml_file} failed xmllint validation.",
+                    )
 
 
 if __name__ == "__main__":

@@ -1,14 +1,13 @@
 from pathlib import Path
 import re
-from typing import List
 
 
-def remove_comments(lines: List[str]) -> list[str]:
+def remove_comments(lines: list[str]) -> list[str]:
     """Removes comments from a list of lines."""
     return [line.split("#", 1)[0].strip() for line in lines]
 
 
-def read_cmake_lines_with_parens_joined(raw_lines: List[str]) -> list[str]:
+def read_cmake_lines_with_parens_joined(raw_lines: list[str]) -> list[str]:
     """
     Reads a CMake file and joins lines that have an opening '(' without a matching ')'
     until the closing ')' is found. Returns a list of logically complete lines.
@@ -41,7 +40,7 @@ def read_cmake_lines_with_parens_joined(raw_lines: List[str]) -> list[str]:
     return lines
 
 
-def resolve_for_each(raw_lines: List[str]) -> List[str]:
+def resolve_for_each(raw_lines: list[str]) -> list[str]:
     """Expands CMake's foreach() loops in a list of lines."""
     foreach_stack = []
 
@@ -97,11 +96,11 @@ def resolve_for_each(raw_lines: List[str]) -> List[str]:
     return lines
 
 
-def retrieve_cmake_dependencies(lines: List[str]) -> List[str]:
+def retrieve_cmake_dependencies(lines: list[str]) -> tuple[list[str], list[str]]:
     if isinstance(lines, Path):
         lines = read_cmake_file(lines)
-    main_deps = []
-    test_deps = []
+    main_deps: list[str] = []
+    test_deps: list[str] = []
 
     # We'll track blocks of 'if(BUILD_TESTING)' with a small stack
     if_stack = []
@@ -176,14 +175,14 @@ def retrieve_cmake_dependencies(lines: List[str]) -> List[str]:
     return main_deps, test_deps
 
 
-def read_cmake_file(file_path: Path) -> List[str]:
+def read_cmake_file(file_path: Path) -> list[str]:
     """Reads a CMake file and returns a list of lines."""
     if isinstance(file_path, str):
         file_path = Path(file_path)
     if not file_path.exists():
         print(f"File not found: {file_path}")
         return []
-    with open(file_path, "r") as f:
+    with open(file_path) as f:
         raw_lines = f.readlines()
     lines = remove_comments(raw_lines)
     lines = read_cmake_lines_with_parens_joined(lines)
@@ -193,8 +192,10 @@ def read_cmake_file(file_path: Path) -> List[str]:
     return lines
 
 
-def read_deps_from_cmake_file(file_path: Path) -> List[str]:
+def read_deps_from_cmake_file(file_path: Path | str) -> tuple[list[str], list[str]]:
     """Reads a CMake file and returns a list of dependencies."""
+    if isinstance(file_path, str):
+        file_path = Path(file_path)
     lines = read_cmake_file(file_path)
     try:
         main_deps, test_deps = retrieve_cmake_dependencies(lines)

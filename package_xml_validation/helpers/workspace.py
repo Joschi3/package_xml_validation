@@ -15,7 +15,6 @@ import argparse
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Dict, List
 import os
 
 
@@ -95,9 +94,9 @@ def parse_pkg_name(package_xml: Path) -> str:
     return package_xml.parent.name  # fallback
 
 
-def pkg_iterator(src_dir: Path) -> Dict[str, Path]:
+def pkg_iterator(src_dir: Path) -> dict[str, Path]:
     """Yield ``{pkg_name: pkg_path}`` for all packages under *src_dir*."""
-    pkgs: Dict[str, Path] = {}
+    pkgs: dict[str, Path] = {}
     for xml in src_dir.rglob("package.xml"):
         # Respect COLCON_IGNORE: ignore a path if any ancestor contains the file
         if any((parent / "COLCON_IGNORE").exists() for parent in xml.parents):
@@ -106,12 +105,13 @@ def pkg_iterator(src_dir: Path) -> Dict[str, Path]:
     return pkgs
 
 
-def get_pkgs_in_wrs(path: Path) -> List[str]:
+def get_pkgs_in_wrs(path: Path) -> list[str]:
     """Return all package names in the workspace that contains *path*."""
     if isinstance(path, str):
         path = Path(path).resolve(strict=True)
     if not path.exists():
         raise ValueError(f"Path does not exist: {path}")
+    pkg_dir = None
     try:
         pkg_dir = find_package_dir(path)
         ws_root = find_workspace_root(pkg_dir)

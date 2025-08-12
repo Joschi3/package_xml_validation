@@ -1,4 +1,5 @@
 import logging
+import sys
 
 
 class ColoredFormatter(logging.Formatter):
@@ -30,28 +31,24 @@ class ColoredFormatter(logging.Formatter):
 
 
 def get_logger(name: str = __name__, level: str = "normal") -> logging.Logger:
-    """
-    Returns a configured logger. If level=='verbose', DEBUG logs will be shown.
-    Otherwise, we default to INFO (as 'normal').
-    """
     logger = logging.getLogger(f"{name}_{level}")
-    logger.setLevel(logging.DEBUG)  # We'll filter later using the handler level
+    logger.setLevel(logging.DEBUG)
 
-    ch = logging.StreamHandler()
-    # Map "normal" to INFO and "verbose" to DEBUG
+    ch = logging.StreamHandler(sys.stdout)  # stdout is better for CI
+    ch.flush = sys.stdout.flush  # force flush after each log
+
     if level == "verbose":
         ch.setLevel(logging.DEBUG)
     else:
         ch.setLevel(logging.INFO)
 
-    # Use our custom colored formatter
     formatter = ColoredFormatter("%(message)s")
     ch.setFormatter(formatter)
 
-    # Prevent adding multiple handlers if the logger already exists
     if not logger.handlers:
         logger.addHandler(ch)
 
+    logger.propagate = False  # don't let root logger duplicate lines
     return logger
 
 

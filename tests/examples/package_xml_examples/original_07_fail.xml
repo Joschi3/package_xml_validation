@@ -6,8 +6,8 @@
   <version>0.0.0</version>
   <maintainer email="todo.todo@stud.tu-darmstadt.de">TODO</maintainer>
   <license>TODO: License declaration</license>
-
-  <buildtool_depend>ament_cmake</buildtool_depend>
+<!-- This is a comment -->
+<buildtool_depend>ament_cmake</buildtool_depend>
 
   <depend>pluginlib</depend>
   <depend>rclcpp</depend>
@@ -19,4 +19,4 @@
   <export>
     <build_type>ament_cmake</build_type>
   </export>
-</package>
+  </package>
