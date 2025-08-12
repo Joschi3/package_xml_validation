@@ -12,7 +12,6 @@ import argparse
 import sys
 import os
 from pathlib import Path
-from typing import List
 import xml.etree.ElementTree as ET
 from helpers.cmake_parsers import retrieve_cmake_dependencies
 from helpers.rosdep_validator import check_rosdeps
@@ -66,7 +65,7 @@ def find_files_in_dir(base_dir: Path):
     return xml_files, cmake_files
 
 
-def collect_cmake_package_pairs(cmake_files: List[Path], package_xmls: List[Path]):
+def collect_cmake_package_pairs(cmake_files: list[Path], package_xmls: list[Path]):
     # corresponding package.xml and cmake files are in the same directory
     pairs = []
     visited_cmake_files = set()

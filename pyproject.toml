@@ -7,7 +7,7 @@ name = "package_xml_validation"
 version = "0.1.0"
 description = "Validates package xml of ros2 pkgs"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.9"
 dependencies = [
     "lxml",
     "rosdep",

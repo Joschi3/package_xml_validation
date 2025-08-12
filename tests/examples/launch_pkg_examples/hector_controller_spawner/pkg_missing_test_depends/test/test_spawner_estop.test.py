@@ -33,7 +33,7 @@ def generate_test_description():
         if not os.path.isfile(path):
             raise FileNotFoundError(f"Missing test file: {path}")
 
-    with open(robot_description_file, "r") as f:
+    with open(robot_description_file) as f:
         robot_description = f.read()
 
     robot_state_publisher = launch_ros.actions.Node(

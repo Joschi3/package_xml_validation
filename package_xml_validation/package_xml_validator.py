@@ -1,6 +1,5 @@
 import argparse
 import os
-from typing import List
 import lxml.etree as ET
 from enum import Enum
 
@@ -91,7 +90,7 @@ class PackageXmlValidator:
         if os.path.exists(cmake_file):
             # check if rosidl_generate_interfaces is in CMakeLists.txt using regex
             regex = r"rosidl_generate_interfaces\s*\(\s*.*?\)"
-            with open(cmake_file, "r") as f:
+            with open(cmake_file) as f:
                 content = f.read()
                 if re.search(regex, content, re.DOTALL):
                     is_msg_pkg = True
@@ -100,7 +99,7 @@ class PackageXmlValidator:
             pkg_type = PackageType.PYTHON_PKG
         return pkg_type, is_msg_pkg
 
-    def check_for_rosdeps(self, rosdeps: List[str], xml_file: str):
+    def check_for_rosdeps(self, rosdeps: list[str], xml_file: str):
         """extract list of rosdeps and check if they are valid"""
         if not rosdeps:
             self.logger.info(f"No ROS dependencies found in {xml_file}.")
@@ -115,7 +114,7 @@ class PackageXmlValidator:
         return True
 
     def check_for_cmake(
-        self, build_deps: List[str], test_deps: List[str], xml_file: str, root
+        self, build_deps: list[str], test_deps: list[str], xml_file: str, root
     ):
         cmake_file = os.path.join(os.path.dirname(xml_file), "CMakeLists.txt")
         if not os.path.exists(cmake_file):
@@ -194,12 +193,12 @@ class PackageXmlValidator:
         root,
         package_xml_file: str,
         package_name: str,
-        exec_deps: List[str],
-        test_deps: List[str] = [],
+        exec_deps: list[str],
+        test_deps: list[str] = [],
     ):
         """Validate launch dependencies in the package.xml file."""
 
-        def extract_launch_deps(folder_names: List[str]) -> List[str]:
+        def extract_launch_deps(folder_names: list[str]) -> list[str]:
             """Extract launch dependencies from the folder names."""
             launch_deps = []
             for folder in folder_names:
@@ -212,7 +211,7 @@ class PackageXmlValidator:
             return launch_deps
 
         def validate_launch_folders(
-            launch_folder_names: List[str], xml_deps: List[str], depend_tag: str
+            launch_folder_names: list[str], xml_deps: list[str], depend_tag: str
         ) -> bool:
             launch_deps = extract_launch_deps(launch_folder_names)
             if not launch_deps:

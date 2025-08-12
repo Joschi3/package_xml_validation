@@ -143,7 +143,7 @@ class TestPackageXmlValidator(unittest.TestCase):
 
             if self._is_correct_file(fname):
                 if not all_valid_check:
-                    with open(original_path, "r") as f_after:
+                    with open(original_path) as f_after:
                         print(f"File content after check:\n{f_after.read()}")
                 self.assertTrue(
                     all_valid_check,
@@ -219,7 +219,7 @@ class TestPackageXmlValidator(unittest.TestCase):
                     comparison = self._compare_xml_files(final_path, corrected_path)
                     if not comparison:
                         # print corrected file to console
-                        with open(final_path, "r") as f_corrected:
+                        with open(final_path) as f_corrected:
                             corrected_content = f_corrected.read()
                         print(f"Corrected file content:\n{corrected_content}")
                     self.assertTrue(
