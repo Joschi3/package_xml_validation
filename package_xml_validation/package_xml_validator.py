@@ -487,64 +487,64 @@ class PackageXmlValidator:
                 root,
             )
 
-            # self.perform_check(
-            #     "Check launch dependencies",
-            #     self.validate_launch_dependencies,
-            #     root,
-            #     xml_file,
-            #     self.formatter.get_package_name(root),
-            #     self.formatter.retrieve_exec_dependencies(root),
-            #     self.formatter.retrieve_test_dependencies(root),
-            # )
+            self.perform_check(
+                "Check launch dependencies",
+                self.validate_launch_dependencies,
+                root,
+                xml_file,
+                self.formatter.get_package_name(root),
+                self.formatter.retrieve_exec_dependencies(root),
+                self.formatter.retrieve_test_dependencies(root),
+            )
 
-            # self.perform_check(
-            #     "Check build tool depend",
-            #     self.validate_buildtool_depend,
-            #     root,
-            #     xml_file,
-            # )
+            self.perform_check(
+                "Check build tool depend",
+                self.validate_buildtool_depend,
+                root,
+                xml_file,
+            )
 
-            # self.perform_check(
-            #     "Check member of group",
-            #     self.validate_member_of_group,
-            #     root,
-            #     xml_file,
-            # )
+            self.perform_check(
+                "Check member of group",
+                self.validate_member_of_group,
+                root,
+                xml_file,
+            )
 
-            # self.perform_check(
-            #     "Check build type export",
-            #     self.validate_ament_exports,
-            #     root,
-            #     xml_file,
-            # )
+            self.perform_check(
+                "Check build type export",
+                self.validate_ament_exports,
+                root,
+                xml_file,
+            )
 
-            # # Check rosdeps if enabled
-            # if self.check_rosdeps:
-            #     rosdeps = self.formatter.retrieve_all_dependencies(root)
-            #     valid = self.perform_check(
-            #         "Check ROS dependencies", self.check_for_rosdeps, rosdeps, xml_file
-            #     )
-            #     self.encountered_unresolvable_error |= not valid
-            # # Check with xmllint if enabled
-            # if self.check_with_xmllint:
-            #     valid = self.perform_check(
-            #         "Check with xmllint", self.validate_xml_with_xmllint, xml_file
-            #     )
-            #     self.encountered_unresolvable_error |= not valid
-            # # Check for CMake dependencies if enabled
-            # if self.compare_with_cmake:
-            #     build_deps = self.formatter.retrieve_build_dependencies(root)
-            #     test_deps = self.formatter.retrieve_test_dependencies(root)
-            #     valid = self.perform_check(
-            #         "Check CMake dependencies",
-            #         self.check_for_cmake,
-            #         build_deps,
-            #         test_deps,
-            #         xml_file,
-            #         root,
-            #     )
-            #     if not self.auto_fill_missing_deps:
-            #         self.encountered_unresolvable_error |= not valid
+            # Check rosdeps if enabled
+            if self.check_rosdeps:
+                rosdeps = self.formatter.retrieve_all_dependencies(root)
+                valid = self.perform_check(
+                    "Check ROS dependencies", self.check_for_rosdeps, rosdeps, xml_file
+                )
+                self.encountered_unresolvable_error |= not valid
+            # Check with xmllint if enabled
+            if self.check_with_xmllint:
+                valid = self.perform_check(
+                    "Check with xmllint", self.validate_xml_with_xmllint, xml_file
+                )
+                self.encountered_unresolvable_error |= not valid
+            # Check for CMake dependencies if enabled
+            if self.compare_with_cmake:
+                build_deps = self.formatter.retrieve_build_dependencies(root)
+                test_deps = self.formatter.retrieve_test_dependencies(root)
+                valid = self.perform_check(
+                    "Check CMake dependencies",
+                    self.check_for_cmake,
+                    build_deps,
+                    test_deps,
+                    xml_file,
+                    root,
+                )
+                if not self.auto_fill_missing_deps:
+                    self.encountered_unresolvable_error |= not valid
 
             # Write back to file if not in check-only mode
             if not self.xml_valid and not self.check_only:

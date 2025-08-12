@@ -43,6 +43,8 @@ NEW_LINE_BEFORE = [
     "export",
 ]
 
+NEW_LINE = "\n"
+
 
 class PackageXmlFormatter:
     def __init__(
@@ -60,6 +62,10 @@ class PackageXmlFormatter:
             else get_logger(__name__, level="verbose" if verbose else "normal")
         )
         self.encountered_unresolvable_error = False
+
+    def prettyprint(self, element, **kwargs):
+        xml = ET.tostring(element, pretty_print=True, **kwargs)
+        print(xml.decode(), end="")
 
     def check_dependency_order(self, root, xml_file):
         """Check and optionally correct the order of dependencies in the package.xml file (with comment preservation using lxml)."""
@@ -112,7 +118,7 @@ class PackageXmlFormatter:
         if not order_mismatch:
             return True
 
-        indentation = root[0].tail.replace("\n", "")
+        indentation = root[0].tail.replace(NEW_LINE, "")
         # Remove old dependency elements from root
         for dep_type in dependency_order:
             for elem in dependencies_with_comments[dep_type]:
@@ -136,13 +142,13 @@ class PackageXmlFormatter:
                 ):
                     elem_with_comment[0].tail = "\n\n" + indentation
                 else:
-                    elem_with_comment[0].tail = "\n" + indentation
+                    elem_with_comment[0].tail = NEW_LINE + indentation
                 for comment in elem_with_comment[1]:
                     root.insert(insert_index, comment)
                     insert_index += 1
                 root.insert(insert_index, elem_with_comment[0])
                 insert_index += 1
-        root[-1].tail = "\n"
+        root[-1].tail = NEW_LINE
 
         self.logger.info(f"Corrected dependency order in {xml_file}.")
         return False
@@ -263,19 +269,19 @@ class PackageXmlFormatter:
         current_comments = []
 
         last_tail = ""
-        indentation = root[0].tail.replace("\n", "")
+        indentation = root[0].tail.replace(NEW_LINE, "")
         for elem in root:
             if elem.tag is ET.Comment:
                 self.logger.error(f"Found comment: {elem.text}")
-                if last_tail and last_tail[-1] == "\n":
+                if last_tail and last_tail[-1] == NEW_LINE:
                     # inline comment -> append to previous element
                     elements_with_comments[-1][0].tail = elem.tail
-                    elem.tail = "\n" + indentation
+                    elem.tail = NEW_LINE + indentation
                     elements_with_comments[-1][1].append(deepcopy(elem))
                 else:
-                    # Ensure only one '\n' in elem.tail
-                    elem.tail = "\n" + (
-                        elem.tail.replace("\n", "") if elem.tail else ""
+                    # Ensure only one NEW_LINE in elem.tail
+                    elem.tail = NEW_LINE + (
+                        elem.tail.replace(NEW_LINE, "") if elem.tail else ""
                     )
                     current_comments.append(deepcopy(elem))
             else:
@@ -305,27 +311,27 @@ class PackageXmlFormatter:
         """
 
         def remove_inner_newlines(s):
-            first_newline_pos = s.find("\n")
-            last_newline_pos = s.rfind("\n")
+            first_newline_pos = s.find(NEW_LINE)
+            last_newline_pos = s.rfind(NEW_LINE)
 
             if first_newline_pos == -1 or first_newline_pos == last_newline_pos:
                 return s
 
             start = s[: first_newline_pos + 1]
-            middle = s[first_newline_pos + 1 : last_newline_pos].replace("\n", "")
+            middle = s[first_newline_pos + 1 : last_newline_pos].replace(NEW_LINE, "")
             end = s[last_newline_pos:]
             return start + middle + end
 
         found_empty_lines = False
         for elm in root:
-            if elm.tail and elm.tail.count("\n") > 2:
+            if elm.tail and elm.tail.count(NEW_LINE) > 2:
                 self.logger.info(
                     f"Error: More than one empty line found in {xml_file}."
                 )
                 found_empty_lines = True
                 if self.check_only:
                     return False
-            if elm.tail is None or elm.tail.count("\n") == 0:
+            if elm.tail is None or elm.tail.count(NEW_LINE) == 0:
                 found_empty_lines = True
                 self.logger.info(f"Error: Two Elements in the sane line in {xml_file}.")
                 if self.check_only:
@@ -336,15 +342,15 @@ class PackageXmlFormatter:
         if not found_empty_lines:
             return True
         # elements after last \n
-        indendantion = root[0].tail[root[0].tail.rfind("\n") + 1 :]
+        indendantion = root[0].tail[root[0].tail.rfind(NEW_LINE) + 1 :]
         # correct the empty lines & missing newlines
         for elm in root:
-            if elm.tail and elm.tail.count("\n") > 2:
+            if elm.tail and elm.tail.count(NEW_LINE) > 2:
                 elm.tail = remove_inner_newlines(elm.tail)
-            elif elm.tail and elm.tail.count("\n") == 0:
-                elm.tail += "\n"
+            elif elm.tail and elm.tail.count(NEW_LINE) == 0:
+                elm.tail += NEW_LINE
             elif elm.tail is None:
-                elm.tail = "\n" + indendantion
+                elm.tail = NEW_LINE + indendantion
         return False
 
     def check_indentation(self, root, level=1, indentation="  "):
@@ -358,67 +364,57 @@ class PackageXmlFormatter:
             """The string should be indented with the expected_indent and contain a newline."""
             if not string or not isinstance(string, str):
                 return False
-            parsed_indentation = string.replace("\n", "")
-            return parsed_indentation == expected_indent and "\n" in string
+            parsed_indentation = string.replace(NEW_LINE, "")
+            return parsed_indentation == expected_indent and NEW_LINE in string
 
         def fix_indentation(string, expected_indent) -> str:
             """Fix the indentation of the string to match the expected_indent."""
-            indent = string.replace(" ", "") if string and "\n" in string else "\n"
+            indent = (
+                string.replace(" ", "") if string and NEW_LINE in string else NEW_LINE
+            )
             return indent + expected_indent
 
-        def check_and_correct(string, expected_indent, name):
+        def check_and_correct(string, expected_indent, name) -> tuple[str, bool]:
             """Check and correct the indentation of the string."""
             if not check_indentation_string(string, expected_indent):
                 self.logger.error(
-                    f"Incorrect indentation for element '{name}'. Expected: '{expected_indent}', Found: '{string.replace('\n', '') if string else 'None'}'"
+                    f"Incorrect indentation for element '{name}'. Expected: '{expected_indent}', Found: '{string.replace(NEW_LINE, '') if string else 'None'}'"
                 )
-                is_correct = False
                 if not self.check_only:
                     string = fix_indentation(string, expected_indent)
+                    print(f"Corrected indentation for element '{name}': {string}")
+                return string, True
+            return string, False
+
+        root.text, corrected = check_and_correct(
+            root.text, indentation * level, f"{root.tag}-text"
+        )
+        is_correct &= not corrected
 
         for index, elem in enumerate(root):
             is_last = index == len(root) - 1
             expected_indent = (
                 indentation * (level - 1) if is_last else indentation * level
             )
-            if not check_indentation_string(elem.tail, expected_indent):
-                print(
-                    f"elem.text: {elem.text if elem.text else 'None'}, elem.tail: {elem.tail if elem.tail else 'None'}, expected_indent: {expected_indent}"
-                )
-                self.logger.error(
-                    f"Incorrect indentation for element '{elem.tag}'. Expected: '{expected_indent}', Found: '{elem.tail.replace('\n', '') if elem.tail else 'None'}'"
-                )
-                is_correct = False
-                if not self.check_only:
-                    elem.tail = fix_indentation(elem.tail, expected_indent)
+            elem.tail, corrected = check_and_correct(
+                elem.tail, expected_indent, f"{elem.tag}-{elem.text[:15]}"
+            )
+            is_correct &= not corrected
             if len(elem) > 0:  # has children
-                # Check indentation of first child (indentation will be in text of parent element)
-                expected_indent = indentation * (level + 1)
-                if not check_indentation_string(elem.text, expected_indent):
-                    self.logger.error(
-                        f"Incorrect indentation for element '{elem.tag}'. Expected: '{expected_indent}', Found: '{elem.text.replace('\n', '')}'"
-                    )
-                    is_correct = False
-                    if not self.check_only:
-                        elem.text = fix_indentation(elem.text, expected_indent)
                 # check children recursively
                 if not self.check_indentation(elem, level + 1, indentation):
                     is_correct = False
             else:
                 # make sure there are no new lines in texts
-                if elem.text and "\n" in elem.text:
+                if elem.text and NEW_LINE in elem.text:
                     self.logger.error(
                         f"Element '{elem.tag}' has new lines in its text: '{elem.text}'"
                     )
                     is_correct = False
                     if not self.check_only:
-                        elem.text = elem.text.replace("\n", " ").strip()
+                        elem.text = elem.text.replace(NEW_LINE, " ").strip()
 
-        def prettyprint(element, **kwargs):
-            xml = ET.tostring(element, pretty_print=True, **kwargs)
-            print(xml.decode(), end="")
-
-        prettyprint(root)
+        self.logger.info(f"Checked indentation for XML file. Correct: {is_correct}")
         return is_correct
 
     def check_for_non_existing_tags(self, root, xml_file):
@@ -489,11 +485,11 @@ class PackageXmlFormatter:
         elements = [dep[0] for dep in ELEMENTS]
         if dep_type not in dep_types:
             raise ValueError(f"Invalid dependency type: {dep_type}")
-        indendantion = root[0].tail.replace("\n", "")
+        indendantion = root[0].tail.replace(NEW_LINE, "")
         for dep in dependencies:
             new_elem = ET.Element(dep_type)
             new_elem.text = dep
-            new_elem.tail = "\n" + indendantion
+            new_elem.tail = NEW_LINE + indendantion
             # add element to root at correct position -> correct dep group and alphabetical order
             # case 1: dependency group is empty
             if not root.findall(dep_type):
@@ -523,9 +519,9 @@ class PackageXmlFormatter:
             # adapt empty lines -> in case element prior ends with empty line move it to the new element
             if insert_position > 0 and insert_position > first_of_group:
                 previous_element = root[insert_position - 1]
-                if previous_element.tail and previous_element.tail.count("\n") > 1:
+                if previous_element.tail and previous_element.tail.count(NEW_LINE) > 1:
                     new_elem.tail = previous_element.tail
-                    previous_element.tail = "\n" + indendantion
+                    previous_element.tail = NEW_LINE + indendantion
             if insert_position < len(root) - 1:
                 # if next tag is different than the new element, add empty line
                 next_element = root[insert_position + 1]
@@ -539,7 +535,7 @@ class PackageXmlFormatter:
         If it does not exist, it will be created.
         Other exports will not be changed(besides the build_type export).
         """
-        indendantion = root[0].tail.replace("\n", "")
+        indendantion = root[0].tail.replace(NEW_LINE, "")
         export = root.find("export")
         if export is None:
             export = ET.Element("export")
@@ -548,15 +544,15 @@ class PackageXmlFormatter:
                 last_element = root[-1]
                 if last_element.tail:
                     last_element.tail = "\n\n" + indendantion
-            export.tail = "\n"
+            export.tail = NEW_LINE
             root.append(export)
         build_type_elem = export.find("build_type")
         if build_type_elem is None:
             build_type_elem = ET.Element("build_type")
-            build_type_elem.tail = "\n" + indendantion
+            build_type_elem.tail = NEW_LINE + indendantion
             export.append(build_type_elem)
         build_type_elem.text = build_type
-        export.text = "\n" + 2 * indendantion
+        export.text = NEW_LINE + 2 * indendantion
 
     def add_buildtool_depends(self, root, buildtool: list[str]):
         """
@@ -564,7 +560,7 @@ class PackageXmlFormatter:
         If the buildtool_depend already exists, it will be updated.
         If it does not exist, it will be created.
         """
-        indendantion = root[0].tail.replace("\n", "")
+        indendantion = root[0].tail.replace(NEW_LINE, "")
         # 1. clear existing buildtool_depend elements
         for elem in root.findall("buildtool_depend"):
             root.remove(elem)
@@ -582,14 +578,14 @@ class PackageXmlFormatter:
             is_last = i == len(buildtool) - 1
             new_elem = ET.Element("buildtool_depend")
             new_elem.text = tool
-            new_elem.tail = "\n\n" if is_last else "\n"
+            new_elem.tail = "\n\n" if is_last else NEW_LINE
             new_elem.tail += indendantion
             root.insert(insert_position, new_elem)
             insert_position += 1
 
     def add_member_of_group(self, root, group_name: str):
         """Add member_of_group element to the XML file."""
-        indendantion = root[0].tail.replace("\n", "")
+        indendantion = root[0].tail.replace(NEW_LINE, "")
         member_of_group = ET.Element("member_of_group")
         member_of_group.text = group_name
         member_of_group.tail = "\n\n" + indendantion
