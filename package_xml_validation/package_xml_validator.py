@@ -567,6 +567,11 @@ class PackageXmlValidator:
                 )
 
             self.all_valid &= self.xml_valid
+        # how can i force logger to flush all messages?
+        for handler in self.logger.handlers:
+            if hasattr(handler, "flush"):
+                handler.flush()
+                print("Flushed logger handler:", handler)
         # Final result messages
         if not self.all_valid and self.check_only:
             self.logger.warning(
