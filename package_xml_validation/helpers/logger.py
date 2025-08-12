@@ -52,22 +52,6 @@ def get_logger(name: str = __name__, level: str = "normal") -> logging.Logger:
     return logger
 
 
-def setup_ci_logging():
-    """Setup logging specifically optimized for CI environments."""
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format="%(levelname)s: %(message)s",
-        stream=sys.stdout,
-        force=True,  # Override any existing configuration
-    )
-
-    # Ensure immediate flushing
-    for handler in logging.getLogger().handlers:
-        handler.stream = sys.stdout
-        if hasattr(handler.stream, "reconfigure"):
-            handler.stream.reconfigure(line_buffering=True)
-
-
 if __name__ == "__main__":
     # Example usage:
     # For "normal" logs (INFO and above)

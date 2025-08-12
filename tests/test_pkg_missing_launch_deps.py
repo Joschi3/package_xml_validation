@@ -110,6 +110,8 @@ class TestPackageXmlValidator(unittest.TestCase):
                 # Use subTest to continue testing other files even if this one fails
                 with self.subTest(example_pkg=example_pkg, pkg=pkg, xml_file=xml_file):
                     # apply the formatter
+                    with open(xml_file) as f:
+                        xml_content = f.read()
                     valid = self.formatter.check_and_format_files([xml_file])
                     msg = ""
 
@@ -119,7 +121,7 @@ class TestPackageXmlValidator(unittest.TestCase):
                                 msg = f"Formatted XML file {xml_file}:\n'{f.read()}'"
                         self.assertFalse(
                             valid,
-                            f"XML file {xml_file} is expected to be invalid but was valid. {msg}",
+                            f"XML file {xml_file} is expected to be invalid but was valid. {msg} \n vs original: \n{xml_content}",
                         )
                     else:
                         if not valid:
@@ -127,7 +129,7 @@ class TestPackageXmlValidator(unittest.TestCase):
                                 msg = f"Invalid XML file {xml_file}:\n{f.read()}"
                         self.assertTrue(
                             valid,
-                            f"XML file {xml_file} is expected to be valid but was invalid. {msg}",
+                            f"XML file {xml_file} is expected to be valid but was invalid. {msg} \n vs original: \n{xml_content}",
                         )
 
                     self.assertTrue(
