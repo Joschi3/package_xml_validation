@@ -22,6 +22,7 @@ Validates and formats `package.xml` files to enforce consistency and ROS 2 schem
   - automatically inserts missing package xml dependencies from the CMakeList as `<depend>` or `<build_depend>` (optional)
 - Export Build Type Validation
   - makes sure the package.xml includes the appropriate build_type export (e.g. ament_cmake, ament_python)
+  - also validates `buildtool_depend`
 
 
 #### Example: Enforced Grouping of the dependencies
@@ -63,22 +64,25 @@ options:
   --check-with-xmllint          Recheck XML schema using xmllint.
   --skip-rosdep-key-validation  Check if rosdeps are valid.
   --compare-with-cmake          Check if all CMake dependencies are in package.xml.
-  --auto-fill-missing-deps      Automatically fill missing dependencies in package.xml. Note: --compare-with-cmake must be set.
+  --auto-fill-missing-deps      Automatically fill missing dependencies in package.xml.
 ```
 Example with verbose logging:
 ```
 package-xml-validator ~/hector/src/hector_gamepad_manager/hector_gamepad_plugin_interface --check-only --compare-with-cmake --verbose
 Processing hector_gamepad_plugin_interface...
-✅ [1/10] Check for invalid tags passed.
-✅ [2/10] Check for empty lines passed.
-✅ [3/10] Check for duplicate elements passed.
-✅ [4/10] Check element occurrences passed.
-✅ [5/10] Check element order passed.
-✅ [6/10] Check dependency order passed.
-✅ [7/10] Check launch dependencies passed.
-✅ [8/10] Check build type export passed.
-✅ [8/10] Check ROS dependencies passed.
-✅ [9/10] Check CMake dependencies passed.
+✅ [1/13] Check for invalid tags passed.
+✅ [2/13] Check for empty lines passed.
+✅ [3/13] Check for duplicate elements passed.
+✅ [4/13] Check element occurrences passed.
+✅ [5/13] Check element order passed.
+✅ [6/13] Check dependency order passed.
+✅ [7/13] Check indentation passed.
+✅ [8/13] Check launch dependencies passed.
+✅ [9/13] Check build tool depend passed.
+✅ [10/13] Check member of group passed.
+✅ [11/13] Check build type export passed.
+✅ [12/13] Check ROS dependencies passed.
+✅ [13/13] Check CMake dependencies passed.
 🎉 All `package.xml` files are valid and nicely formatted. 🚀
 ```
 
@@ -99,7 +103,7 @@ pip install pre-commit
 ```yaml
 repos:
   - repo: git@github.com:Joschi3/package_xml_validation.git
-    rev: v1.2.0
+    rev: v1.2.2
     hooks:
       - id: format-package-xml
         name: Format package.xml
