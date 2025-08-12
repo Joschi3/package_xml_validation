@@ -106,34 +106,40 @@ class TestPackageXmlValidator(unittest.TestCase):
             build_type_dir = os.path.join(self.test_dir, example_pkg)
             for pkg in os.listdir(build_type_dir):
                 xml_file = os.path.join(build_type_dir, pkg, "package.xml")
-                # apply the formatter
-                valid = self.formatter.check_and_format_files([xml_file])
-                msg = ""
-                if not pkg == "pkg_correct":
-                    if valid:
-                        with open(xml_file) as f:
-                            msg = f"Formatted XML file {xml_file}:\n'{f.read()}'"
-                    self.assertFalse(
-                        valid,
-                        f"XML file {xml_file} is expected to be invalid but was valid. {msg}",
-                    )
-                else:
-                    if not valid:
-                        with open(xml_file) as f:
-                            msg = f"Invalid XML file {xml_file}:\n{f.read()}"
+
+                # Use subTest to continue testing other files even if this one fails
+                with self.subTest(example_pkg=example_pkg, pkg=pkg, xml_file=xml_file):
+                    # apply the formatter
+                    valid = self.formatter.check_and_format_files([xml_file])
+                    msg = ""
+
+                    if not pkg == "pkg_correct":
+                        if valid:
+                            with open(xml_file) as f:
+                                msg = f"Formatted XML file {xml_file}:\n'{f.read()}'"
+                        self.assertFalse(
+                            valid,
+                            f"XML file {xml_file} is expected to be invalid but was valid. {msg}",
+                        )
+                    else:
+                        if not valid:
+                            with open(xml_file) as f:
+                                msg = f"Invalid XML file {xml_file}:\n{f.read()}"
+                        self.assertTrue(
+                            valid,
+                            f"XML file {xml_file} is expected to be valid but was invalid. {msg}",
+                        )
+
                     self.assertTrue(
-                        valid,
-                        f"XML file {xml_file} is expected to be valid but was invalid. {msg}",
+                        self._compare_xml_files(xml_file, correct_xml),
+                        f"XML files do not match: {xml_file} != {correct_xml}",
                     )
-                self.assertTrue(
-                    self._compare_xml_files(xml_file, correct_xml),
-                    f"XML files do not match: {xml_file} != {correct_xml}",
-                )
-                # validate the XML file with xmllint
-                self.assertTrue(
-                    validate_xml_with_xmllint(xml_file),
-                    f"XML file {xml_file} failed xmllint validation.",
-                )
+
+                    # validate the XML file with xmllint
+                    self.assertTrue(
+                        validate_xml_with_xmllint(xml_file),
+                        f"XML file {xml_file} failed xmllint validation.",
+                    )
 
 
 if __name__ == "__main__":
