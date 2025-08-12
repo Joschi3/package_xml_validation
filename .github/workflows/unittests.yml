@@ -39,5 +39,7 @@ jobs:
           rosdep update
 
       - name: Run unit tests
+        env:
+          PYTHONUNBUFFERED: 1
         run: |
           python -m unittest discover
