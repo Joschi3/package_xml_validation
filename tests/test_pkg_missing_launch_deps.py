@@ -42,6 +42,7 @@ class TestPackageXmlValidator(unittest.TestCase):
             check_only=False,
             verbose=True,
             auto_fill_missing_deps=True,
+            check_rosdeps=False,
         )
 
     def setUp(self):
