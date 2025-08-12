@@ -227,6 +227,16 @@ class PackageXmlValidator:
                 self.logger.warning(
                     f"Missing <{depend_tag}> dependencies in {package_name}/package.xml: {sep}{sep.join(missing_deps)}"
                 )
+            missing_deps = [
+                dep
+                for dep in launch_deps
+                if dep not in xml_deps and dep != package_name
+            ]
+            if missing_deps:
+                sep = "\n\t - "
+                self.logger.warning(
+                    f"Missing <{depend_tag}> dependencies in {package_name}/package.xml: {sep}{sep.join(missing_deps)}"
+                )
 
                 if self.check_only:
                     return False
