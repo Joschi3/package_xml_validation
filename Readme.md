@@ -1,4 +1,7 @@
 # ROS2 Package Xml Validator & Formatter
+![CI](https://github.com/Joschi3/package_xml_validation/actions/workflows/unittests.yml/badge.svg)
+![Lint](https://github.com/<OWNER>/<REPO>/actions/workflows/lint.yml/badge.svg)
+[![codecov](https://codecov.io/gh/Joschi3/package_xml_validation/branch/main/graph/badge.svg)](https://codecov.io/gh/Joschi3/package_xml_validation/)
 
 Validates and formats `package.xml` files to enforce consistency and ROS 2 schema compliance.
 

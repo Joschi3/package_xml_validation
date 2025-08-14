@@ -116,6 +116,12 @@ class PackageXmlValidator:
     def check_for_cmake(
         self, build_deps: list[str], test_deps: list[str], xml_file: str, root
     ):
+        pkg_type, _ = self.get_package_type(xml_file)
+        if pkg_type != PackageType.CMAKE_PKG:
+            self.logger.info(
+                "Skipping CMake dependency check for package since it is not a CMake package"
+            )
+            return True
         cmake_file = os.path.join(os.path.dirname(xml_file), "CMakeLists.txt")
         if not os.path.exists(cmake_file):
             self.logger.error(

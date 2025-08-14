@@ -31,13 +31,30 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --no-cache-dir lxml
+          python -m pip install --no-cache-dir lxml coverage
           python -m pip install . --break-system-packages
 
       - name: Update rosdep
         run: |
           rosdep update
 
-      - name: Run unit tests
+      - name: Run unit tests with coverage
         run: |
-          python -u -m unittest discover -v
+          python3 -m coverage run --source=package_xml_validation -m unittest discover
+          python3 -m coverage report -m
+          # produce both XML and HTML outputs
+          python3 -m coverage xml -o coverage.xml
+          python3 -m coverage html
+
+      - name: Upload coverage HTML as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: htmlcov
+
+      - name: Upload to Codecov
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
