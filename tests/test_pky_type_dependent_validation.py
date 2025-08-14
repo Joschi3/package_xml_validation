@@ -3,6 +3,7 @@ import unittest
 import tempfile
 import shutil
 import subprocess
+from unittest.mock import MagicMock
 import lxml.etree as ET
 
 from package_xml_validation.package_xml_validator import (
@@ -43,7 +44,13 @@ class TestPackageXmlValidator(unittest.TestCase):
             check_only=False,
             verbose=True,
             auto_fill_missing_deps=True,
-            check_rosdeps=False,
+            check_rosdeps=True,
+            compare_with_cmake=True,
+        )
+
+        cls.formatter.rosdep_validator = MagicMock()
+        cls.formatter.rosdep_validator.check_rosdeps_and_local_pkgs = MagicMock(
+            return_value=[]
         )
 
     def setUp(self):
@@ -96,7 +103,7 @@ class TestPackageXmlValidator(unittest.TestCase):
         """
         Iterate over all example packages in the test directory,
         """
-        build_types = ["ament_cmake", "msg_pkg"]  #  "ament_python"
+        build_types = ["ament_cmake", "msg_pkg", "ament_python"]
         for build_type in build_types:
             correct_xml = os.path.join(
                 self.examples_dir, build_type, "pkg_correct", "package.xml"
