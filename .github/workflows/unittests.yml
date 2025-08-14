@@ -38,23 +38,30 @@ jobs:
         run: |
           rosdep update
 
-      - name: Run unit tests with coverage
+      - name: Run unit tests with coverage (always emit XML)
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
-          python3 -m coverage run --source=package_xml_validation -m unittest discover
-          python3 -m coverage report -m
-          # produce both XML and HTML outputs
-          python3 -m coverage xml -o coverage.xml
-          python3 -m coverage html
+          set +e
+          python3 -m coverage run --source=package_xml_validation \
+            -m unittest discover -s tests -p "test_*.py" -t .
+          status=$?
+          # Always generate reports so Codecov has something to ingest
+          python3 -m coverage xml -o coverage.xml || true
+          python3 -m coverage report -m || true
+          python3 -m coverage html || true
+          exit $status
 
       - name: Upload coverage HTML as artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-html
           path: htmlcov
 
       - name: Upload to Codecov
-        if: ${{ github.event_name != 'pull_request' }}
+        if: always()
         uses: codecov/codecov-action@v4
         with:
           files: coverage.xml
-          fail_ci_if_error: false
+          verbose: true
