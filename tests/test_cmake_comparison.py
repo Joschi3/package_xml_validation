@@ -55,6 +55,19 @@ class TestPackageXmlValidator(unittest.TestCase):
             return_value=[]
         )
 
+        cls.formatter_check_only = PackageXmlValidator(
+            check_only=True,
+            verbose=True,
+            auto_fill_missing_deps=True,
+            check_rosdeps=True,
+            compare_with_cmake=True,
+        )
+        # mock the rosdep validator -> pretend all packages are resolvable
+        cls.formatter_check_only.rosdep_validator = MagicMock()
+        cls.formatter_check_only.rosdep_validator.check_rosdeps_and_local_pkgs = (
+            MagicMock(return_value=[])
+        )
+
     def setUp(self):
         """
         Create a temporary directory for each test, copy example files into it,
@@ -123,6 +136,37 @@ class TestPackageXmlValidator(unittest.TestCase):
                     # apply the formatter
                     with open(xml_file) as f:
                         xml_content = f.read()
+
+                    # ---------------------- 1. Use check_only formatter ----------------------
+                    valid = self.formatter_check_only.check_and_format_files([xml_file])
+                    msg = ""
+
+                    if not pkg == "pkg_correct":
+                        if valid:
+                            with open(xml_file) as f:
+                                msg = f"Formatted XML file {xml_file}:\n'{f.read()}'"
+                        self.assertFalse(
+                            valid,
+                            f"XML file {xml_file} is expected to be invalid but was valid. {msg} \n vs original: \n{xml_content}",
+                        )
+                    else:
+                        if not valid:
+                            with open(xml_file) as f:
+                                msg = f"Invalid XML file {xml_file}:\n{f.read()}"
+                        self.assertTrue(
+                            valid,
+                            f"XML file {xml_file} is expected to be valid but was invalid. {msg} \n vs original: \n{xml_content}",
+                        )
+                    original_xml = os.path.join(
+                        self.examples_dir, example_pkg, pkg, "package.xml"
+                    )
+                    # make sure that the check only formatter did not change the file
+                    self.assertTrue(
+                        self._compare_xml_files(xml_file, original_xml),
+                        f"XML files do not match: {xml_file} != {original_xml}",
+                    )
+
+                    # ------------------------- 2. Use full formatter ------------------------
                     valid = self.formatter.check_and_format_files([xml_file])
                     msg = ""
 
