@@ -15,6 +15,7 @@ class FormatterType(Enum):
     CHECK_ONLY = "check_only"
     NO_AUTO_FILL = "no_auto_fill"
     FULL = "full"
+    ALL_ROSDEPS_ARE_UNRESOLVABLE = "all_rosdeps_are_unresolvable"
 
 
 def validate_xml_with_xmllint(xml_file):
@@ -69,11 +70,27 @@ class TestPackageXmlValidator(unittest.TestCase):
             check_rosdeps=True,
             compare_with_cmake=False,
         )
-        for formatter in cls.formatters.values():
-            formatter.rosdep_validator = MagicMock()
-            formatter.rosdep_validator.check_rosdeps_and_local_pkgs = MagicMock(
-                return_value=[]
+        cls.formatters[FormatterType.ALL_ROSDEPS_ARE_UNRESOLVABLE] = (
+            PackageXmlValidator(
+                check_only=False,
+                verbose=True,
+                auto_fill_missing_deps=True,
+                check_rosdeps=True,
+                compare_with_cmake=True,
             )
+        )
+        for key, formatter in cls.formatters.items():
+            formatter.rosdep_validator = MagicMock()
+            if key is FormatterType.ALL_ROSDEPS_ARE_UNRESOLVABLE:
+                formatter.rosdep_validator.check_rosdeps_and_local_pkgs = MagicMock(
+                    side_effect=lambda deps: deps
+                )
+                # Mock "normal" rosdep check, we are testing launch deps here
+                formatter.check_for_rosdeps = MagicMock(return_value=True)
+            else:
+                formatter.rosdep_validator.check_rosdeps_and_local_pkgs = MagicMock(
+                    side_effect=lambda deps: []  # everything resolvable
+                )
 
     def setUp(self):
         """
@@ -130,9 +147,15 @@ class TestPackageXmlValidator(unittest.TestCase):
         if not result:
             print(f"XML files do not match: {file1} != {file2}")
             with open(file1, encoding="utf-8") as f1:
-                print(f"Contents of {file1}:\n{f1.read()}")
+                content_1 = f1.readlines()
             with open(file2, encoding="utf-8") as f2:
-                print(f"Contents of {file2}:\n{f2.read()}")
+                content_2 = f2.readlines()
+            for line1, line2 in zip(content_1, content_2):
+                are_equal = line1 == line2
+                if are_equal:
+                    print(f"    {line1.rstrip()}")
+                else:
+                    print(f"->   {line1.rstrip()} != {line2.rstrip()}")
         return result
 
     def test_xml_formatting(self):
@@ -173,6 +196,7 @@ class TestPackageXmlValidator(unittest.TestCase):
                                 valid,
                                 f"XML file {xml_file} is expected to be invalid but was valid. {msg} \n vs original: \n{xml_content}",
                             )
+
                         else:
                             if not valid:
                                 with open(xml_file) as f:
@@ -181,6 +205,7 @@ class TestPackageXmlValidator(unittest.TestCase):
                                 valid,
                                 f"XML file {xml_file} is expected to be valid but was invalid. {msg} \n vs original: \n{xml_content}",
                             )
+                            self._compare_xml_files_and_print(xml_file, correct_xml)
                         original_xml = os.path.join(
                             self.examples_dir, example_pkg, pkg, "package.xml"
                         )
