@@ -1,7 +1,10 @@
 import os
 import unittest
 
-from package_xml_validation.helpers.find_launch_dependencies import scan_file
+from package_xml_validation.helpers.find_launch_dependencies import (
+    scan_file,
+    scan_files,
+)
 
 
 class TestFindLaunchDependencies(unittest.TestCase):
@@ -49,6 +52,19 @@ class TestFindLaunchDependencies(unittest.TestCase):
                         f"  found:    {sorted(found)}"
                     ),
                 )
+
+    def test_scan_each_file_given_file(self):
+        """When given a file path, or an not existing directory scan_files should return an empty list"""
+        found = scan_files("non_existing_file.launch.py")
+        self.assertEqual(len(found), 0)
+        existing_file = os.path.join(
+            os.path.dirname(__file__),
+            "examples",
+            "launch_examples",
+            "python_example.launch.py",
+        )
+        found = scan_files(existing_file)
+        self.assertEqual(len(found), 0)
 
 
 if __name__ == "__main__":

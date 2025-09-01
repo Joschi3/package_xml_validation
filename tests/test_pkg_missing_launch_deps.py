@@ -1,5 +1,6 @@
 import os
 import unittest
+from unittest.mock import MagicMock
 import tempfile
 import shutil
 import subprocess
@@ -7,6 +8,22 @@ import lxml.etree as ET
 from package_xml_validation.package_xml_validator import (
     PackageXmlValidator,
 )
+from enum import Enum
+
+
+class FormatterType(Enum):
+    CHECK_ONLY = "check_only"
+    NO_AUTO_FILL = "no_auto_fill"
+    FULL = "full"
+    ALL_ROSDEPS_ARE_UNRESOLVABLE = "all_rosdeps_are_unresolvable"
+
+
+#  GOAl
+# Check that launch dependencies are correctly added to the package.xml
+# CHECK-ONLY -> find missing but DO NOT CHANGE THE FILE
+# NO-AUTO-FILL -> find missing and do not autofill
+# FULL -> find missing and autofill
+# ALL-ROSDEPS-ARE-UNRESOLVABLE -> find missing but cannot autofill due to unresolvable rosdeps
 
 
 def validate_xml_with_xmllint(xml_file):
@@ -38,12 +55,50 @@ class TestPackageXmlValidator(unittest.TestCase):
         """
         current_dir = os.path.dirname(__file__)
         cls.examples_dir = os.path.join(current_dir, "examples", "launch_pkg_examples")
-        cls.formatter = PackageXmlValidator(
+        cls.formatters = {}
+        cls.formatters[FormatterType.FULL] = PackageXmlValidator(
             check_only=False,
             verbose=True,
             auto_fill_missing_deps=True,
-            check_rosdeps=False,
+            check_rosdeps=True,
+            compare_with_cmake=True,
         )
+        cls.formatters[FormatterType.CHECK_ONLY] = PackageXmlValidator(
+            check_only=True,
+            verbose=True,
+            auto_fill_missing_deps=False,
+            check_rosdeps=True,
+            compare_with_cmake=False,
+        )
+
+        cls.formatters[FormatterType.NO_AUTO_FILL] = PackageXmlValidator(
+            check_only=False,
+            verbose=True,
+            auto_fill_missing_deps=False,
+            check_rosdeps=True,
+            compare_with_cmake=False,
+        )
+        cls.formatters[FormatterType.ALL_ROSDEPS_ARE_UNRESOLVABLE] = (
+            PackageXmlValidator(
+                check_only=False,
+                verbose=True,
+                auto_fill_missing_deps=True,
+                check_rosdeps=True,
+                compare_with_cmake=True,
+            )
+        )
+        for key, formatter in cls.formatters.items():
+            formatter.rosdep_validator = MagicMock()
+            if key is FormatterType.ALL_ROSDEPS_ARE_UNRESOLVABLE:
+                formatter.rosdep_validator.check_rosdeps_and_local_pkgs = MagicMock(
+                    side_effect=lambda deps: deps
+                )
+                # Mock "normal" rosdep check, we are testing launch deps here
+                formatter.check_for_rosdeps = MagicMock(return_value=True)
+            else:
+                formatter.rosdep_validator.check_rosdeps_and_local_pkgs = MagicMock(
+                    side_effect=lambda deps: []  # everything resolvable
+                )
 
     def setUp(self):
         """
@@ -95,6 +150,22 @@ class TestPackageXmlValidator(unittest.TestCase):
             print(f"XML Syntax Error: {e}")
             return False
 
+    def _compare_xml_files_and_print(self, file1: str, file2: str) -> bool:
+        result = self._compare_xml_files(file1, file2)
+        if not result:
+            print(f"XML files do not match: {file1} != {file2}")
+            with open(file1, encoding="utf-8") as f1:
+                content_1 = f1.readlines()
+            with open(file2, encoding="utf-8") as f2:
+                content_2 = f2.readlines()
+            for line1, line2 in zip(content_1, content_2):
+                are_equal = line1 == line2
+                if are_equal:
+                    print(f"    {line1.rstrip()}")
+                else:
+                    print(f"->   {line1.rstrip()} != {line2.rstrip()}")
+        return result
+
     def test_xml_formatting(self):
         """
         Iterate over all example packages in the test directory,
@@ -104,45 +175,62 @@ class TestPackageXmlValidator(unittest.TestCase):
             correct_xml = os.path.join(
                 self.examples_dir, example_pkg, "pkg_correct", "package.xml"
             )
-            build_type_dir = os.path.join(self.test_dir, example_pkg)
-            for pkg in os.listdir(build_type_dir):
-                xml_file = os.path.join(build_type_dir, pkg, "package.xml")
-
-                # Use subTest to continue testing other files even if this one fails
-                with self.subTest(example_pkg=example_pkg, pkg=pkg, xml_file=xml_file):
-                    # apply the formatter
-                    with open(xml_file) as f:
-                        xml_content = f.read()
-                    valid = self.formatter.check_and_format_files([xml_file])
-                    msg = ""
-
-                    if not pkg == "pkg_correct":
-                        if valid:
-                            with open(xml_file) as f:
-                                msg = f"Formatted XML file {xml_file}:\n'{f.read()}'"
-                        self.assertFalse(
-                            valid,
-                            f"XML file {xml_file} is expected to be invalid but was valid. {msg} \n vs original: \n{xml_content}",
+            pkg_dir = os.path.join(self.test_dir, example_pkg)
+            for pkg in os.listdir(pkg_dir):
+                xml_file = os.path.join(pkg_dir, pkg, "package.xml")
+                for type, formatter in self.formatters.items():
+                    # Use subTest to continue testing other files even if this one fails
+                    with self.subTest(example_pkg=example_pkg, pkg=pkg, type=type):
+                        # recopy file from example to test dir
+                        shutil.copy2(
+                            os.path.join(
+                                self.examples_dir, example_pkg, pkg, "package.xml"
+                            ),
+                            xml_file,
                         )
-                    else:
-                        if not valid:
-                            with open(xml_file) as f:
-                                msg = f"Invalid XML file {xml_file}:\n{f.read()}"
+                        # apply the formatter
+                        with open(xml_file) as f:
+                            xml_content = f.read()
+                        valid = formatter.check_and_format_files([xml_file])
+                        msg = ""
+
+                        if not pkg == "pkg_correct":
+                            if valid:
+                                with open(xml_file) as f:
+                                    msg = (
+                                        f"Formatted XML file {xml_file}:\n'{f.read()}'"
+                                    )
+                            self.assertFalse(
+                                valid,
+                                f"XML file {xml_file} is expected to be invalid but was valid. {msg} \n vs original: \n{xml_content}",
+                            )
+
+                        else:
+                            if not valid:
+                                with open(xml_file) as f:
+                                    msg = f"Invalid XML file {xml_file}:\n{f.read()}"
+                            self.assertTrue(
+                                valid,
+                                f"XML file {xml_file} is expected to be valid but was invalid. {msg} \n vs original: \n{xml_content}",
+                            )
+                            self._compare_xml_files_and_print(xml_file, correct_xml)
+                        original_xml = os.path.join(
+                            self.examples_dir, example_pkg, pkg, "package.xml"
+                        )
+                        # only when using the FULL formatter the missing parts should be added
+                        expected_xml = (
+                            correct_xml if type == FormatterType.FULL else original_xml
+                        )
                         self.assertTrue(
-                            valid,
-                            f"XML file {xml_file} is expected to be valid but was invalid. {msg} \n vs original: \n{xml_content}",
+                            self._compare_xml_files_and_print(xml_file, expected_xml),
+                            f"XML files do not match: {xml_file} != {expected_xml} (using formatter type: {type})",
                         )
 
-                    self.assertTrue(
-                        self._compare_xml_files(xml_file, correct_xml),
-                        f"XML files do not match: {xml_file} != {correct_xml}",
-                    )
-
-                    # validate the XML file with xmllint
-                    self.assertTrue(
-                        validate_xml_with_xmllint(xml_file),
-                        f"XML file {xml_file} failed xmllint validation.",
-                    )
+                        # validate the XML file with xmllint
+                        self.assertTrue(
+                            validate_xml_with_xmllint(xml_file),
+                            f"XML file {xml_file} failed xmllint validation.",
+                        )
 
 
 if __name__ == "__main__":
