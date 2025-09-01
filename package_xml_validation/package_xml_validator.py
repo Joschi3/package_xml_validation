@@ -9,12 +9,14 @@ try:
     from .helpers.pkg_xml_formatter import PackageXmlFormatter
     from .helpers.cmake_parsers import read_deps_from_cmake_file
     from .helpers.find_launch_dependencies import scan_files
+    from .helpers.workspace import find_package_xml_files
 except ImportError:
     from helpers.logger import get_logger
     from helpers.rosdep_validator import RosdepValidator
     from helpers.pkg_xml_formatter import PackageXmlFormatter
     from helpers.cmake_parsers import read_deps_from_cmake_file
     from helpers.find_launch_dependencies import scan_files
+    from helpers.workspace import find_package_xml_files
 import subprocess
 import re
 
@@ -66,24 +68,6 @@ class PackageXmlValidator:
             self.num_checks += 1
         if self.compare_with_cmake:
             self.num_checks += 1
-
-    def find_package_xml_files(self, paths):
-        """Locate all package.xml files within the provided paths."""
-        package_xml_files = []
-        for path in paths:
-            if os.path.isfile(path) and os.path.basename(path) == "package.xml":
-                package_xml_files.append(path)
-            elif os.path.isfile(path) and os.path.basename(path) == "CMakeLists.txt":
-                package_xml_files.append(
-                    os.path.join(os.path.dirname(path), "package.xml")
-                )
-            elif os.path.isdir(path):
-                for root, _, files in os.walk(path):
-                    if "package.xml" in files:
-                        package_xml_files.append(os.path.join(root, "package.xml"))
-        # Filter out duplicates
-        package_xml_files = list(set(package_xml_files))
-        return package_xml_files
 
     def get_package_type(self, xml_file: str) -> tuple[PackageType, bool]:
         """Determine the package type based on the presence of CMakeLists.txt or setup.py.
@@ -597,7 +581,7 @@ class PackageXmlValidator:
             return True
 
     def check_and_format(self, src):
-        package_xml_files = self.find_package_xml_files(src)
+        package_xml_files = find_package_xml_files(src)
         if not package_xml_files:
             self.logger.info("No package.xml files found in the provided paths.")
             return

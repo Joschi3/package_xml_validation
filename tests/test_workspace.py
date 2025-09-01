@@ -42,6 +42,11 @@ class TempTree:
         self._tmp.cleanup()
 
 
+def _as_str_set(paths) -> set[str]:
+    """Normalize potentially mixed Path/str iterables to a set of strings."""
+    return {str(p) for p in paths}
+
+
 class TestWorkspaceHelpers(unittest.TestCase):
     def setUp(self):
         self.t = TempTree()
@@ -63,7 +68,7 @@ class TestWorkspaceHelpers(unittest.TestCase):
 
         # Ignored via parent directory COLCON_IGNORE
         third_party = src / "third_party"
-        third_party.mkdir(parents=True, exist_ok=True)  # <-- ensure parent exists
+        third_party.mkdir(parents=True, exist_ok=True)  # ensure parent exists
         (third_party / "COLCON_IGNORE").write_text("")
         self.pkg_third = self.t.pkg(third_party, "third_pkg", name_in_xml="third_pkg")
 
@@ -164,6 +169,45 @@ class TestWorkspaceHelpers(unittest.TestCase):
         bogus = str(self.t.root / "also" / "not" / "here")
         with self.assertRaises(FileNotFoundError):
             SUT.get_pkgs_in_wrs(bogus)
+
+    # --- find_package_xml_files --------------------------------------------
+    def test_find_package_xml_files_mixed_inputs_and_dedup(self):
+        """Mix direct package.xml, CMakeLists.txt sibling, and a dir; expect de-dup."""
+        cmake = self.t.touch(
+            self.pkg1 / "CMakeLists.txt", "cmake_minimum_required(VERSION 3.5)\n"
+        )
+        nested_dir = self.nested_parent  # contains inner_pkg
+
+        results = _as_str_set(
+            SUT.find_package_xml_files([self.pkg1 / "package.xml", cmake, nested_dir])
+        )
+        expected = {
+            str(self.pkg1 / "package.xml"),
+            str(self.inner_pkg / "package.xml"),
+        }
+        self.assertEqual(results, expected)
+
+    def test_find_package_xml_files_directory_recursion(self):
+        """Scanning <ws>/src should locate all package.xml files recursively (no colcon filtering)."""
+        results = _as_str_set(SUT.find_package_xml_files([self.ws / "src"]))
+
+        expected = {
+            str(self.pkg1 / "package.xml"),
+            str(self.pkg_nameless / "package.xml"),
+            str(self.inner_pkg / "package.xml"),
+            str(self.pkg_ignored / "package.xml"),  # present despite COLCON_IGNORE
+            str(self.pkg_third / "package.xml"),  # present despite parent COLCON_IGNORE
+        }
+        self.assertEqual(results, expected)
+
+    def test_find_package_xml_files_ignores_nonexistent_and_deduplicates(self):
+        """Nonexistent inputs are ignored; duplicates (file + dir) collapse to one."""
+        results = _as_str_set(
+            SUT.find_package_xml_files(
+                [self.pkg1 / "package.xml", self.pkg1, self.t.root / "nope/nope"]
+            )
+        )
+        self.assertEqual(results, {str(self.pkg1 / "package.xml")})
 
     # --- CLI main() ---------------------------------------------------------
     def test_main_lists_packages_names_only(self):

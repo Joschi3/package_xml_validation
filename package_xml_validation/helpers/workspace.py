@@ -128,6 +128,20 @@ def get_pkgs_in_wrs(path: Path) -> list[str]:
     return sorted(pkgs)
 
 
+def find_package_xml_files(paths) -> list[str]:
+    files = []
+    for p in paths:
+        p = Path(p)
+        if p.is_file() and p.name == "package.xml":
+            files.append(p)
+        elif p.is_file() and p.name == "CMakeLists.txt":
+            files.append(p.parent / "package.xml")
+        elif p.is_dir():
+            for xml in p.rglob("package.xml"):
+                files.append(xml)
+    return sorted({str(x) for x in files})
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(
         description=(
