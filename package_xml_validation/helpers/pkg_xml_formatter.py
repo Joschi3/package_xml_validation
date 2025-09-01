@@ -608,11 +608,11 @@ class PackageXmlFormatter:
         root.insert(insert_position, member_of_group)
 
 
-if __name__ == "__main__":
-    # Example usage
-    pkg = "/home/aljoscha-schmidt/hector/src/hector_gamepad_manager/hector_gamepad_manager/package.xml"
-    formatter = PackageXmlFormatter(
-        check_only=False,
-        verbose=True,
-        check_with_xmllint=True,
-    )
+# if __name__ == "__main__":
+#     # Example usage
+#     pkg = "/home/aljoscha-schmidt/hector/src/hector_gamepad_manager/hector_gamepad_manager/package.xml"
+#     formatter = PackageXmlFormatter(
+#         check_only=False,
+#         verbose=True,
+#         check_with_xmllint=True,
+#     )

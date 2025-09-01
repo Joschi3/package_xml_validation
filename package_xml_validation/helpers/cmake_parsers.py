@@ -205,15 +205,15 @@ def read_deps_from_cmake_file(file_path: Path | str) -> tuple[list[str], list[st
     return main_deps, test_deps
 
 
-if __name__ == "__main__":
-    # Example usage
-    cmake_file = Path(
-        "/home/aljoscha-schmidt/hector/src/hector_gamepad_manager/hector_gamepad_manager/CMakeLists.txt"
-    )
-    cmake_file = Path(
-        "/home/aljoscha-schmidt/hector/src/hector_base_velocity_manager/hector_base_velocity_manager/CMakeLists.txt"
-    )
-    lines = read_cmake_file(cmake_file)
-    main_deps, test_deps = retrieve_cmake_dependencies(lines)
-    print("Main dependencies:", main_deps)
-    print("Test dependencies:", test_deps)
+# if __name__ == "__main__":
+#     # Example usage
+#     cmake_file = Path(
+#         "/home/aljoscha-schmidt/hector/src/hector_gamepad_manager/hector_gamepad_manager/CMakeLists.txt"
+#     )
+#     cmake_file = Path(
+#         "/home/aljoscha-schmidt/hector/src/hector_base_velocity_manager/hector_base_velocity_manager/CMakeLists.txt"
+#     )
+#     lines = read_cmake_file(cmake_file)
+#     main_deps, test_deps = retrieve_cmake_dependencies(lines)
+#     print("Main dependencies:", main_deps)
+#     print("Test dependencies:", test_deps)

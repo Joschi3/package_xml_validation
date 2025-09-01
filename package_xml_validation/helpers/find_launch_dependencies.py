@@ -8,7 +8,6 @@ all referenced ROS 2 package names via a small set of regexes.
 
 import os
 import re
-import argparse
 
 
 REGEX_EXPR = [
@@ -52,6 +51,11 @@ def scan_file(path, found: set[str], verbose: bool = False):
 
 
 def scan_files(launch_dir: str, verbose: bool = False) -> list[str]:
+    """
+    Extracts launch dependencies from the specified directory.
+    Launch dependencies are listed packages names in the launch files.
+    It uses regex to extract package names from common launch patterns.
+    """
     if not os.path.isdir(launch_dir):
         print(f"Error: '{launch_dir}' is not a directory.")
         return []
@@ -63,30 +67,3 @@ def scan_files(launch_dir: str, verbose: bool = False) -> list[str]:
             if fn.endswith((".py", ".xml", ".yaml", ".launch", ".yml")):
                 scan_file(os.path.join(root, fn), pkgs, verbose)
     return list(pkgs)
-
-
-def parse_args():
-    p = argparse.ArgumentParser(
-        description="Extract referenced ROS 2 package names from launch files via regex."
-    )
-    p.add_argument("launch_dir", help="Path to your package's launch/ directory")
-    p.add_argument(
-        "-v", "--verbose", action="store_true", help="Print found packages to stdout"
-    )
-    # parse args
-    args = p.parse_args()
-    pkgs = scan_files(args.launch_dir)
-    if args.verbose:
-        print("Found packages:")
-        for pkg in sorted(pkgs):
-            print(f"  - {pkg}")
-
-
-if __name__ == "__main__":
-    # parse_args()
-    file = "/home/aljoscha-schmidt/hector/src/simulation_scenario_robocup_gazebo/launch/launch_world.launch.py"
-    found = set()
-    scan_file(file, found, verbose=True)
-    print("Found packages:")
-    for pkg in sorted(found):
-        print(f"  - {pkg}")

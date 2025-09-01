@@ -60,10 +60,10 @@ class RosdepValidator:
         return unresolvable
 
 
-if __name__ == "__main__":
-    dependencies = ["rclcpp", "nonexistent_dependency", "hector_gamepad_manager"]
-    validator = RosdepValidator()
-    # Example usage
-    unresolvable = validator.check_rosdeps(dependencies)
-    for dep in unresolvable:
-        print(f"Could not resolve dependency: {dep}")
+# if __name__ == "__main__":
+#     dependencies = ["rclcpp", "nonexistent_dependency", "hector_gamepad_manager"]
+#     validator = RosdepValidator()
+#     # Example usage
+#     unresolvable = validator.check_rosdeps(dependencies)
+#     for dep in unresolvable:
+#         print(f"Could not resolve dependency: {dep}")
