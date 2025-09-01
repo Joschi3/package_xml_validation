@@ -5,3 +5,4 @@ build/
 .coverage
 coverage.xml
 htmlcov/
+.vscode/
