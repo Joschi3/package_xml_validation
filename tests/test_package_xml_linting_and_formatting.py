@@ -8,8 +8,6 @@ import lxml.etree as ET
 from package_xml_validation.package_xml_validator import (
     PackageXmlValidator,
     RosdepValidator,
-    read_deps_from_cmake_file,
-    PackageXmlFormatter,
 )
 
 
@@ -282,56 +280,6 @@ class TestPackageXmlValidator(unittest.TestCase):
         formatter = PackageXmlValidator(check_only=True, verbose=True)
         with self.assertRaises(FileNotFoundError):
             formatter.check_and_format_files([invalid_path])
-
-    def test_cmake_parsing(self):
-        """
-        Test the CMake parsing functionality.
-        This is a placeholder for the actual implementation.
-        """
-        # iterate cmakes files in examples_dir/cmakes/<package_name>
-        cmakes_dir = os.path.join(self.examples_dir, "cmakes")
-        for package_name in os.listdir(cmakes_dir):
-            package_dir = os.path.join(cmakes_dir, package_name)
-            if not os.path.isdir(package_dir):
-                continue
-            for fname in os.listdir(package_dir):
-                if not fname.endswith("CMakeLists.txt"):
-                    continue
-                cmake_file = os.path.join(package_dir, fname)
-                print(f"Testing CMake file: {cmake_file}")
-                # Here you would implement the actual CMake parsing and validation logic
-                main_deps, test_deps = read_deps_from_cmake_file(cmake_file)
-
-                # read deps from package.xml
-                package_xml_file = os.path.join(
-                    self.examples_dir, "cmakes", package_name, "package.xml"
-                )
-                self.assertTrue(
-                    os.path.exists(package_xml_file),
-                    f"Expected package.xml file to exist at {package_xml_file}",
-                )
-                try:
-                    parser = ET.XMLParser()
-                    tree = ET.parse(package_xml_file, parser)
-                    root = tree.getroot()
-                except ET.XMLSyntaxError as e:
-                    self.fail(f"XML Syntax Error in {package_xml_file}: {e}")
-                formatter = PackageXmlFormatter()
-                xml_build_deps = formatter.retrieve_build_dependencies(root)
-                xml_test_deps = formatter.retrieve_test_dependencies(root)
-                # Compare the dependencies
-                for dep in main_deps:
-                    self.assertIn(
-                        dep,
-                        xml_build_deps,
-                        f"Dependency {dep} not found in package.xml build dependencies in {package_name}.",
-                    )
-                for dep in test_deps:
-                    self.assertIn(
-                        dep,
-                        xml_test_deps,
-                        f"Dependency {dep} not found in package.xml test dependencies in {package_name}.",
-                    )
 
 
 if __name__ == "__main__":

@@ -41,6 +41,11 @@ class PackageXmlValidator:
         self.check_with_xmllint = check_with_xmllint
         self.check_rosdeps = check_rosdeps
         self.compare_with_cmake = compare_with_cmake
+        if self.compare_with_cmake and not self.check_rosdeps:
+            self.logger.warning(
+                "Comparing with CMake but not checking ROS dependencies is not supported."
+            )
+            self.compare_with_cmake = False
         self.auto_fill_missing_deps = auto_fill_missing_deps
         self.logger = get_logger(__name__, level="verbose" if verbose else "normal")
         if self.check_rosdeps:
