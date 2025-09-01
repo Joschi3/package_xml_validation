@@ -52,7 +52,7 @@ Validates and formats `package.xml` files to enforce consistency and ROS 2 schem
 ## 🛠️ Usage Example
 
 ```bash
-package-xml-validator [-h] [--check-only] [--file FILE] [--verbose] [--check-with-xmllint] [--skip-rosdep-key-validation] [--compare-with-cmake] [src ...]
+package-xml-validator [-h] [--check-only] [--file FILE] [--verbose] [--skip-rosdep-key-validation] [--compare-with-cmake] [src ...]
 
 Validate and format ROS2 package.xml files.
 
@@ -64,7 +64,6 @@ options:
   --check-only                  Only check for errors without correcting.
   --file FILE                   Path to a single XML file to process. If provided, 'src' arguments are ignored.
   --verbose                     Enable verbose output.
-  --check-with-xmllint          Recheck XML schema using xmllint.
   --skip-rosdep-key-validation  Check if rosdeps are valid.
   --compare-with-cmake          Check if all CMake dependencies are in package.xml.
   --auto-fill-missing-deps      Automatically fill missing dependencies in package.xml.

@@ -134,9 +134,7 @@ class TestPackageXmlFormattedCLI(unittest.TestCase):
         """--verbose and --check-with-xmllint should propagate to validator args."""
         fake_cls, constructed = make_fake_validator_factory()
         with mock.patch.object(SUT, "PackageXmlValidator", fake_cls):
-            with mock.patch.object(
-                sys, "argv", ["prog", "--verbose", "--check-with-xmllint"]
-            ):
+            with mock.patch.object(sys, "argv", ["prog", "--verbose"]):
                 with mock.patch.dict(os.environ, {"ROS_DISTRO": "jazzy"}, clear=True):
                     buf = io.StringIO()
                     with redirect_stdout(buf):
@@ -145,7 +143,6 @@ class TestPackageXmlFormattedCLI(unittest.TestCase):
         self.assertEqual(len(constructed), 1)
         inst = constructed[0]
         self.assertTrue(inst.init_kwargs["verbose"])
-        self.assertTrue(inst.init_kwargs["check_with_xmllint"])
         self.assertTrue(inst.init_kwargs["check_rosdeps"])
 
     def test_cli_exit_code_on_failure(self):

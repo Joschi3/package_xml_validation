@@ -17,7 +17,6 @@ except ImportError:
     from helpers.cmake_parsers import read_deps_from_cmake_file
     from helpers.find_launch_dependencies import scan_files
     from helpers.workspace import find_package_xml_files
-import subprocess
 import re
 
 
@@ -31,7 +30,6 @@ class PackageXmlValidator:
     def __init__(
         self,
         check_only=False,
-        check_with_xmllint=False,
         check_rosdeps=True,
         compare_with_cmake=False,
         auto_fill_missing_deps=False,
@@ -40,7 +38,6 @@ class PackageXmlValidator:
     ):
         self.verbose = verbose
         self.check_only = check_only
-        self.check_with_xmllint = check_with_xmllint
         self.check_rosdeps = check_rosdeps
         self.compare_with_cmake = compare_with_cmake
         if self.compare_with_cmake and not self.check_rosdeps:
@@ -54,7 +51,7 @@ class PackageXmlValidator:
             self.rosdep_validator = RosdepValidator(pkg_path=path)
         self.formatter = PackageXmlFormatter(
             check_only=check_only,
-            check_with_xmllint=check_with_xmllint,
+            check_with_xmllint=False,
             verbose=verbose,
         )
         self.encountered_unresolvable_error = False
@@ -63,8 +60,6 @@ class PackageXmlValidator:
         self.num_checks = 11
         self.check_count = 1
         if self.check_rosdeps:
-            self.num_checks += 1
-        if self.check_with_xmllint:
             self.num_checks += 1
         if self.compare_with_cmake:
             self.num_checks += 1
@@ -120,7 +115,7 @@ class PackageXmlValidator:
         pkg_name = os.path.basename(os.path.dirname(xml_file))
         valid_xml = True
         build_deps_cmake, test_deps_cmake = read_deps_from_cmake_file(cmake_file)
-        # make sure that all cmake dependencies are in the package.xml if they can be resolved
+        # ----------------------------  BUILD DEPENDENCIES ----------------------------
         unresolvable = self.rosdep_validator.check_rosdeps_and_local_pkgs(
             build_deps_cmake
         )
@@ -145,7 +140,7 @@ class PackageXmlValidator:
         unresolvable = self.rosdep_validator.check_rosdeps_and_local_pkgs(
             test_deps_cmake
         )
-
+        # ----------------------------  TEST DEPENDENCIES ----------------------------
         missing_deps = [
             dep
             for dep in test_deps_cmake
@@ -164,24 +159,6 @@ class PackageXmlValidator:
                 )
                 self.formatter.add_dependencies(root, missing_deps, "test_depend")
         return valid_xml
-
-    def validate_xml_with_xmllint(self, xml_file):
-        """Validate XML file against the ROS package_format3.xsd schema using xmllint."""
-        schema_url = "http://download.ros.org/schema/package_format3.xsd"
-        try:
-            result = subprocess.run(
-                ["xmllint", "--noout", "--schema", schema_url, xml_file],
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode != 0:
-                self.logger.error(f"XML validation error in {xml_file}:")
-                self.logger.error(result.stderr)
-                return False
-            return True
-        except Exception as e:
-            self.logger.error(f"Error running xmllint on {xml_file}: {e}")
-            return False
 
     def validate_launch_dependencies(
         self,
@@ -530,12 +507,6 @@ class PackageXmlValidator:
                     "Check ROS dependencies", self.check_for_rosdeps, rosdeps, xml_file
                 )
                 self.encountered_unresolvable_error |= not valid
-            # Check with xmllint if enabled
-            if self.check_with_xmllint:
-                valid = self.perform_check(
-                    "Check with xmllint", self.validate_xml_with_xmllint, xml_file
-                )
-                self.encountered_unresolvable_error |= not valid
             # Check for CMake dependencies if enabled
             if self.compare_with_cmake:
                 build_deps = self.formatter.retrieve_build_dependencies(root)
@@ -608,11 +579,6 @@ def main():
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output.")
 
     parser.add_argument(
-        "--check-with-xmllint",
-        action="store_true",
-        help="Recheck XML schema using xmllint.",
-    )
-    parser.add_argument(
         "--skip-rosdep-key-validation",
         action="store_true",
         help="Check if rosdeps are valid.",
@@ -651,7 +617,6 @@ def main():
     formatter = PackageXmlValidator(
         check_only=args.check_only,
         verbose=args.verbose,
-        check_with_xmllint=args.check_with_xmllint,
         check_rosdeps=not args.skip_rosdep_key_validation,
         compare_with_cmake=args.compare_with_cmake,
         auto_fill_missing_deps=args.auto_fill_missing_deps,
