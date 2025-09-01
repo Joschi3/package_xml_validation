@@ -52,20 +52,21 @@ def get_logger(name: str = __name__, level: str = "normal") -> logging.Logger:
     return logger
 
 
-if __name__ == "__main__":
-    # Example usage:
-    # For "normal" logs (INFO and above)
-    logger_normal = get_logger(level="normal")
-    logger_normal.debug("Debug (won't show at 'normal' level)")
-    logger_normal.info("Info message")
-    logger_normal.warning("Warning message")
-    logger_normal.error("Error message")
+# Example Usage
+# if __name__ == "__main__":
+#     # Example usage:
+#     # For "normal" logs (INFO and above)
+#     logger_normal = get_logger(level="normal")
+#     logger_normal.debug("Debug (won't show at 'normal' level)")
+#     logger_normal.info("Info message")
+#     logger_normal.warning("Warning message")
+#     logger_normal.error("Error message")
 
-    print("\n--- Now with verbose logs ---\n")
+#     print("\n--- Now with verbose logs ---\n")
 
-    # For "verbose" logs (DEBUG and above)
-    logger_verbose = get_logger(level="verbose")
-    logger_verbose.debug("Debug (visible at 'verbose' level)")
-    logger_verbose.info("Info message")
-    logger_verbose.warning("Warning message")
-    logger_verbose.error("Error message")
+#     # For "verbose" logs (DEBUG and above)
+#     logger_verbose = get_logger(level="verbose")
+#     logger_verbose.debug("Debug (visible at 'verbose' level)")
+#     logger_verbose.info("Info message")
+#     logger_verbose.warning("Warning message")
+#     logger_verbose.error("Error message")
