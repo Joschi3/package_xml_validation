@@ -35,11 +35,8 @@ COMPILED = [re.compile(rx) for rx in REGEX_EXPR]
 
 def scan_file(path, found: set[str], verbose: bool = False):
     """Apply every regex to the file and add matches to `found`."""
-    try:
-        with open(path, encoding="utf-8") as f:
-            text = f.read()
-    except (UnicodeDecodeError, OSError):
-        return
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
 
     for i, rx in enumerate(COMPILED):
         for m in rx.finditer(text):
