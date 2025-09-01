@@ -18,6 +18,14 @@ class FormatterType(Enum):
     ALL_ROSDEPS_ARE_UNRESOLVABLE = "all_rosdeps_are_unresolvable"
 
 
+#  GOAl
+# Check that launch dependencies are correctly added to the package.xml
+# CHECK-ONLY -> find missing but DO NOT CHANGE THE FILE
+# NO-AUTO-FILL -> find missing and do not autofill
+# FULL -> find missing and autofill
+# ALL-ROSDEPS-ARE-UNRESOLVABLE -> find missing but cannot autofill due to unresolvable rosdeps
+
+
 def validate_xml_with_xmllint(xml_file):
     """Validate XML file against the ROS package_format3.xsd schema using xmllint."""
     schema_url = "http://download.ros.org/schema/package_format3.xsd"
