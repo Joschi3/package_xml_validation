@@ -404,7 +404,6 @@ class PackageXmlValidator:
         """Check and format package.xml files if self.check_only is False.
         Returns is_valid, changed_xml
         """
-
         self.all_valid = True
         for xml_file in package_xml_files:
             self.xml_valid = True
@@ -552,10 +551,12 @@ class PackageXmlValidator:
             return True
 
     def check_and_format(self, src):
+        self.logger.info(f"Searching for package.xml files in {src} ...")
         package_xml_files = find_package_xml_files(src)
         if not package_xml_files:
             self.logger.info("No package.xml files found in the provided paths.")
             return
+        self.logger.info(f"Found {len(package_xml_files)} package.xml files.")
         return self.check_and_format_files(package_xml_files)
 
 
