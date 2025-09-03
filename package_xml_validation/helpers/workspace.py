@@ -99,7 +99,10 @@ def pkg_iterator(src_dir: Path) -> dict[str, Path]:
     pkgs: dict[str, Path] = {}
     for xml in src_dir.rglob("package.xml"):
         # Respect COLCON_IGNORE: ignore a path if any ancestor contains the file
-        if any((parent / "COLCON_IGNORE").exists() for parent in xml.parents):
+        if any(
+            (parent / "COLCON_IGNORE").exists() or (parent / "coclon_ignore").exists()
+            for parent in xml.parents
+        ):
             continue
         pkgs[parse_pkg_name(xml)] = xml.parent
     return pkgs
@@ -128,18 +131,45 @@ def get_pkgs_in_wrs(path: Path) -> list[str]:
     return sorted(pkgs)
 
 
+def _is_ignored_dir(path: Path) -> bool:
+    """
+    Return True if `path` or any ancestor contains an ignore marker:
+    - 'coclon_ignore' (as requested)
+    - 'COLCON_IGNORE' (colcon's standard)
+    """
+    path = path.resolve()
+    for parent in (path, *path.parents):
+        if (parent / "coclon_ignore").exists() or (parent / "COLCON_IGNORE").exists():
+            return True
+    return False
+
+
 def find_package_xml_files(paths) -> list[str]:
-    files = []
+    files: set[Path] = set()
+
     for p in paths:
-        p = Path(p)
-        if p.is_file() and p.name == "package.xml":
-            files.append(p)
-        elif p.is_file() and p.name == "CMakeLists.txt":
-            files.append(p.parent / "package.xml")
+        p = Path(p).resolve()
+        if not p.exists():
+            continue
+
+        if p.is_file():
+            if p.name == "package.xml":
+                if not _is_ignored_dir(p.parent):
+                    files.add(p)
+            elif p.name == "CMakeLists.txt":
+                xml = (p.parent / "package.xml").resolve()
+                if xml.exists() and not _is_ignored_dir(xml.parent):
+                    files.add(xml)
+
         elif p.is_dir():
+            # Collect all package.xml files under p, but drop those under ignored trees
             for xml in p.rglob("package.xml"):
-                files.append(xml)
-    return sorted({str(x) for x in files})
+                if "build" in xml.parts or "install" in xml.parts:
+                    continue
+                if not _is_ignored_dir(xml.parent):
+                    files.add(xml.resolve())
+
+    return sorted(str(x) for x in files)
 
 
 def main() -> None:
