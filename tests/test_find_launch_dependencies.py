@@ -11,9 +11,16 @@ class TestFindLaunchDependencies(unittest.TestCase):
     # ─── Define test cases: filename → expected packages ───
     EXAMPLES = {
         "python_example.launch.py": ["demo_nodes_cpp", "turtlesim"],
+        "python_example_comment.launch.py": [
+            "demo_nodes_cpp",
+            "turtlesim",
+        ],  # make sure to ignore commented pkgs
         "xml_example.launch.xml": ["demo_nodes_cpp", "turtlesim"],
+        "xml_example_comment.launch.xml": ["demo_nodes_cpp", "turtlesim"],
         "yaml_example.launch.yml": ["demo_nodes_cpp", "turtlesim"],
+        "yaml_example_comment.launch.yml": ["demo_nodes_cpp", "turtlesim"],
         "hector_launch_component.yaml": ["athena_announcer"],
+        "hector_launch_component_comment.yaml": ["athena_announcer"],
         "python_world.launch.py": [
             "gazebo_robot_sim_athena",
             "ros_gz_sim",
