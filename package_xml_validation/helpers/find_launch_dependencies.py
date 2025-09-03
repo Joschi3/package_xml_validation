@@ -4,6 +4,11 @@ find_launch_dependencies.py
 
 Recursively search a ROS 2 package's launch/ folder and extract
 all referenced ROS 2 package names via a small set of regexes.
+
+Now ignores matches that occur inside comments:
+- Python: # line comments, and triple-quoted blocks
+- XML/.launch: <!-- ... --> comments
+- YAML: # line comments
 """
 
 import os
@@ -29,21 +34,111 @@ REGEX_EXPR = [
     r"\$\(\s*find-pkg-share\s+([A-Za-z0-9_]+)\s*\)",
 ]
 
-# Compile once for speed
 COMPILED = [re.compile(rx) for rx in REGEX_EXPR]
 
+_TRIPLE_QUOTE_BLOCK = re.compile(r"(?s)(['\"]{3})(?:.*?)(\1)")
+_XML_COMMENT_BLOCK = re.compile(r"(?s)<!--.*?-->")
 
-def scan_file(path, found: set[str], verbose: bool = False):
-    """Apply every regex to the file and add matches to `found`."""
+
+def _strip_hash_line_comments_outside_strings(text: str) -> str:
+    """
+    Remove '#' to end-of-line comments that occur OUTSIDE of single/double quoted strings.
+    Preserves newlines.
+    Suitable for Python and YAML after any triple-quoted removal (for Python).
+    """
+    out = []
+    in_single = False
+    in_double = False
+    i = 0
+    n = len(text)
+
+    while i < n:
+        ch = text[i]
+
+        # Handle escapes inside strings
+        if ch == "\\" and (in_single or in_double) and i + 1 < n:
+            out.append(ch)
+            out.append(text[i + 1])
+            i += 2
+            continue
+
+        if not in_single and not in_double:
+            if ch == "#":
+                # skip until end of line (keep the newline itself)
+                while i < n and text[i] not in ("\n", "\r"):
+                    i += 1
+                # fall through to append the newline (if any)
+                continue
+            elif ch == "'":
+                in_single = True
+                out.append(ch)
+                i += 1
+                continue
+            elif ch == '"':
+                in_double = True
+                out.append(ch)
+                i += 1
+                continue
+            else:
+                out.append(ch)
+                i += 1
+                continue
+        else:
+            # inside quotes
+            if in_single and ch == "'":
+                in_single = False
+            elif in_double and ch == '"':
+                in_double = False
+            out.append(ch)
+            i += 1
+
+    return "".join(out)
+
+
+def _decomment_python(text: str) -> str:
+    # 1) drop triple-quoted blocks entirely
+    text = _TRIPLE_QUOTE_BLOCK.sub("", text)
+    # 2) drop '#' comments outside of quoted strings
+    text = _strip_hash_line_comments_outside_strings(text)
+    return text
+
+
+def _decomment_xml(text: str) -> str:
+    # Drop <!-- ... --> blocks
+    return _XML_COMMENT_BLOCK.sub("", text)
+
+
+def _decomment_yaml(text: str) -> str:
+    # YAML has only '#' line comments; be string-aware for ' and "
+    return _strip_hash_line_comments_outside_strings(text)
+
+
+def _decomment_for_suffix(suffix: str, text: str) -> str:
+    s = suffix.lower()
+    if s.endswith(".py"):
+        return _decomment_python(text)
+    if s.endswith(".xml") or s.endswith(".launch"):
+        return _decomment_xml(text)
+    if s.endswith(".yaml") or s.endswith(".yml"):
+        return _decomment_yaml(text)
+    # default: no decommenting
+    return text
+
+
+def scan_file(path: str, found: set[str], verbose: bool = False):
+    """Apply every regex to the file after stripping comments; add matches to `found`."""
     with open(path, encoding="utf-8") as f:
         text = f.read()
 
+    text = _decomment_for_suffix(path, text)
+
     for i, rx in enumerate(COMPILED):
         for m in rx.finditer(text):
-            found.add(m.group(1))
+            pkg = m.group(1)
+            found.add(pkg)
             if verbose:
                 print(
-                    f"Found package '{m.group(1)}' in {os.path.basename(path)} with regex {REGEX_EXPR[i]}"
+                    f"Found package '{pkg}' in {os.path.basename(path)} with regex {REGEX_EXPR[i]}"
                 )
 
 
@@ -52,15 +147,16 @@ def scan_files(launch_dir: str, verbose: bool = False) -> list[str]:
     Extracts launch dependencies from the specified directory.
     Launch dependencies are listed packages names in the launch files.
     It uses regex to extract package names from common launch patterns.
+    Comments are stripped (type-specific) before matching.
     """
     if not os.path.isdir(launch_dir):
         print(f"Error: '{launch_dir}' is not a directory.")
         return []
 
-    pkgs = set()
+    pkgs: set[str] = set()
 
     for root, _, files in os.walk(launch_dir):
         for fn in files:
             if fn.endswith((".py", ".xml", ".yaml", ".launch", ".yml")):
                 scan_file(os.path.join(root, fn), pkgs, verbose)
-    return list(pkgs)
+    return sorted(pkgs)
