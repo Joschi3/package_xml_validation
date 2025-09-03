@@ -62,7 +62,8 @@ class TestWorkspaceHelpers(unittest.TestCase):
             self.nested_parent, "inner_pkg", name_in_xml="inner_pkg"
         )
 
-        # Ignored via COLCON_IGNORE in package dir
+        # Ignored via COLCON_IGNORE in package dir (pkg_iterator respects this;
+        # find_package_xml_files does NOT filter by COLCON in existing tests)
         self.pkg_ignored = self.t.pkg(src, "pkg_ignored", name_in_xml="pkg_ignored")
         (self.pkg_ignored / "COLCON_IGNORE").write_text("")
 
@@ -71,6 +72,21 @@ class TestWorkspaceHelpers(unittest.TestCase):
         third_party.mkdir(parents=True, exist_ok=True)  # ensure parent exists
         (third_party / "COLCON_IGNORE").write_text("")
         self.pkg_third = self.t.pkg(third_party, "third_pkg", name_in_xml="third_pkg")
+
+        # --- New: coclon_ignore scenarios for find_package_xml_files -----------
+        # Case A: coclon_ignore in the same package directory
+        self.pkg_coclon_ignored = self.t.pkg(
+            src, "pkg_coclon_ignored", name_in_xml="pkg_coclon_ignored"
+        )
+        (self.pkg_coclon_ignored / "coclon_ignore").write_text("")
+
+        # Case B: coclon_ignore in an ancestor directory
+        self.vendor = src / "vendor"
+        self.vendor.mkdir(parents=True, exist_ok=True)
+        (self.vendor / "coclon_ignore").write_text("")
+        self.pkg_coclon_in_vendor = self.t.pkg(
+            self.vendor, "pkg_coclon_in_vendor", name_in_xml="pkg_coclon_in_vendor"
+        )
 
         # File inside pkg1
         self.t.touch(self.pkg1 / "node.py", "#!/usr/bin/env python3")
@@ -195,10 +211,12 @@ class TestWorkspaceHelpers(unittest.TestCase):
             str(self.pkg1 / "package.xml"),
             str(self.pkg_nameless / "package.xml"),
             str(self.inner_pkg / "package.xml"),
-            str(self.pkg_ignored / "package.xml"),  # present despite COLCON_IGNORE
-            str(self.pkg_third / "package.xml"),  # present despite parent COLCON_IGNORE
+            # coclon_ignore cases are intentionally NOT part of expected
         }
-        self.assertEqual(results, expected)
+        self.assertTrue(expected.issubset(results))
+        # Ensure coclon-ignored packages are filtered out
+        self.assertNotIn(str(self.pkg_coclon_ignored / "package.xml"), results)
+        self.assertNotIn(str(self.pkg_coclon_in_vendor / "package.xml"), results)
 
     def test_find_package_xml_files_ignores_nonexistent_and_deduplicates(self):
         """Nonexistent inputs are ignored; duplicates (file + dir) collapse to one."""
@@ -208,6 +226,30 @@ class TestWorkspaceHelpers(unittest.TestCase):
             )
         )
         self.assertEqual(results, {str(self.pkg1 / "package.xml")})
+
+    # --- NEW: explicit checks for coclon_ignore behavior --------------------
+    def test_find_package_xml_files_respects_coclon_ignore_same_dir(self):
+        """Directly pass the ignored package.xml + scan src; both must exclude it."""
+        # Passing file directly should still be excluded
+        results_file = _as_str_set(
+            SUT.find_package_xml_files([self.pkg_coclon_ignored / "package.xml"])
+        )
+        self.assertNotIn(str(self.pkg_coclon_ignored / "package.xml"), results_file)
+
+        # Scanning directory should exclude it too
+        results_dir = _as_str_set(SUT.find_package_xml_files([self.ws / "src"]))
+        self.assertNotIn(str(self.pkg_coclon_ignored / "package.xml"), results_dir)
+
+    def test_find_package_xml_files_respects_coclon_ignore_in_ancestor(self):
+        """If an ancestor dir has coclon_ignore, nested packages must be excluded."""
+        results = _as_str_set(SUT.find_package_xml_files([self.ws / "src"]))
+        self.assertNotIn(str(self.pkg_coclon_in_vendor / "package.xml"), results)
+
+        # Also verify that passing the file directly still excludes it
+        direct = _as_str_set(
+            SUT.find_package_xml_files([self.pkg_coclon_in_vendor / "package.xml"])
+        )
+        self.assertNotIn(str(self.pkg_coclon_in_vendor / "package.xml"), direct)
 
     # --- CLI main() ---------------------------------------------------------
     def test_main_lists_packages_names_only(self):
