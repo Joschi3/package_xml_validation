@@ -631,7 +631,10 @@ def main():
         # Process whatever is found in src
         valid = formatter.check_and_format(args.src)
     if not valid:
+        formatter.logger.error("Validation failed.")
         exit(1)
+    formatter.logger.info("Validation succeeded.")
+    exit(0)
 
 
 if __name__ == "__main__":
