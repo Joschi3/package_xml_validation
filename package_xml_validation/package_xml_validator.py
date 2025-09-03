@@ -551,12 +551,12 @@ class PackageXmlValidator:
             return True
 
     def check_and_format(self, src):
-        self.logger.info(f"Searching for package.xml files in {src} ...")
         package_xml_files = find_package_xml_files(src)
         if not package_xml_files:
-            self.logger.info("No package.xml files found in the provided paths.")
-            return
-        self.logger.info(f"Found {len(package_xml_files)} package.xml files.")
+            self.logger.info(
+                "No package.xml files found in the provided paths. Nothing to check."
+            )
+            return True
         return self.check_and_format_files(package_xml_files)
 
 
@@ -631,10 +631,7 @@ def main():
         # Process whatever is found in src
         valid = formatter.check_and_format(args.src)
     if not valid:
-        formatter.logger.error("Validation failed.")
         exit(1)
-    formatter.logger.info("Validation succeeded.")
-    exit(0)
 
 
 if __name__ == "__main__":
