@@ -145,6 +145,24 @@ class TestPackageXmlFormattedCLI(unittest.TestCase):
         self.assertTrue(inst.init_kwargs["verbose"])
         self.assertTrue(inst.init_kwargs["check_rosdeps"])
 
+    def test_cli_missing_deps_only_forces_check_only(self):
+        """--missing-deps-only should imply check-only and pass the flag through."""
+        fake_cls, constructed = make_fake_validator_factory()
+        with mock.patch.object(SUT, "PackageXmlValidator", fake_cls):
+            with mock.patch.object(
+                sys, "argv", ["prog", "--missing-deps-only", str(self.tmpdir)]
+            ):
+                with mock.patch.dict(os.environ, {"ROS_DISTRO": "jazzy"}, clear=True):
+                    buf = io.StringIO()
+                    with redirect_stdout(buf):
+                        SUT.main()
+
+        self.assertEqual(len(constructed), 1)
+        inst = constructed[0]
+        self.assertTrue(inst.init_kwargs["missing_deps_only"])
+        self.assertTrue(inst.init_kwargs["check_only"])
+        self.assertEqual(inst.check_and_format_calls, [[str(self.tmpdir)]])
+
     def test_cli_exit_code_on_failure(self):
         """When validator returns False, CLI should exit(1)."""
         # Fake returns False on both code paths

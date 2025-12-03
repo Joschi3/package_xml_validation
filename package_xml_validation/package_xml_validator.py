@@ -33,12 +33,15 @@ class PackageXmlValidator:
         check_rosdeps=True,
         compare_with_cmake=False,
         auto_fill_missing_deps=False,
+        missing_deps_only=False,
         path=None,
         verbose=False,
     ):
         self.verbose = verbose
-        self.check_only = check_only
+        self.missing_deps_only = missing_deps_only
+        self.check_only = check_only or missing_deps_only
         self.check_rosdeps = check_rosdeps
+        self.logger = get_logger(__name__, level="verbose" if verbose else "normal")
         self.compare_with_cmake = compare_with_cmake
         if self.compare_with_cmake and not self.check_rosdeps:
             self.logger.warning(
@@ -46,23 +49,33 @@ class PackageXmlValidator:
             )
             self.compare_with_cmake = False
         self.auto_fill_missing_deps = auto_fill_missing_deps
-        self.logger = get_logger(__name__, level="verbose" if verbose else "normal")
         if self.check_rosdeps:
             self.rosdep_validator = RosdepValidator(pkg_path=path)
         self.formatter = PackageXmlFormatter(
-            check_only=check_only,
+            check_only=self.check_only,
             check_with_xmllint=False,
             verbose=verbose,
         )
         self.encountered_unresolvable_error = False
 
         # calculate num checks
-        self.num_checks = 11
+        self.num_checks = self._calculate_num_checks()
         self.check_count = 1
+
+    def _calculate_num_checks(self):
+        """Calculate how many checks will run based on configuration."""
+        if self.missing_deps_only:
+            num_checks = 1  # launch dependency check always runs
+            if self.compare_with_cmake:
+                num_checks += 1
+            return num_checks
+
+        num_checks = 11
         if self.check_rosdeps:
-            self.num_checks += 1
+            num_checks += 1
         if self.compare_with_cmake:
-            self.num_checks += 1
+            num_checks += 1
+        return num_checks
 
     def get_package_type(self, xml_file: str) -> tuple[PackageType, bool]:
         """Determine the package type based on the presence of CMakeLists.txt or setup.py.
@@ -115,6 +128,11 @@ class PackageXmlValidator:
         pkg_name = os.path.basename(os.path.dirname(xml_file))
         valid_xml = True
         build_deps_cmake, test_deps_cmake = read_deps_from_cmake_file(cmake_file)
+        # remove "ament_cmake" as it is a buildtool_depend
+        if "ament_cmake" in build_deps_cmake:
+            build_deps_cmake.remove("ament_cmake")
+        if "ament_cmake" in test_deps_cmake:
+            test_deps_cmake.remove("ament_cmake")
         # ----------------------------  BUILD DEPENDENCIES ----------------------------
         unresolvable = self.rosdep_validator.check_rosdeps_and_local_pkgs(
             build_deps_cmake
@@ -400,6 +418,117 @@ class PackageXmlValidator:
         self.xml_valid &= result
         return result
 
+    def _build_checks(self, root, xml_file, package_name):
+        """Prepare the list of checks to execute for a given package.xml file."""
+        checks = []
+        exec_deps = self.formatter.retrieve_exec_dependencies(root)
+        test_deps = self.formatter.retrieve_test_dependencies(root)
+
+        if not self.missing_deps_only:
+            checks.extend(
+                [
+                    (
+                        "Check for invalid tags",
+                        self.formatter.check_for_non_existing_tags,
+                        (root, xml_file),
+                        True,
+                    ),
+                    (
+                        "Check for empty lines",
+                        self.formatter.check_for_empty_lines,
+                        (root, xml_file),
+                        False,
+                    ),
+                    (
+                        "Check for duplicate elements",
+                        self.formatter.check_for_duplicates,
+                        (root, xml_file),
+                        False,
+                    ),
+                    (
+                        "Check element occurrences",
+                        self.formatter.check_element_occurrences,
+                        (root, xml_file),
+                        False,
+                    ),
+                    (
+                        "Check element order",
+                        self.formatter.check_element_order,
+                        (root, xml_file),
+                        False,
+                    ),
+                    (
+                        "Check dependency order",
+                        self.formatter.check_dependency_order,
+                        (root, xml_file),
+                        False,
+                    ),
+                    (
+                        "Check indentation",
+                        self.formatter.check_indentation,
+                        (root,),
+                        False,
+                    ),
+                ]
+            )
+
+        checks.append(
+            (
+                "Check launch dependencies",
+                self.validate_launch_dependencies,
+                (root, xml_file, package_name, exec_deps, test_deps),
+                False,
+            )
+        )
+
+        if not self.missing_deps_only:
+            checks.extend(
+                [
+                    (
+                        "Check build tool depend",
+                        self.validate_buildtool_depend,
+                        (root, xml_file),
+                        False,
+                    ),
+                    (
+                        "Check member of group",
+                        self.validate_member_of_group,
+                        (root, xml_file),
+                        False,
+                    ),
+                    (
+                        "Check build type export",
+                        self.validate_ament_exports,
+                        (root, xml_file),
+                        False,
+                    ),
+                ]
+            )
+
+        if self.check_rosdeps and not self.missing_deps_only:
+            rosdeps = self.formatter.retrieve_all_dependencies(root)
+            checks.append(
+                (
+                    "Check ROS dependencies",
+                    self.check_for_rosdeps,
+                    (rosdeps, xml_file),
+                    True,
+                )
+            )
+
+        if self.compare_with_cmake:
+            build_deps = self.formatter.retrieve_build_dependencies(root)
+            checks.append(
+                (
+                    "Check CMake dependencies",
+                    self.check_for_cmake,
+                    (build_deps, test_deps, xml_file, root),
+                    not self.auto_fill_missing_deps,
+                )
+            )
+
+        return checks
+
     def check_and_format_files(self, package_xml_files):
         """Check and format package.xml files if self.check_only is False.
         Returns is_valid, changed_xml
@@ -424,102 +553,15 @@ class PackageXmlValidator:
                 self.xml_valid = False
                 continue
 
-            # Perform xml checks
-            valid = self.perform_check(
-                "Check for invalid tags",
-                self.formatter.check_for_non_existing_tags,
-                root,
-                xml_file,
-            )
-            self.encountered_unresolvable_error |= not valid
-            self.perform_check(
-                "Check for empty lines",
-                self.formatter.check_for_empty_lines,
-                root,
-                xml_file,
-            )
-            self.perform_check(
-                "Check for duplicate elements",
-                self.formatter.check_for_duplicates,
-                root,
-                xml_file,
-            )
-            self.perform_check(
-                "Check element occurrences",
-                self.formatter.check_element_occurrences,
-                root,
-                xml_file,
-            )
-            self.perform_check(
-                "Check element order",
-                self.formatter.check_element_order,
-                root,
-                xml_file,
-            )
-            self.perform_check(
-                "Check dependency order",
-                self.formatter.check_dependency_order,
-                root,
-                xml_file,
-            )
-            self.perform_check(
-                "Check indentation",
-                self.formatter.check_indentation,
-                root,
-            )
+            package_name = self.formatter.get_package_name(root)
+            checks = self._build_checks(root, xml_file, package_name)
+            self.num_checks = len(checks)
+            self.check_count = 1
 
-            self.perform_check(
-                "Check launch dependencies",
-                self.validate_launch_dependencies,
-                root,
-                xml_file,
-                self.formatter.get_package_name(root),
-                self.formatter.retrieve_exec_dependencies(root),
-                self.formatter.retrieve_test_dependencies(root),
-            )
-
-            self.perform_check(
-                "Check build tool depend",
-                self.validate_buildtool_depend,
-                root,
-                xml_file,
-            )
-
-            self.perform_check(
-                "Check member of group",
-                self.validate_member_of_group,
-                root,
-                xml_file,
-            )
-
-            self.perform_check(
-                "Check build type export",
-                self.validate_ament_exports,
-                root,
-                xml_file,
-            )
-
-            # Check rosdeps if enabled
-            if self.check_rosdeps:
-                rosdeps = self.formatter.retrieve_all_dependencies(root)
-                valid = self.perform_check(
-                    "Check ROS dependencies", self.check_for_rosdeps, rosdeps, xml_file
-                )
-                self.encountered_unresolvable_error |= not valid
-            # Check for CMake dependencies if enabled
-            if self.compare_with_cmake:
-                build_deps = self.formatter.retrieve_build_dependencies(root)
-                test_deps = self.formatter.retrieve_test_dependencies(root)
-                valid = self.perform_check(
-                    "Check CMake dependencies",
-                    self.check_for_cmake,
-                    build_deps,
-                    test_deps,
-                    xml_file,
-                    root,
-                )
-                if not self.auto_fill_missing_deps:
-                    self.encountered_unresolvable_error |= not valid
+            for check_name, check_fn, args, mark_unresolvable in checks:
+                valid = self.perform_check(check_name, check_fn, *args)
+                if mark_unresolvable and not valid:
+                    self.encountered_unresolvable_error = True
 
             # Write back to file if not in check-only mode
             if not self.xml_valid and not self.check_only:
@@ -597,6 +639,12 @@ def main():
         help="Automatically fill missing dependencies in package.xml [--compare-with-cmake must be set].",
     )
 
+    parser.add_argument(
+        "--missing-deps-only",
+        action="store_true",
+        help="Only report missing dependencies (implies --check-only).",
+    )
+
     args = parser.parse_args()
 
     # if file not given and src is empty, assume current directory
@@ -616,11 +664,12 @@ def main():
         args.compare_with_cmake = False
 
     formatter = PackageXmlValidator(
-        check_only=args.check_only,
+        check_only=args.check_only or args.missing_deps_only,
         verbose=args.verbose,
         check_rosdeps=not args.skip_rosdep_key_validation,
         compare_with_cmake=args.compare_with_cmake,
         auto_fill_missing_deps=args.auto_fill_missing_deps,
+        missing_deps_only=args.missing_deps_only,
         path=args.file if args.file else args.src[0],
     )
 
