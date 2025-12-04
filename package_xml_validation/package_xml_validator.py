@@ -2,6 +2,7 @@ import argparse
 import os
 import lxml.etree as ET
 from enum import Enum
+import re
 
 try:
     from .helpers.logger import get_logger
@@ -17,7 +18,6 @@ except ImportError:
     from helpers.cmake_parsers import read_deps_from_cmake_file
     from helpers.find_launch_dependencies import scan_files
     from helpers.workspace import find_package_xml_files
-import re
 
 
 class PackageType(Enum):
@@ -34,12 +34,14 @@ class PackageXmlValidator:
         compare_with_cmake=False,
         auto_fill_missing_deps=False,
         missing_deps_only=False,
+        ignore_formatting_errors=False,
         path=None,
         verbose=False,
     ):
         self.verbose = verbose
         self.missing_deps_only = missing_deps_only
-        self.check_only = check_only or missing_deps_only
+        self.ignore_formatting_errors = ignore_formatting_errors
+        self.check_only = check_only or missing_deps_only or ignore_formatting_errors
         self.check_rosdeps = check_rosdeps
         self.logger = get_logger(__name__, level="verbose" if verbose else "normal")
         self.compare_with_cmake = compare_with_cmake
@@ -70,12 +72,14 @@ class PackageXmlValidator:
                 num_checks += 1
             return num_checks
 
-        num_checks = 11
+        base_checks = 11
+        if self.ignore_formatting_errors:
+            base_checks -= 6  # Skip formatting-only checks
         if self.check_rosdeps:
-            num_checks += 1
+            base_checks += 1
         if self.compare_with_cmake:
-            num_checks += 1
-        return num_checks
+            base_checks += 1
+        return base_checks
 
     def get_package_type(self, xml_file: str) -> tuple[PackageType, bool]:
         """Determine the package type based on the presence of CMakeLists.txt or setup.py.
@@ -424,53 +428,57 @@ class PackageXmlValidator:
         exec_deps = self.formatter.retrieve_exec_dependencies(root)
         test_deps = self.formatter.retrieve_test_dependencies(root)
 
+        formatting_checks = [
+            (
+                "Check for empty lines",
+                self.formatter.check_for_empty_lines,
+                (root, xml_file),
+                False,
+            ),
+            (
+                "Check for duplicate elements",
+                self.formatter.check_for_duplicates,
+                (root, xml_file),
+                False,
+            ),
+            (
+                "Check element occurrences",
+                self.formatter.check_element_occurrences,
+                (root, xml_file),
+                False,
+            ),
+            (
+                "Check element order",
+                self.formatter.check_element_order,
+                (root, xml_file),
+                False,
+            ),
+            (
+                "Check dependency order",
+                self.formatter.check_dependency_order,
+                (root, xml_file),
+                False,
+            ),
+            (
+                "Check indentation",
+                self.formatter.check_indentation,
+                (root,),
+                False,
+            ),
+        ]
+
         if not self.missing_deps_only:
-            checks.extend(
-                [
-                    (
-                        "Check for invalid tags",
-                        self.formatter.check_for_non_existing_tags,
-                        (root, xml_file),
-                        True,
-                    ),
-                    (
-                        "Check for empty lines",
-                        self.formatter.check_for_empty_lines,
-                        (root, xml_file),
-                        False,
-                    ),
-                    (
-                        "Check for duplicate elements",
-                        self.formatter.check_for_duplicates,
-                        (root, xml_file),
-                        False,
-                    ),
-                    (
-                        "Check element occurrences",
-                        self.formatter.check_element_occurrences,
-                        (root, xml_file),
-                        False,
-                    ),
-                    (
-                        "Check element order",
-                        self.formatter.check_element_order,
-                        (root, xml_file),
-                        False,
-                    ),
-                    (
-                        "Check dependency order",
-                        self.formatter.check_dependency_order,
-                        (root, xml_file),
-                        False,
-                    ),
-                    (
-                        "Check indentation",
-                        self.formatter.check_indentation,
-                        (root,),
-                        False,
-                    ),
-                ]
+            checks.append(
+                (
+                    "Check for invalid tags",
+                    self.formatter.check_for_non_existing_tags,
+                    (root, xml_file),
+                    True,
+                )
             )
+
+            if not self.ignore_formatting_errors:
+                checks.extend(formatting_checks)
 
         checks.append(
             (
@@ -645,6 +653,12 @@ def main():
         help="Only report missing dependencies (implies --check-only).",
     )
 
+    parser.add_argument(
+        "--ignore-formatting-errors",
+        action="store_true",
+        help="Ignore formatting-only checks (implies --check-only).",
+    )
+
     args = parser.parse_args()
 
     # if file not given and src is empty, assume current directory
@@ -664,12 +678,15 @@ def main():
         args.compare_with_cmake = False
 
     formatter = PackageXmlValidator(
-        check_only=args.check_only or args.missing_deps_only,
+        check_only=args.check_only
+        or args.missing_deps_only
+        or args.ignore_formatting_errors,
         verbose=args.verbose,
         check_rosdeps=not args.skip_rosdep_key_validation,
         compare_with_cmake=args.compare_with_cmake,
         auto_fill_missing_deps=args.auto_fill_missing_deps,
         missing_deps_only=args.missing_deps_only,
+        ignore_formatting_errors=args.ignore_formatting_errors,
         path=args.file if args.file else args.src[0],
     )
 

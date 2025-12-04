@@ -47,7 +47,7 @@ class TestPackageXmlValidator(unittest.TestCase):
         Adjust the directory path to match your actual setup.
         """
         current_dir = os.path.dirname(__file__)
-        cls.examples_dir = os.path.join(current_dir, "examples", "export_tag_examples")
+        cls.examples_dir = os.path.join(current_dir, "examples", "msgs_packages")
         cls.formatters = {}
         cls.formatters[FormatterType.FULL] = PackageXmlValidator(
             check_only=False,
@@ -138,29 +138,29 @@ class TestPackageXmlValidator(unittest.TestCase):
         """
         Iterate over all example packages in the test directory,
         """
-        build_types = ["ament_cmake", "msg_pkg", "ament_python"]
-        for build_type in build_types:
+        for pkg_test in os.listdir(self.examples_dir):
             correct_xml = os.path.join(
-                self.examples_dir, build_type, "pkg_correct", "package.xml"
+                self.examples_dir, pkg_test, "pkg_correct", "package.xml"
             )
-            build_type_dir = os.path.join(self.test_dir, build_type)
-            for pkg in os.listdir(build_type_dir):
-                xml_file = os.path.join(build_type_dir, pkg, "package.xml")
+            pkg_test_dir = os.path.join(self.test_dir, pkg_test)
+            for pkg in os.listdir(pkg_test_dir):
+                xml_file = os.path.join(pkg_test_dir, pkg, "package.xml")
+                xml_file_folder = os.path.join(pkg_test_dir, pkg)
+
                 # apply the formatter
                 for type, formatter in self.formatters.items():
                     with self.subTest(
                         pkg=pkg,
-                        build_type=build_type,
+                        pkg_test=pkg_test,
                         formatter_type=type.value,
                     ):
-                        # re-copy file from examples_dir to test_dir
                         shutil.copy2(
                             os.path.join(
-                                self.examples_dir, build_type, pkg, "package.xml"
+                                self.examples_dir, pkg_test, pkg, "package.xml"
                             ),
                             xml_file,
                         )
-                        valid = formatter.check_and_format_files([xml_file])
+                        valid = formatter.check_and_format([xml_file_folder])
                         if not pkg == "pkg_correct":
                             self.assertFalse(
                                 valid,
@@ -172,7 +172,7 @@ class TestPackageXmlValidator(unittest.TestCase):
                                 f"XML file {xml_file} is expected to be valid but was invalid. (using formatter: {type.value})",
                             )
                         original_xml = os.path.join(
-                            self.examples_dir, build_type, pkg, "package.xml"
+                            self.examples_dir, pkg_test, pkg, "package.xml"
                         )
                         # only when using the FULL formatter the missing parts should be added
                         expected_xml = (

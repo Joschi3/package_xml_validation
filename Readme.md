@@ -67,6 +67,8 @@ options:
   --skip-rosdep-key-validation  Check if rosdeps are valid.
   --compare-with-cmake          Check if all CMake dependencies are in package.xml.
   --auto-fill-missing-deps      Automatically fill missing dependencies in package.xml.
+  --missing-deps-only           Only report missing dependencies (implies --check-only).
+  --ignore-formatting-errors    Skip formatting-only checks (implies --check-only).
 ```
 Example with verbose logging:
 ```
@@ -143,3 +145,8 @@ This will:
 - Exit non-zero if any problems are found
 → **No files will be modified**
 - if rosdep is not available in the CI environment use the `--skip-rosdep-key-validation` flag
+
+### 🎯 Focused modes
+
+- `--missing-deps-only`: Skip all formatting and schema checks and only report missing dependencies (including launch/test dependencies).
+- `--ignore-formatting-errors`: Run all critical checks while ignoring pure formatting issues like indentation or ordering. This mode is check-only and will not rewrite files.

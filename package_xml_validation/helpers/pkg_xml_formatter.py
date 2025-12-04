@@ -198,14 +198,14 @@ class PackageXmlFormatter:
             count = len(root.findall(elem))
             if count < min_occurrences:
                 self.logger.info(
-                    f"Error: Element '{elem}' in {xml_file} has fewer than {min_occurrences} occurrences."
+                    f"Error: Element <{elem}> in {xml_file} has fewer than {min_occurrences} occurrences."
                 )
                 incorrect_occurrences = True
                 if self.check_only:
                     return False
             elif max_occurrences is not None and count > max_occurrences:
                 self.logger.info(
-                    f"Error: Element '{elem}' in {xml_file} has more than {max_occurrences} occurrences."
+                    f"Error: Element <{elem}> in {xml_file} has more than {max_occurrences} occurrences."
                 )
                 incorrect_occurrences = True
                 if self.check_only:
@@ -219,12 +219,29 @@ class PackageXmlFormatter:
 
         # Correct the occurrences
         for elem, min_occurrence, max_occurrences in ELEMENTS:
-            count = len(root.findall(elem))
+            elements = root.findall(elem)
+            count = len(elements)
             if max_occurrences is not None and count > max_occurrences:
-                for i in range(count - max_occurrences):
-                    root.remove(root.find(elem))
+                reference = (
+                    ET.tostring(elements[0], with_tail=False)
+                    if len(elements) > 0
+                    else None
+                )
+                if reference and all(
+                    ET.tostring(elm, with_tail=False) == reference
+                    for elm in elements[1:]
+                ):
+                    for extra in elements[max_occurrences:]:
+                        root.remove(extra)
+                    self.logger.info(
+                        f"Removed identical duplicate element <{elem}> from {xml_file}."
+                    )
+                else:
+                    self.logger.warning(
+                        f"Multiple <{elem}> entries differ. Please resolve manually. There are {count} occurrences in {xml_file} but there should be no more than {max_occurrences}."
+                    )
             if count < min_occurrence:
-                self.logger.info("Please add the missing element: ", elem)
+                self.logger.warning(f"Please add the missing element: <{elem}>")
         return False
 
     def check_element_order(self, root, xml_file):
@@ -431,7 +448,7 @@ class PackageXmlFormatter:
                 non_existing_tags.append(elem.tag)
         if non_existing_tags:
             self.logger.error(
-                f"Non-existing tags found in {xml_file}: {', '.join(non_existing_tags)}"
+                f"Unknown tags found in {xml_file}: {', '.join(non_existing_tags)}"
             )
             return False
         return True
