@@ -5,8 +5,8 @@
   <description>Message and action definitions for MoveIt state server interaction.</description>
   <maintainer email="aljoscha97@web.de">Aljoscha Schmidt</maintainer>
   <!-- Replace TODO with your actual license -->
-  <license>DUPLICATE</license>
-  <license>DUPLICATE</license>
+  <license>MIT_DUPLICATE</license>
+  <license>MIT_DUPLICATE</license>
   <author email="aljoscha97@web.de">Aljoscha Schmidt</author>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
