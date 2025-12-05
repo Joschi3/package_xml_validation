@@ -1,0 +1,34 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<package format="3">
+  <name>moveit_state_server_msgs</name>
+  <version>0.0.0</version>
+  <description>Message and action definitions for MoveIt state server interaction.</description>
+  <maintainer email="aljoscha97@web.de">Aljoscha Schmidt</maintainer>
+  <!-- Replace TODO with your actual license -->
+  <license>MIT</license>
+  <author email="aljoscha97@web.de">Aljoscha Schmidt</author>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <build_depend>rosidl_default_generators</build_depend>
+
+  <depend>action_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+
+  <exec_depend>rosidl_default_runtime</exec_depend>
+
+
+
+
+
+
+
+  <!-- Build tools -->
+  <member_of_group>rosidl_interface_packages</member_of_group>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

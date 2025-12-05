@@ -40,6 +40,7 @@ class TestPackageXmlValidator(unittest.TestCase):
         """
         current_dir = os.path.dirname(__file__)
         cls.examples_dir = os.path.join(current_dir, "examples", "package_xml_examples")
+        cls.unfixable_dir = os.path.join(current_dir, "examples", "unfixable_pkgs")
 
     def setUp(self):
         """
@@ -280,6 +281,61 @@ class TestPackageXmlValidator(unittest.TestCase):
         formatter = PackageXmlValidator(check_only=True, verbose=True)
         with self.assertRaises(FileNotFoundError):
             formatter.check_and_format_files([invalid_path])
+
+    def test_unfixable_packages_remain_invalid(self):
+        """
+        Ensure packages with unfixable issues (e.g. missing <name>) remain invalid
+        even when the formatter attempts to fix them.
+        """
+        self.assertTrue(
+            os.path.isdir(self.unfixable_dir),
+            f"Missing unfixable fixtures directory: {self.unfixable_dir}",
+        )
+        unfixable_files = [
+            f for f in os.listdir(self.unfixable_dir) if f.endswith(".xml")
+        ]
+        self.assertGreater(
+            len(unfixable_files),
+            0,
+            "Expected at least one unfixable package.xml fixture.",
+        )
+
+        for fname in unfixable_files:
+            with self.subTest(file=fname):
+                src = os.path.join(self.unfixable_dir, fname)
+                dst = os.path.join(self.test_dir, fname)
+                shutil.copy2(src, dst)
+
+                formatter_check = PackageXmlValidator(
+                    check_only=True, verbose=True, check_rosdeps=False
+                )
+                self.assertFalse(
+                    formatter_check.check_and_format_files([dst]),
+                    f"Unfixable file {fname} should fail in check-only mode.",
+                )
+
+                # print the content of the unfixable file
+                with open(dst) as f:
+                    content = f.read()
+                print(f"Content of unfixable file {fname}:\n{content}")
+
+                formatter_fix = PackageXmlValidator(
+                    check_only=False, verbose=True, check_rosdeps=False
+                )
+                self.assertFalse(
+                    formatter_fix.check_and_format_files([dst]),
+                    f"Unfixable file {fname} should remain invalid when attempting to fix.",
+                )
+                # print the content of the unfixable file
+                with open(dst) as f:
+                    content = f.read()
+                print(
+                    f"Content of unfixable file {fname}:\n{content} 2after fix attempt"
+                )
+                self.assertFalse(
+                    formatter_fix.check_and_format_files([dst]),
+                    f"Unfixable file {fname} should remain invalid when attempting to fix again.",
+                )
 
 
 if __name__ == "__main__":
