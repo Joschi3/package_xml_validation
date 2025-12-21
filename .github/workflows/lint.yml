@@ -39,7 +39,6 @@ jobs:
       # 5. Initialize rosdep
       - name: Init rosdep
         run: |
-          sudo rosdep init
           rosdep update
 
       # 6. Run pre-commit with the PEP 668 override
