@@ -1,4 +1,5 @@
-# ROS2 Package Xml Validator & Formatter
+# ROS 2 Package XML Validator & Formatter
+
 ![CI](https://github.com/Joschi3/package_xml_validation/actions/workflows/unittests.yml/badge.svg)
 ![Lint](https://github.com/Joschi3/package_xml_validation/actions/workflows/lint.yml/badge.svg)
 [![codecov](https://codecov.io/gh/Joschi3/package_xml_validation/branch/main/graph/badge.svg)](https://codecov.io/gh/Joschi3/package_xml_validation/)
@@ -6,29 +7,29 @@
 Validates and formats `package.xml` files to enforce consistency and ROS 2 schema compliance.
 
 ### ✅ What it does:
-- XML Schema Validation & Correction
+
+- **XML Schema Validation & Correction**
   - Validates against [package_format3.xsd](http://download.ros.org/schema/package_format3.xsd)
-  - Fixes ordering errors, formatting errors, ...
-- Dependency Grouping & Sorting
-  - Grouped by type (e.g. `build_depend`, `test_depend`)
-  - Sorted alphabetically within each group
-- Non-Destructive Edits
+  - Automatically fixes ordering and formatting errors
+- **Dependency Grouping & Sorting**
+  - Groups dependencies by type (e.g., `build_depend`, `test_depend`)
+  - Sorts alphabetically within each group
+- **Non-Destructive Edits**
   - Leaves comments and indentation **unchanged**
-- Launch-File Dependency Validation
-  - Scans Python (.py), YAML (.yaml/.yml), and XML (.xml) launch files for package references
-  - validates and corrects that all referenced pkgs are declared in the package xml (as `<exec_depend>` or `<depend>`)
-  - similarly the test folder is parsed to extract missing `<test_depend>` dependencies
-- Rosdep Key Checking
-  - verifies that all declared pkgs exist as rodsdep key (optional)
-- CMakeFile Comparison and Synchronization
-  - compares build dependencies and test dependencies with dependencies in the CMakeLists.txt (optional)
-  - automatically inserts missing package xml dependencies from the CMakeList as `<depend>` or `<build_depend>` (optional)
-- Export Build Type Validation
-  - makes sure the package.xml includes the appropriate build_type export (e.g. ament_cmake, ament_python)
-  - also validates `buildtool_depend`
+- **Launch File Dependency Validation**
+  - Scans Python (`.py`), YAML (`.yaml/.yml`), and XML (`.xml`) launch files for package references
+  - Validates and corrects that all referenced packages are declared in `package.xml` (as `<exec_depend>` or `<depend>`)
+  - Parses the `test` folder to extract missing `<test_depend>` dependencies
+- **Rosdep Key Checking**
+  - Verifies that all declared packages exist as valid rosdep keys (optional)
+- **CMakeLists.txt Synchronization**
+  - Compares build and test dependencies against `CMakeLists.txt` (optional)
+  - Automatically inserts missing dependencies from CMake into `package.xml` as `<depend>` or `<build_depend>` (optional)
+- **Export Build Type Validation**
+  - Ensures `package.xml` includes the appropriate `build_type` export (e.g., `ament_cmake`, `ament_python`)
+  - Validates `buildtool_depend`
 
-
-#### Example: Enforced Grouping of the dependencies
+#### Example: Enforced Grouping of Dependencies
 ```xml
 <package format="3">
   ...
@@ -47,31 +48,43 @@ Validates and formats `package.xml` files to enforce consistency and ROS 2 schem
   </export>
 </package>
 ```
+
 ---
 
 ## 🛠️ Usage Example
 
 ```bash
-package-xml-validator [-h] [--check-only] [--file FILE] [--verbose] [--skip-rosdep-key-validation] [--compare-with-cmake] [src ...]
+usage: package-xml-validator [-h] [--check-only] [--file FILE] [--verbose] [--skip-rosdep-key-validation] [--compare-with-cmake] [--auto-fill-missing-deps] [--missing-deps-only] [--ignore-formatting-errors]
+                             [--strict-cmake-checking]
+                             [src ...]
 
 Validate and format ROS2 package.xml files.
 
 positional arguments:
-  src                           List of files or directories to process.
+  src                   List of files or directories to process.
 
 options:
-  -h, --help                    show this help message and exit
-  --check-only                  Only check for errors without correcting.
-  --file FILE                   Path to a single XML file to process. If provided, 'src' arguments are ignored.
-  --verbose                     Enable verbose output.
-  --skip-rosdep-key-validation  Check if rosdeps are valid.
-  --compare-with-cmake          Check if all CMake dependencies are in package.xml.
-  --auto-fill-missing-deps      Automatically fill missing dependencies in package.xml.
-  --missing-deps-only           Only report missing dependencies (implies --check-only).
-  --ignore-formatting-errors    Skip formatting-only checks (implies --check-only).
+  -h, --help            show this help message and exit
+  --check-only          Only check for errors without correcting.
+  --file FILE           Path to a single XML file to process. If provided, 'src' arguments are ignored.
+  --verbose             Enable verbose output.
+  --skip-rosdep-key-validation
+                        Check if rosdeps are valid.
+  --compare-with-cmake  Check if all CMake dependencies are in package.xml.
+  --auto-fill-missing-deps
+                        Automatically fill missing dependencies in package.xml [--compare-with-cmake must be set].
+  --missing-deps-only   Only report missing dependencies (implies --check-only).
+  --ignore-formatting-errors
+                        Ignore formatting-only checks (implies --check-only).
+  --strict-cmake-checking
+                        Treat unresolved CMake dependencies as errors instead of warnings.
+
+
 ```
-Example with verbose logging:
-```
+
+**Example with verbose logging:**
+
+```text
 package-xml-validator ~/hector/src/hector_gamepad_manager/hector_gamepad_plugin_interface --check-only --compare-with-cmake --verbose
 Processing hector_gamepad_plugin_interface...
 ✅ [1/13] Check for invalid tags passed.
@@ -94,7 +107,7 @@ Processing hector_gamepad_plugin_interface...
 
 ## ✅ Pre-commit Hook Setup
 
-Use [`pre-commit`](https://pre-commit.com/) to automatically validate and format `package.xml` files before each commit.
+Use [`pre-commit`](https://pre-commit.com/) to automatically validate and format `package.xml` files before every commit.
 
 ### 1. Install `pre-commit`
 
@@ -119,9 +132,7 @@ repos:
 pre-commit install
 ```
 
-This ensures the check runs every time you `git commit`.
-
-### 4. Run manually (e.g. on first setup)
+### 4. Run manually (e.g., on first setup)
 
 ```bash
 pre-commit run --all-files
@@ -131,22 +142,49 @@ pre-commit run --all-files
 
 ## 🧪 CI Use: Check-only Mode
 
-If you're running in CI and want to **fail on violations without modifying files**, use:
+If you are running in CI and want to **fail on violations without modifying files**, use:
 
 ```bash
 package-xml-validator --check-only --compare-with-cmake .
 ```
 
 This will:
-- Validate all `package.xml` files
-- Print any formatting/schema issues
-- check validity of rosdep keys
-- compare the depenedencies with the dependencies listed in the CMakeList.txt
-- Exit non-zero if any problems are found
-→ **No files will be modified**
-- if rosdep is not available in the CI environment use the `--skip-rosdep-key-validation` flag
 
-### 🎯 Focused modes
+* Validate all `package.xml` files.
+* Print formatting/schema issues.
+* Check validity of rosdep keys.
+* Compare dependencies against `CMakeLists.txt`.
+* Exit with a non-zero code if problems are found.
+* **Modify no files.**
 
-- `--missing-deps-only`: Skip all formatting and schema checks and only report missing dependencies (including launch/test dependencies).
-- `--ignore-formatting-errors`: Run all critical checks while ignoring pure formatting issues like indentation or ordering. This mode is check-only and will not rewrite files.
+*Note: If `rosdep` is not initialized in your CI environment, add `--skip-rosdep-key-validation`.*
+
+### 🎯 Focused Modes
+
+* `--missing-deps-only`: Skips formatting checks; only reports missing dependencies (useful for quick audits).
+* `--ignore-formatting-errors`: Checks for logic/dependency errors but ignores indentation or sorting issues.
+
+---
+
+## ✨ Autocompletion
+
+To enable tab autocompletion for arguments and flags:
+
+1. **Install the package:**
+```bash
+pip install .
+```
+
+
+2. **Enable temporarily:**
+Run this in your terminal:
+```bash
+eval "$(register-python-argcomplete package-xml-validator)"
+```
+
+
+3. **Enable permanently:**
+Add the activation command to your shell profile (`~/.bashrc` or `~/.zshrc`):
+```bash
+echo 'eval "$(register-python-argcomplete package-xml-validator)"' >> ~/.bashrc
+```

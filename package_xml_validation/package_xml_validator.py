@@ -1,8 +1,12 @@
+#!/usr/bin/env python3
+# PYTHON_ARGCOMPLETE_OK
+
 import argparse
 import os
 import lxml.etree as ET
 from enum import Enum
 import re
+import argcomplete
 
 try:
     from .helpers.logger import get_logger
@@ -697,6 +701,7 @@ def main():
         help="Treat unresolved CMake dependencies as errors instead of warnings.",
     )
 
+    argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
     # if file not given and src is empty, assume current directory

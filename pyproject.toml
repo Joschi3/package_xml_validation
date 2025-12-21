@@ -9,6 +9,7 @@ description = "Validates package xml of ros2 pkgs"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
+    "argcomplete",
     "lxml",
     "PyYAML",
     "rosdep",
