@@ -16,12 +16,17 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup
+      - name: Setup System Dependencies
+        # Added: python3-pip (for installing pre-commit), python-is-python3 (to fix 'python not found'), git (required by pre-commit)
         run: |
-          sudo apt-get update && sudo apt-get install -y clang-format cppcheck libxml2-utils python3-rosdep
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+          sudo apt-get update && sudo apt-get install -y \
+            clang-format \
+            cppcheck \
+            libxml2-utils \
+            python3-rosdep \
+            python3-pip \
+            python-is-python3 \
+            git
 
       - name: Install and Run pre-commit
         uses: pre-commit/action@v3.0.1
