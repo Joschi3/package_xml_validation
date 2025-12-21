@@ -1,0 +1,10 @@
+Boost: boost
+Eigen: eigen
+Eigen3: eigen
+OpenCV: libopencv-dev
+PCL: libpcl-all-dev
+TinyXML2: tinyxml2
+YAML_CPP: yaml-cpp
+yaml-cpp: yaml-cpp
+glog: libgoogle-glog-dev
+gflags: libgflags-dev

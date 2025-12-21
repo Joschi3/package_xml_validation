@@ -49,3 +49,13 @@ repos:
         entry: '(?i)#\s*bug'
         language: pygrep
         types: [file]
+
+  - repo: local
+    hooks:
+      - id: verify-rosdep-map
+        name: Verify Rosdep Mappings
+        entry: python3 package_xml_validation/helpers/verify_rosdep_mapping.py
+        language: system
+        files: package_xml_validation/data/cmake_rosdep_map.yaml
+        pass_filenames: false
+        description: Ensures all keys in the custom cmake mapping resolve to valid rosdep keys.

@@ -87,17 +87,28 @@ class TestPackageXmlValidator(unittest.TestCase):
                 compare_with_cmake=True,
             )
         )
+        # Configure Mocks
         for key, formatter in cls.formatters.items():
             formatter.rosdep_validator = MagicMock()
+
+            # --- CRITICAL FIX START ---
+            # Ensure resolve_cmake_dependency returns the input string (pass-through).
+            # Without this, it returns a MagicMock object, causing TypeError during string join.
+            formatter.rosdep_validator.resolve_cmake_dependency.side_effect = (
+                lambda x: x
+            )
+
             if key is FormatterType.ALL_ROSDEPS_ARE_UNRESOLVABLE:
+                # Simulate that ALL checked dependencies are missing/unresolvable
                 formatter.rosdep_validator.check_rosdeps_and_local_pkgs = MagicMock(
                     side_effect=lambda deps: deps
                 )
-                # Mock "normal" rosdep check, we are testing launch deps here
+                # Mock "normal" rosdep check to avoid lookup errors
                 formatter.check_for_rosdeps = MagicMock(return_value=True)
             else:
+                # Simulate that ALL dependencies are resolvable (empty list of missing)
                 formatter.rosdep_validator.check_rosdeps_and_local_pkgs = MagicMock(
-                    side_effect=lambda deps: []  # everything resolvable
+                    side_effect=lambda deps: []
                 )
 
     def setUp(self):

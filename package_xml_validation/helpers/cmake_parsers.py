@@ -1,6 +1,13 @@
 from pathlib import Path
 import re
 
+# Known CMake keys that do not need package xml <depend> entries
+CMAKE_KEYS_NO_ROSDEP = [
+    "Threads",
+    "OpenMP",
+    "ament_cmake",  # build_tool
+]
+
 
 def remove_comments(lines: list[str]) -> list[str]:
     """Removes comments from a list of lines."""
@@ -172,6 +179,9 @@ def retrieve_cmake_dependencies(lines: list[str]) -> tuple[list[str], list[str]]
             add_deps(used_deps, in_test_block)
             continue
 
+    # filter out known CMake keys that do not need rosdep resolution
+    main_deps = [dep for dep in main_deps if dep not in CMAKE_KEYS_NO_ROSDEP]
+    test_deps = [dep for dep in test_deps if dep not in CMAKE_KEYS_NO_ROSDEP]
     return main_deps, test_deps
 
 
