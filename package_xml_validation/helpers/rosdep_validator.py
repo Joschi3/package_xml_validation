@@ -24,6 +24,15 @@ try:
 except ImportError:
 
     def get_pkgs_in_wrs(path):
+        """Fallback workspace package discovery when helpers cannot be imported.
+
+        Args:
+            path: Workspace path to inspect.
+
+        Returns:
+            An empty list, indicating no local packages were discovered.
+
+        """
         return []
 
 
@@ -33,6 +42,15 @@ class RosdepValidator:
     """
 
     def __init__(self, pkg_path=None):
+        """Initialize rosdep lookup and optional workspace package list.
+
+        Args:
+            pkg_path: Optional path used to discover local workspace packages.
+
+        Returns:
+            None.
+
+        """
         self.rosdep_installer_context = rosdep2.create_default_installer_context()
         self.rosdep = rosdep2.RosdepLookup.create_from_rospkg()
 
@@ -56,6 +74,15 @@ class RosdepValidator:
         self.cmake_rosdep_map = self._load_cmake_rosdep_map()
 
     def _load_cmake_rosdep_map(self) -> dict[str, str]:
+        """Load the CMake-to-rosdep mapping file from package data.
+
+        Args:
+            None.
+
+        Returns:
+            A dictionary mapping CMake dependency names to rosdep keys.
+
+        """
         try:
             map_file = resources.files("package_xml_validation").joinpath(
                 "data/cmake_rosdep_map.yaml"
@@ -70,6 +97,15 @@ class RosdepValidator:
         return {str(k).lower(): str(v) for k, v in mapping.items()}
 
     def can_resolve(self, dependency: str) -> bool:
+        """Check whether a rosdep key resolves for the current OS.
+
+        Args:
+            dependency: Rosdep key to resolve.
+
+        Returns:
+            True if resolvable for the current OS, otherwise False.
+
+        """
         try:
             dep = self.rosdep_view.lookup(dependency)
             installer, _ = dep.get_rule_for_platform(
@@ -89,6 +125,15 @@ class RosdepValidator:
             return False
 
     def resolve_cmake_dependency(self, dependency: str) -> str | None:
+        """Resolve a CMake dependency to a rosdep key or local package name.
+
+        Args:
+            dependency: CMake dependency name.
+
+        Returns:
+            A resolvable rosdep key or local package name, or None if unresolved.
+
+        """
         if dependency in self.local_pkgs:
             return dependency
         if self.can_resolve(dependency):
@@ -99,9 +144,14 @@ class RosdepValidator:
         return None
 
     def search_rosdep_candidates(self, dependency: str) -> list[str]:
-        """
-        Searches the local rosdep cache for keys that loosely match the dependency.
-        Returns sorted results: Exact -> Contains(Full) -> Contains(Stem) -> Fuzzy.
+        """Search rosdep cache for candidate keys related to a dependency name.
+
+        Args:
+            dependency: Dependency name to match against rosdep keys.
+
+        Returns:
+            A list of up to five candidate rosdep keys, sorted by relevance.
+
         """
         regexes = []
         if HAS_REGEX_MODULE:
@@ -161,6 +211,16 @@ class RosdepValidator:
         return sorted(unique_keys, key=sort_key)[:5]
 
     def _search_view_data(self, view, compiled_regexes) -> list[str]:
+        """Search a rosdep view for matching keys or payload values.
+
+        Args:
+            view: Rosdep view/source to search.
+            compiled_regexes: List of compiled regexes to match.
+
+        Returns:
+            Matching rosdep keys found in the view.
+
+        """
         matches = []
         for key, item in view.rosdep_data.items():
             if any(r.search(key) for r in compiled_regexes):
@@ -173,6 +233,16 @@ class RosdepValidator:
         return matches
 
     def _check_payload_match(self, os_payload, compiled_regexes) -> bool:
+        """Check whether a payload contains any regex matches.
+
+        Args:
+            os_payload: Rosdep payload entry (str/list/dict).
+            compiled_regexes: List of compiled regexes to match.
+
+        Returns:
+            True if any payload field matches, otherwise False.
+
+        """
         if isinstance(os_payload, str):
             return any(r.search(os_payload) for r in compiled_regexes)
         elif isinstance(os_payload, list):
@@ -192,6 +262,15 @@ class RosdepValidator:
         return False
 
     def check_rosdeps(self, dependencies) -> list[str]:
+        """Return a list of rosdep keys that cannot be resolved.
+
+        Args:
+            dependencies: Iterable of rosdep keys to validate.
+
+        Returns:
+            List of unresolvable rosdep keys.
+
+        """
         unresolvable = []
         for dep in dependencies:
             if not self.can_resolve(dep):
@@ -199,6 +278,15 @@ class RosdepValidator:
         return unresolvable
 
     def check_rosdeps_and_local_pkgs(self, dependencies) -> list[str]:
+        """Return rosdep keys unresolved and not satisfied by local packages.
+
+        Args:
+            dependencies: Iterable of rosdep keys to validate.
+
+        Returns:
+            List of unresolved keys excluding known local packages.
+
+        """
         unresolvable_rosdeps = self.check_rosdeps(dependencies)
         final_missing = [
             dep for dep in unresolvable_rosdeps if dep not in self.local_pkgs

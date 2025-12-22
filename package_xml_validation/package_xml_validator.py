@@ -51,6 +51,23 @@ class PackageXmlValidator:
         path=None,
         verbose=False,
     ):
+        """Initialize the package.xml validator with feature flags.
+
+        Args:
+            check_only: If True, only report issues without modifying files.
+            check_rosdeps: Whether to validate rosdep keys.
+            compare_with_cmake: Whether to compare dependencies with CMakeLists.txt.
+            auto_fill_missing_deps: Whether to auto-fill missing dependencies.
+            strict_cmake_checking: Treat unresolved CMake deps as errors.
+            missing_deps_only: Only report missing dependency checks.
+            ignore_formatting_errors: Skip formatting-only checks.
+            path: Path used for workspace discovery in rosdep validation.
+            verbose: Enable verbose logging.
+
+        Returns:
+            None.
+
+        """
         self.verbose = verbose
         self.missing_deps_only = missing_deps_only
         self.ignore_formatting_errors = ignore_formatting_errors
@@ -88,7 +105,15 @@ class PackageXmlValidator:
         self.check_count = 1
 
     def _calculate_num_checks(self):
-        """Calculate how many checks will run based on configuration."""
+        """Calculate the total number of checks based on configuration.
+
+        Args:
+            None.
+
+        Returns:
+            Number of checks expected to run.
+
+        """
         if self.missing_deps_only:
             num_checks = 1  # launch dependency check always runs
             if self.compare_with_cmake:
@@ -105,7 +130,16 @@ class PackageXmlValidator:
         return base_checks
 
     def log_check_result(self, check_name, result):
-        """Log the result of a check."""
+        """Log the result of a check and advance the counter.
+
+        Args:
+            check_name: Human-readable check name.
+            result: True if the check passed, otherwise False.
+
+        Returns:
+            None.
+
+        """
         if result:
             self.logger.debug(
                 f"✅ [{self.check_count}/{self.num_checks}] {check_name} passed."
@@ -119,6 +153,17 @@ class PackageXmlValidator:
             self.check_count = 1
 
     def _build_steps(self, root, xml_file, package_name):
+        """Build the list of validation steps for a given package.
+
+        Args:
+            root: XML root element.
+            xml_file: Path to the XML file.
+            package_name: Name of the package being validated.
+
+        Returns:
+            List of ValidationStep instances to run.
+
+        """
         exec_deps = self.formatter.retrieve_exec_dependencies(root)
         test_deps = self.formatter.retrieve_test_dependencies(root)
 
@@ -160,8 +205,14 @@ class PackageXmlValidator:
         return steps
 
     def check_and_format_files(self, package_xml_files):
-        """Check and format package.xml files if self.check_only is False.
-        Returns is_valid, changed_xml
+        """Validate and optionally format a list of package.xml files.
+
+        Args:
+            package_xml_files: Iterable of package.xml file paths.
+
+        Returns:
+            True if all files are valid, otherwise False.
+
         """
         self.all_valid = True
         for xml_file in package_xml_files:
@@ -235,6 +286,15 @@ class PackageXmlValidator:
             return True
 
     def check_and_format(self, src):
+        """Find package.xml files under a path and validate them.
+
+        Args:
+            src: List of files or directories to scan.
+
+        Returns:
+            True if all files are valid, otherwise False.
+
+        """
         package_xml_files = find_package_xml_files(src)
         if not package_xml_files:
             self.logger.info(
@@ -245,6 +305,15 @@ class PackageXmlValidator:
 
 
 def main():
+    """CLI entrypoint for package.xml validation.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+
+    """
     parser = argparse.ArgumentParser(
         description="Validate and format ROS2 package.xml files."
     )

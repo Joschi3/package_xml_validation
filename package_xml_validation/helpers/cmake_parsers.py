@@ -10,7 +10,15 @@ CMAKE_KEYS_NO_ROSDEP = [
 
 
 def remove_comments(lines: list[str]) -> list[str]:
-    """Removes comments from a list of lines."""
+    """Remove trailing CMake comments from each line.
+
+    Args:
+        lines: Raw lines from a CMake file.
+
+    Returns:
+        A list of lines with comments removed and whitespace stripped.
+
+    """
     return [line.split("#", 1)[0].strip() for line in lines]
 
 
@@ -18,12 +26,27 @@ def read_cmake_lines_with_parens_joined(raw_lines: list[str]) -> list[str]:
     """
     Reads a CMake file and joins lines that have an opening '(' without a matching ')'
     until the closing ')' is found. Returns a list of logically complete lines.
+
+    Args:
+        raw_lines: Raw file lines.
+
+    Returns:
+        A list of logical CMake lines with multiline blocks joined.
+
     """
     lines = []
     buffer = ""
 
     def has_balanced_parens(s: str) -> bool:
-        """Returns True if the number of ( matches the number of ) in the string."""
+        """Check whether parentheses are balanced in a string.
+
+        Args:
+            s: Input string.
+
+        Returns:
+            True if '(' and ')' counts are equal, otherwise False.
+
+        """
         return s.count("(") == s.count(")")
 
     for raw_line in raw_lines:
@@ -48,7 +71,15 @@ def read_cmake_lines_with_parens_joined(raw_lines: list[str]) -> list[str]:
 
 
 def resolve_for_each(raw_lines: list[str]) -> list[str]:
-    """Expands CMake's foreach() loops in a list of lines."""
+    """Expand simple foreach() loops into repeated lines.
+
+    Args:
+        raw_lines: Preprocessed CMake lines.
+
+    Returns:
+        A list of lines with foreach variables expanded.
+
+    """
     foreach_stack = []
 
     # Regex patterns
@@ -104,6 +135,15 @@ def resolve_for_each(raw_lines: list[str]) -> list[str]:
 
 
 def retrieve_cmake_dependencies(lines: list[str]) -> tuple[list[str], list[str]]:
+    """Parse CMake lines to extract main and test dependencies.
+
+    Args:
+        lines: CMake lines or a Path to a CMake file.
+
+    Returns:
+        Tuple of (main_deps, test_deps) as lists of dependency names.
+
+    """
     if isinstance(lines, Path):
         lines = read_cmake_file(lines)
     main_deps: list[str] = []
@@ -126,6 +166,14 @@ def retrieve_cmake_dependencies(lines: list[str]) -> tuple[list[str], list[str]]
     def add_deps(dep_list: list[str], is_test: bool):
         """
         Append dependency names to main_deps or test_deps, depending on is_test.
+
+        Args:
+            dep_list: Dependency names to add.
+            is_test: Whether to add to test deps instead of main deps.
+
+        Returns:
+            None.
+
         """
         if is_test:
             test_deps.extend(dep_list)
@@ -186,7 +234,15 @@ def retrieve_cmake_dependencies(lines: list[str]) -> tuple[list[str], list[str]]
 
 
 def read_cmake_file(file_path: Path) -> list[str]:
-    """Reads a CMake file and returns a list of lines."""
+    """Read and normalize CMake file lines for dependency parsing.
+
+    Args:
+        file_path: Path to a CMakeLists.txt file.
+
+    Returns:
+        A list of normalized CMake lines.
+
+    """
     if isinstance(file_path, str):
         file_path = Path(file_path)
     if not file_path.exists():
@@ -203,7 +259,15 @@ def read_cmake_file(file_path: Path) -> list[str]:
 
 
 def read_deps_from_cmake_file(file_path: Path | str) -> tuple[list[str], list[str]]:
-    """Reads a CMake file and returns a list of dependencies."""
+    """Read a CMake file and return main and test dependencies.
+
+    Args:
+        file_path: Path to a CMakeLists.txt file.
+
+    Returns:
+        Tuple of (main_deps, test_deps).
+
+    """
     if isinstance(file_path, str):
         file_path = Path(file_path)
     lines = read_cmake_file(file_path)

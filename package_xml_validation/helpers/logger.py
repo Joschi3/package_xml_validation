@@ -1,4 +1,5 @@
 import logging
+import os
 import sys
 
 
@@ -23,29 +24,85 @@ class ColoredFormatter(logging.Formatter):
         logging.CRITICAL: RED,
     }
 
+    def __init__(self, *args, use_color: bool = True, **kwargs):
+        """Initialize the formatter with optional ANSI coloring.
+
+        Args:
+            *args: Positional args forwarded to logging.Formatter.
+            use_color: Whether to wrap formatted output in ANSI color codes.
+            **kwargs: Keyword args forwarded to logging.Formatter.
+
+        Returns:
+            None.
+
+        """
+        super().__init__(*args, **kwargs)
+        self.use_color = use_color
+
     def format(self, record):
-        log_color = self.LOG_COLORS.get(record.levelno, self.RESET)
+        """Format a log record and optionally colorize the output.
+
+        Args:
+            record: Log record to format.
+
+        Returns:
+            The formatted log string (possibly colorized).
+
+        """
+        formatted = super().format(record)
         indent = "\t" if record.levelno == logging.ERROR else ""
-        record.msg = f"{indent}{log_color}{record.msg}{self.RESET}"
-        return super().format(record)
+        if not self.use_color:
+            return f"{indent}{formatted}"
+        log_color = self.LOG_COLORS.get(record.levelno, self.RESET)
+        return f"{indent}{log_color}{formatted}{self.RESET}"
 
 
-def get_logger(name: str = __name__, level: str = "normal") -> logging.Logger:
-    logger = logging.getLogger(f"{name}_{level}")
+def _resolve_level(level: str | int) -> int:
+    """Resolve a level specifier to a logging level integer.
+
+    Args:
+        level: Either a level name ("normal", "verbose", "INFO") or a level int.
+
+    Returns:
+        The corresponding logging level integer.
+
+    """
+    if isinstance(level, int):
+        return level
+    if level == "verbose":
+        return logging.DEBUG
+    if level == "normal":
+        return logging.INFO
+    return logging._nameToLevel.get(level.upper(), logging.INFO)
+
+
+def get_logger(name: str = __name__, level: str | int = "normal") -> logging.Logger:
+    """Create or retrieve a configured logger with a stream handler.
+
+    Args:
+        name: Logger name.
+        level: "normal"/"verbose", a logging level name, or a level int.
+
+    Returns:
+        A configured logger instance.
+
+    """
+    logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
 
     ch = logging.StreamHandler(sys.stdout)  # stdout is better for CI
     ch.flush = sys.stdout.flush  # force flush after each log
 
-    if level == "verbose":
-        ch.setLevel(logging.DEBUG)
-    else:
-        ch.setLevel(logging.INFO)
+    ch.setLevel(_resolve_level(level))
 
-    formatter = ColoredFormatter("%(message)s")
+    is_tty = sys.stdout.isatty()
+    use_color = is_tty and not os.getenv("NO_COLOR")
+    formatter = ColoredFormatter("%(message)s", use_color=use_color)
     ch.setFormatter(formatter)
 
-    if not logger.handlers:
+    if not any(
+        isinstance(handler, logging.StreamHandler) for handler in logger.handlers
+    ):
         logger.addHandler(ch)
 
     logger.propagate = False  # don't let root logger duplicate lines

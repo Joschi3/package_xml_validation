@@ -19,6 +19,13 @@ def verify_mappings():
     """
     Reads the cmake_rosdep_map.yaml and verifies that every target rosdep key
     exists in the local rosdep database.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+
     """
 
     # 1. Locate the YAML file

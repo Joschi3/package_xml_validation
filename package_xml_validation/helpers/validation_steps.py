@@ -32,9 +32,28 @@ class ValidationStep:
     name = "Validation step"
 
     def __init__(self, config: ValidationConfig):
+        """Initialize a validation step with configuration.
+
+        Args:
+            config: ValidationConfig with feature flags.
+
+        Returns:
+            None.
+
+        """
         self.config = config
 
     def perform_check(self, root, xml_file: str) -> ValidationResult:
+        """Perform the validation step for a package.xml file.
+
+        Args:
+            root: XML root element.
+            xml_file: Path to the XML file.
+
+        Returns:
+            ValidationResult containing validity, changes, and messages.
+
+        """
         raise NotImplementedError
 
 
@@ -42,10 +61,30 @@ class FormatterValidationStep(ValidationStep):
     name = "Formatter validation"
 
     def __init__(self, config: ValidationConfig, formatter):
+        """Initialize formatting validation step.
+
+        Args:
+            config: ValidationConfig with feature flags.
+            formatter: PackageXmlFormatter instance.
+
+        Returns:
+            None.
+
+        """
         super().__init__(config)
         self.formatter = formatter
 
     def perform_check(self, root, xml_file: str) -> ValidationResult:
+        """Run formatting-related checks on a package.xml file.
+
+        Args:
+            root: XML root element.
+            xml_file: Path to the XML file.
+
+        Returns:
+            ValidationResult for formatting checks.
+
+        """
         result = ValidationResult(root=root)
         if self.config.missing_deps_only:
             return result
@@ -111,10 +150,30 @@ class BuildToolDependStep(ValidationStep):
     name = "Build tool dependency"
 
     def __init__(self, config: ValidationConfig, formatter):
+        """Initialize buildtool dependency validation step.
+
+        Args:
+            config: ValidationConfig with feature flags.
+            formatter: PackageXmlFormatter instance.
+
+        Returns:
+            None.
+
+        """
         super().__init__(config)
         self.formatter = formatter
 
     def perform_check(self, root, xml_file: str) -> ValidationResult:
+        """Validate and optionally fix buildtool dependency tags.
+
+        Args:
+            root: XML root element.
+            xml_file: Path to the XML file.
+
+        Returns:
+            ValidationResult for buildtool dependency checks.
+
+        """
         result = ValidationResult(root=root)
         if self.config.missing_deps_only:
             return result
@@ -182,10 +241,30 @@ class MemberOfGroupStep(ValidationStep):
     name = "Member of group"
 
     def __init__(self, config: ValidationConfig, formatter):
+        """Initialize member_of_group validation step.
+
+        Args:
+            config: ValidationConfig with feature flags.
+            formatter: PackageXmlFormatter instance.
+
+        Returns:
+            None.
+
+        """
         super().__init__(config)
         self.formatter = formatter
 
     def perform_check(self, root, xml_file: str) -> ValidationResult:
+        """Validate and optionally fix member_of_group tag for msg packages.
+
+        Args:
+            root: XML root element.
+            xml_file: Path to the XML file.
+
+        Returns:
+            ValidationResult for member_of_group checks.
+
+        """
         result = ValidationResult(root=root)
         if self.config.missing_deps_only:
             return result
@@ -229,10 +308,30 @@ class BuildTypeExportStep(ValidationStep):
     name = "Build type export"
 
     def __init__(self, config: ValidationConfig, formatter):
+        """Initialize build type export validation step.
+
+        Args:
+            config: ValidationConfig with feature flags.
+            formatter: PackageXmlFormatter instance.
+
+        Returns:
+            None.
+
+        """
         super().__init__(config)
         self.formatter = formatter
 
     def perform_check(self, root, xml_file: str) -> ValidationResult:
+        """Validate and optionally fix <export><build_type> for packages.
+
+        Args:
+            root: XML root element.
+            xml_file: Path to the XML file.
+
+        Returns:
+            ValidationResult for build type export checks.
+
+        """
         result = ValidationResult(root=root)
         if self.config.missing_deps_only:
             return result
@@ -294,11 +393,32 @@ class RosdepCheckStep(ValidationStep):
     name = "ROS dependency check"
 
     def __init__(self, config: ValidationConfig, formatter, rosdep_validator):
+        """Initialize ROS dependency validation step.
+
+        Args:
+            config: ValidationConfig with feature flags.
+            formatter: PackageXmlFormatter instance.
+            rosdep_validator: RosdepValidator instance.
+
+        Returns:
+            None.
+
+        """
         super().__init__(config)
         self.formatter = formatter
         self.rosdep_validator = rosdep_validator
 
     def perform_check(self, root, xml_file: str) -> ValidationResult:
+        """Validate rosdep keys in package.xml dependencies.
+
+        Args:
+            root: XML root element.
+            xml_file: Path to the XML file.
+
+        Returns:
+            ValidationResult for rosdep checks.
+
+        """
         result = ValidationResult(root=root)
         if not self.config.check_rosdeps or self.config.missing_deps_only:
             return result
@@ -326,11 +446,32 @@ class CMakeComparisonStep(ValidationStep):
     name = "CMake dependency comparison"
 
     def __init__(self, config: ValidationConfig, formatter, rosdep_validator):
+        """Initialize CMake comparison validation step.
+
+        Args:
+            config: ValidationConfig with feature flags.
+            formatter: PackageXmlFormatter instance.
+            rosdep_validator: RosdepValidator instance.
+
+        Returns:
+            None.
+
+        """
         super().__init__(config)
         self.formatter = formatter
         self.rosdep_validator = rosdep_validator
 
     def perform_check(self, root, xml_file: str) -> ValidationResult:
+        """Compare CMakeLists.txt dependencies to package.xml entries.
+
+        Args:
+            root: XML root element.
+            xml_file: Path to the XML file.
+
+        Returns:
+            ValidationResult for CMake comparison checks.
+
+        """
         result = ValidationResult(root=root)
         if not self.config.compare_with_cmake:
             return result
@@ -359,6 +500,15 @@ class CMakeComparisonStep(ValidationStep):
         test_deps = self.formatter.retrieve_test_dependencies(root)
 
         def dedupe_dependencies(dependencies: list[str]) -> list[str]:
+            """Remove duplicate dependency names while preserving order.
+
+            Args:
+                dependencies: List of dependency names.
+
+            Returns:
+                Deduplicated list of dependency names.
+
+            """
             seen = set()
             deduped = []
             for dep in dependencies:
@@ -374,6 +524,18 @@ class CMakeComparisonStep(ValidationStep):
             dependency_label: str,
             dependency_tag: str,
         ) -> None:
+            """Compare CMake dependencies with XML dependencies.
+
+            Args:
+                cmake_deps: Dependencies extracted from CMakeLists.txt.
+                xml_deps: Dependencies present in package.xml.
+                dependency_label: Human-readable label for logging.
+                dependency_tag: XML tag name to add when auto-filling.
+
+            Returns:
+                None.
+
+            """
             missing_deps = []
             unresolved_deps = []
 
@@ -445,6 +607,20 @@ class LaunchDependencyStep(ValidationStep):
         exec_deps: list[str],
         test_deps: list[str],
     ):
+        """Initialize launch dependency validation step.
+
+        Args:
+            config: ValidationConfig with feature flags.
+            formatter: PackageXmlFormatter instance.
+            rosdep_validator: RosdepValidator instance or None.
+            package_name: Name of the package being checked.
+            exec_deps: Existing exec dependencies from package.xml.
+            test_deps: Existing test dependencies from package.xml.
+
+        Returns:
+            None.
+
+        """
         super().__init__(config)
         self.formatter = formatter
         self.rosdep_validator = rosdep_validator
@@ -453,9 +629,28 @@ class LaunchDependencyStep(ValidationStep):
         self.test_deps = test_deps
 
     def perform_check(self, root, xml_file: str) -> ValidationResult:
+        """Validate launch/test file dependencies against package.xml.
+
+        Args:
+            root: XML root element.
+            xml_file: Path to the XML file.
+
+        Returns:
+            ValidationResult for launch dependency checks.
+
+        """
         result = ValidationResult(root=root)
 
         def extract_launch_deps(folder_names: list[str]) -> list[str]:
+            """Extract launch dependencies from listed folders.
+
+            Args:
+                folder_names: Folder names to scan relative to package root.
+
+            Returns:
+                List of discovered package names.
+
+            """
             launch_deps = []
             for folder in folder_names:
                 launch_dir = os.path.join(os.path.dirname(xml_file), folder)
@@ -466,6 +661,17 @@ class LaunchDependencyStep(ValidationStep):
         def validate_launch_folders(
             launch_folder_names: list[str], xml_deps: list[str], depend_tag: str
         ) -> None:
+            """Validate and optionally fix dependencies for launch/test folders.
+
+            Args:
+                launch_folder_names: Folder names to scan relative to package root.
+                xml_deps: Current dependencies from package.xml.
+                depend_tag: Dependency tag to add (exec_depend/test_depend).
+
+            Returns:
+                None.
+
+            """
             launch_deps = extract_launch_deps(launch_folder_names)
             if not launch_deps:
                 return

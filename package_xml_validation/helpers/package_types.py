@@ -10,7 +10,15 @@ class PackageType(Enum):
 
 
 def get_package_type(xml_file: str) -> tuple[PackageType, bool]:
-    """Determine the package type based on the presence of CMakeLists.txt or setup.py."""
+    """Determine package type based on files and message-generation usage.
+
+    Args:
+        xml_file: Path to a package.xml file.
+
+    Returns:
+        A tuple of (PackageType, is_msg_pkg).
+
+    """
     cmake_file = os.path.join(os.path.dirname(xml_file), "CMakeLists.txt")
     setup_file = os.path.join(os.path.dirname(xml_file), "setup.py")
     is_msg_pkg = False
