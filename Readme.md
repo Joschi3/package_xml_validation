@@ -4,6 +4,8 @@
 ![Lint](https://github.com/Joschi3/package_xml_validation/actions/workflows/lint.yml/badge.svg)
 [![codecov](https://codecov.io/gh/Joschi3/package_xml_validation/branch/main/graph/badge.svg)](https://codecov.io/gh/Joschi3/package_xml_validation/)
 
+![logo](logo_v6.jpeg)
+
 Validates and formats `package.xml` files to enforce consistency and ROS 2 schema compliance.
 
 ### ✅ What it does:
@@ -54,7 +56,7 @@ Validates and formats `package.xml` files to enforce consistency and ROS 2 schem
 ## 🛠️ Usage Example
 
 ```bash
-usage: package-xml-validator [-h] [--check-only] [--file FILE] [--verbose] [--skip-rosdep-key-validation] [--compare-with-cmake] [--auto-fill-missing-deps] [--missing-deps-only] [--ignore-formatting-errors]
+package-xml-validator [-h] [--check-only] [--file FILE] [--verbose] [--skip-rosdep-key-validation] [--compare-with-cmake] [--auto-fill-missing-deps] [--missing-deps-only] [--ignore-formatting-errors]
                              [--strict-cmake-checking]
                              [src ...]
 
