@@ -26,6 +26,13 @@ def find_package_dir(path: Path) -> Path:
     3. the first ancestor that is a package
 
     Raises ``ValueError`` if no package can be located.
+
+    Args:
+        path: File or directory to search from.
+
+    Returns:
+        Path to a directory containing package.xml.
+
     """
     p = path.resolve()
 
@@ -60,13 +67,30 @@ def find_package_dir(path: Path) -> Path:
 
 
 def looks_like_ws_root(path: Path, original_pkg: Path) -> bool:
-    """A workspace contains *src* and that *src* contains *original_pkg*."""
+    """Check whether a path looks like a ROS workspace root.
+
+    Args:
+        path: Candidate workspace root directory.
+        original_pkg: Original package path to verify is under <ws>/src.
+
+    Returns:
+        True if the path looks like a workspace root, otherwise False.
+
+    """
     src_dir = path / "src"
     return src_dir.is_dir() and original_pkg.is_relative_to(src_dir)
 
 
 def find_workspace_root(start: Path) -> Path:
-    """Walk upwards until ``looks_like_ws_root()`` returns *True*."""
+    """Walk upwards until a workspace root is found.
+
+    Args:
+        start: Starting path (file or directory).
+
+    Returns:
+        Path to the workspace root directory.
+
+    """
     here = start.resolve()
     here = here.parent if here.is_file() else here  # deal with file paths
 
@@ -84,7 +108,15 @@ def find_workspace_root(start: Path) -> Path:
 
 
 def parse_pkg_name(package_xml: Path) -> str:
-    """Return the <name> tag from *package.xml* (fallback: folder name)."""
+    """Return the <name> tag from package.xml, or fall back to folder name.
+
+    Args:
+        package_xml: Path to a package.xml file.
+
+    Returns:
+        Package name as a string.
+
+    """
     try:
         tag = ET.parse(package_xml).find("name")
         if tag is not None and tag.text:
@@ -95,12 +127,20 @@ def parse_pkg_name(package_xml: Path) -> str:
 
 
 def pkg_iterator(src_dir: Path) -> dict[str, Path]:
-    """Yield ``{pkg_name: pkg_path}`` for all packages under *src_dir*."""
+    """Collect package names and paths under a src directory.
+
+    Args:
+        src_dir: Path to the workspace src directory.
+
+    Returns:
+        Mapping of package name to package directory path.
+
+    """
     pkgs: dict[str, Path] = {}
     for xml in src_dir.rglob("package.xml"):
         # Respect COLCON_IGNORE: ignore a path if any ancestor contains the file
         if any(
-            (parent / "COLCON_IGNORE").exists() or (parent / "coclon_ignore").exists()
+            (parent / "COLCON_IGNORE").exists() or (parent / "colcon_ignore").exists()
             for parent in xml.parents
         ):
             continue
@@ -109,7 +149,15 @@ def pkg_iterator(src_dir: Path) -> dict[str, Path]:
 
 
 def get_pkgs_in_wrs(path: Path) -> list[str]:
-    """Return all package names in the workspace that contains *path*."""
+    """Return all package names in the workspace that contains *path*.
+
+    Args:
+        path: Path within a workspace (file or directory).
+
+    Returns:
+        Sorted list of package names.
+
+    """
     if isinstance(path, str):
         path = Path(path).resolve(strict=True)
     if not path.exists():
@@ -136,6 +184,13 @@ def _is_ignored_dir(path: Path) -> bool:
     Return True if `path` or any ancestor contains an ignore marker:
     - 'coclon_ignore' (as requested)
     - 'COLCON_IGNORE' (colcon's standard)
+
+    Args:
+        path: Directory path to inspect.
+
+    Returns:
+        True if any ancestor contains an ignore marker, otherwise False.
+
     """
     path = path.resolve()
     for parent in (path, *path.parents):
@@ -145,6 +200,15 @@ def _is_ignored_dir(path: Path) -> bool:
 
 
 def find_package_xml_files(paths) -> list[str]:
+    """Find all package.xml files under the provided paths.
+
+    Args:
+        paths: Iterable of file or directory paths to search.
+
+    Returns:
+        Sorted list of package.xml paths as strings.
+
+    """
     files: set[Path] = set()
 
     for p in paths:
@@ -173,6 +237,15 @@ def find_package_xml_files(paths) -> list[str]:
 
 
 def main() -> None:
+    """CLI entrypoint for listing packages in a workspace.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+
+    """
     ap = argparse.ArgumentParser(
         description=(
             "Locate the ROS2 workspace for *path* and list every package in it. "

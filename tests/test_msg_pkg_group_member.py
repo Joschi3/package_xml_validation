@@ -49,6 +49,8 @@ class TestPackageXmlValidator(unittest.TestCase):
         current_dir = os.path.dirname(__file__)
         cls.examples_dir = os.path.join(current_dir, "examples", "msgs_packages")
         cls.formatters = {}
+
+        # Initialize formatters
         cls.formatters[FormatterType.FULL] = PackageXmlValidator(
             check_only=False,
             verbose=True,
@@ -63,7 +65,6 @@ class TestPackageXmlValidator(unittest.TestCase):
             check_rosdeps=True,
             compare_with_cmake=False,
         )
-
         cls.formatters[FormatterType.NO_AUTO_FILL] = PackageXmlValidator(
             check_only=False,
             verbose=True,
@@ -71,10 +72,18 @@ class TestPackageXmlValidator(unittest.TestCase):
             check_rosdeps=True,
             compare_with_cmake=False,
         )
+
+        # Configure Mocks for ALL formatters
         for formatter in cls.formatters.values():
             formatter.rosdep_validator = MagicMock()
-            formatter.rosdep_validator.check_rosdeps_and_local_pkgs = MagicMock(
-                return_value=[]
+
+            # 1. Mock the validation check to return empty list (no missing deps)
+            formatter.rosdep_validator.check_rosdeps_and_local_pkgs.return_value = []
+
+            # 2.Configure resolution to return the input string
+            # This prevents MagicMock objects from polluting dependency lists
+            formatter.rosdep_validator.resolve_cmake_dependency.side_effect = (
+                lambda x: x
             )
 
     def setUp(self):

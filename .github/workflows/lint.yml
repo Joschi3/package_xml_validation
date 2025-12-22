@@ -11,18 +11,34 @@ jobs:
   Linting:
     name: Lint Code Base
     runs-on: ubuntu-latest
+    container: ros:jazzy-ros-base
     steps:
+      - name: Install Git
+        run: sudo apt-get update && sudo apt-get install -y git
+
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup
-        run: |
-          sudo apt-get update && sudo apt-get install -y clang-format cppcheck libxml2-utils
+      - name: Fix Git Permissions
+        run: git config --global --add safe.directory $(pwd)
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Setup System Dependencies
+        run: |
+          sudo apt-get install -y \
+            clang-format \
+            cppcheck \
+            libxml2-utils \
+            python3-rosdep \
+            python3-pip \
+            python-is-python3
+
+      - name: Init rosdep
+        run: |
+          rosdep update
 
       - name: Install and Run pre-commit
         uses: pre-commit/action@v3.0.1
+        env:
+          PIP_BREAK_SYSTEM_PACKAGES: 1
         with:
           extra_args: --all-files --show-diff-on-failure

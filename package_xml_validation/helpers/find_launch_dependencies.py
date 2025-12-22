@@ -45,6 +45,13 @@ def _strip_hash_line_comments_outside_strings(text: str) -> str:
     Remove '#' to end-of-line comments that occur OUTSIDE of single/double quoted strings.
     Preserves newlines.
     Suitable for Python and YAML after any triple-quoted removal (for Python).
+
+    Args:
+        text: Input text to process.
+
+    Returns:
+        Text with hash comments removed outside quoted strings.
+
     """
     out = []
     in_single = False
@@ -96,6 +103,15 @@ def _strip_hash_line_comments_outside_strings(text: str) -> str:
 
 
 def _decomment_python(text: str) -> str:
+    """Remove Python comments and triple-quoted blocks.
+
+    Args:
+        text: Python source text.
+
+    Returns:
+        Text with comments removed.
+
+    """
     # 1) drop triple-quoted blocks entirely
     text = _TRIPLE_QUOTE_BLOCK.sub("", text)
     # 2) drop '#' comments outside of quoted strings
@@ -104,16 +120,42 @@ def _decomment_python(text: str) -> str:
 
 
 def _decomment_xml(text: str) -> str:
-    # Drop <!-- ... --> blocks
+    """Remove XML comments.
+
+    Args:
+        text: XML source text.
+
+    Returns:
+        Text with XML comments removed.
+
+    """
     return _XML_COMMENT_BLOCK.sub("", text)
 
 
 def _decomment_yaml(text: str) -> str:
-    # YAML has only '#' line comments; be string-aware for ' and "
+    """Remove YAML hash comments outside strings.
+
+    Args:
+        text: YAML source text.
+
+    Returns:
+        Text with comments removed.
+
+    """
     return _strip_hash_line_comments_outside_strings(text)
 
 
 def _decomment_for_suffix(suffix: str, text: str) -> str:
+    """Strip comments based on file suffix.
+
+    Args:
+        suffix: Filename or suffix to determine comment style.
+        text: File contents.
+
+    Returns:
+        Text with comments removed where applicable.
+
+    """
     s = suffix.lower()
     if s.endswith(".py"):
         return _decomment_python(text)
@@ -126,7 +168,17 @@ def _decomment_for_suffix(suffix: str, text: str) -> str:
 
 
 def scan_file(path: str, found: set[str], verbose: bool = False):
-    """Apply every regex to the file after stripping comments; add matches to `found`."""
+    """Scan a single launch file for package references.
+
+    Args:
+        path: File path to scan.
+        found: Set to add discovered package names to.
+        verbose: Whether to print verbose match details.
+
+    Returns:
+        None.
+
+    """
     with open(path, encoding="utf-8") as f:
         text = f.read()
 
@@ -148,6 +200,14 @@ def scan_files(launch_dir: str, verbose: bool = False) -> list[str]:
     Launch dependencies are listed packages names in the launch files.
     It uses regex to extract package names from common launch patterns.
     Comments are stripped (type-specific) before matching.
+
+    Args:
+        launch_dir: Directory to scan recursively.
+        verbose: Whether to print verbose match details.
+
+    Returns:
+        Sorted list of discovered package names.
+
     """
     if not os.path.isdir(launch_dir):
         print(f"Error: '{launch_dir}' is not a directory.")

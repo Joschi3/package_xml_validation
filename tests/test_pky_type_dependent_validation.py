@@ -76,6 +76,11 @@ class TestPackageXmlValidator(unittest.TestCase):
             formatter.rosdep_validator.check_rosdeps_and_local_pkgs = MagicMock(
                 return_value=[]
             )
+            # 2.Configure resolution to return the input string
+            # This prevents MagicMock objects from polluting dependency lists
+            formatter.rosdep_validator.resolve_cmake_dependency.side_effect = (
+                lambda x: x
+            )
 
     def setUp(self):
         """
