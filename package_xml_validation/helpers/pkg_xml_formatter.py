@@ -63,6 +63,17 @@ class PackageXmlFormatter:
         )
         self.encountered_unresolvable_error = False
 
+    def _resolve_indentation(self, root, default="  ") -> str:
+        """Return indentation based on the first child tail or a default."""
+        if len(root) == 0:
+            return default
+        tail = root[0].tail
+        if not tail or not isinstance(tail, str):
+            return default
+        if NEW_LINE in tail:
+            return tail[tail.rfind(NEW_LINE) + 1 :]
+        return tail
+
     def prettyprint(self, element, **kwargs):
         xml = ET.tostring(element, pretty_print=True, **kwargs)
         print(xml.decode(), end="")
@@ -118,7 +129,7 @@ class PackageXmlFormatter:
         if not order_mismatch:
             return True
 
-        indentation = root[0].tail.replace(NEW_LINE, "")
+        indentation = self._resolve_indentation(root)
         # Remove old dependency elements from root
         for dep_type in dependency_order:
             for elem in dependencies_with_comments[dep_type]:
@@ -156,14 +167,18 @@ class PackageXmlFormatter:
     def check_for_duplicates(self, root, xml_file):
         """
         Check for duplicate elements in the XML file.
-        -> meaning tag and text are the same
+        -> meaning tag, text, attributes, and children are the same
         """
+
+        def element_signature(elem) -> bytes:
+            return ET.tostring(elem, with_tail=False)
+
         seen = set()
         duplicates = []
         for elem in root:
             if elem.tag is ET.Comment:
                 continue
-            combined = elem.tag + elem.text.strip() if elem.text else elem.tag
+            combined = element_signature(elem)
             if combined in seen:
                 duplicates.append(elem)
             else:
@@ -286,7 +301,7 @@ class PackageXmlFormatter:
         current_comments = []
 
         last_tail = ""
-        indentation = root[0].tail.replace(NEW_LINE, "")
+        indentation = self._resolve_indentation(root)
         for elem in root:
             if elem.tag is ET.Comment:
                 self.logger.error(f"Found comment: {elem.text}")
@@ -350,7 +365,7 @@ class PackageXmlFormatter:
                     return False
             if elm.tail is None or elm.tail.count(NEW_LINE) == 0:
                 found_empty_lines = True
-                self.logger.info(f"Error: Two Elements in the sane line in {xml_file}.")
+                self.logger.info(f"Error: Two Elements in the same line in {xml_file}.")
                 if self.check_only:
                     return False
 
@@ -359,7 +374,7 @@ class PackageXmlFormatter:
         if not found_empty_lines:
             return True
         # elements after last \n
-        indendantion = root[0].tail[root[0].tail.rfind(NEW_LINE) + 1 :]
+        indentation = self._resolve_indentation(root)
         # correct the empty lines & missing newlines
         for elm in root:
             if elm.tail and elm.tail.count(NEW_LINE) > 2:
@@ -367,7 +382,7 @@ class PackageXmlFormatter:
             elif elm.tail and elm.tail.count(NEW_LINE) == 0:
                 elm.tail += NEW_LINE
             elif elm.tail is None:
-                elm.tail = NEW_LINE + indendantion
+                elm.tail = NEW_LINE + indentation
         return False
 
     def check_indentation(self, root, level=1, indentation="  "):
@@ -507,12 +522,12 @@ class PackageXmlFormatter:
         elements = [dep[0] for dep in ELEMENTS]
         if dep_type not in dep_types:
             raise ValueError(f"Invalid dependency type: {dep_type}")
-        indendantion = root[0].tail.replace(NEW_LINE, "")
+        indentation = self._resolve_indentation(root)
         insert_position, first_of_group = 0, 0
         for dep in dependencies:
             new_elem = ET.Element(dep_type)
             new_elem.text = dep
-            new_elem.tail = NEW_LINE + indendantion
+            new_elem.tail = NEW_LINE + indentation
             # add element to root at correct position -> correct dep group and alphabetical order
             # case 1: dependency group is empty
             if not root.findall(dep_type):
@@ -548,12 +563,12 @@ class PackageXmlFormatter:
                 previous_element = root[insert_position - 1]
                 if previous_element.tail and previous_element.tail.count(NEW_LINE) > 1:
                     new_elem.tail = previous_element.tail
-                    previous_element.tail = NEW_LINE + indendantion
+                    previous_element.tail = NEW_LINE + indentation
             if insert_position < len(root) - 1:
                 # if next tag is different than the new element, add empty line
                 next_element = root[insert_position + 1]
                 if next_element.tag != new_elem.tag:
-                    new_elem.tail = "\n\n" + indendantion
+                    new_elem.tail = "\n\n" + indentation
 
     def add_build_type_export(self, root, build_type: str):
         """
@@ -562,7 +577,7 @@ class PackageXmlFormatter:
         If it does not exist, it will be created.
         Other exports will not be changed(besides the build_type export).
         """
-        indendantion = root[0].tail.replace(NEW_LINE, "")
+        indentation = self._resolve_indentation(root)
         export = root.find("export")
         if export is None:
             export = ET.Element("export")
@@ -570,16 +585,16 @@ class PackageXmlFormatter:
             if len(root) > 0:
                 last_element = root[-1]
                 if last_element.tail:
-                    last_element.tail = "\n\n" + indendantion
+                    last_element.tail = "\n\n" + indentation
             export.tail = NEW_LINE
             root.append(export)
         build_type_elem = export.find("build_type")
         if build_type_elem is None:
             build_type_elem = ET.Element("build_type")
-            build_type_elem.tail = NEW_LINE + indendantion
+            build_type_elem.tail = NEW_LINE + indentation
             export.append(build_type_elem)
         build_type_elem.text = build_type
-        export.text = NEW_LINE + 2 * indendantion
+        export.text = NEW_LINE + 2 * indentation
 
     def add_buildtool_depends(self, root, buildtool: list[str]):
         """
@@ -587,7 +602,7 @@ class PackageXmlFormatter:
         If the buildtool_depend already exists, it will be updated.
         If it does not exist, it will be created.
         """
-        indendantion = root[0].tail.replace(NEW_LINE, "")
+        indentation = self._resolve_indentation(root)
         # 1. clear existing buildtool_depend elements
         for elem in root.findall("buildtool_depend"):
             root.remove(elem)
@@ -606,16 +621,16 @@ class PackageXmlFormatter:
             new_elem = ET.Element("buildtool_depend")
             new_elem.text = tool
             new_elem.tail = "\n\n" if is_last else NEW_LINE
-            new_elem.tail += indendantion
+            new_elem.tail += indentation
             root.insert(insert_position, new_elem)
             insert_position += 1
 
     def add_member_of_group(self, root, group_name: str):
         """Add member_of_group element to the XML file."""
-        indendantion = root[0].tail.replace(NEW_LINE, "")
+        indentation = self._resolve_indentation(root)
         member_of_group = ET.Element("member_of_group")
         member_of_group.text = group_name
-        member_of_group.tail = "\n\n" + indendantion
+        member_of_group.tail = "\n\n" + indentation
         # insert position -> right before export or at the end
         insert_position = len(root)
         for i, elem in enumerate(root):
