@@ -204,8 +204,11 @@ class TestPackageXmlValidator(unittest.TestCase):
                             xml_content = f.read()
                         valid = formatter.check_and_format_files([xml_file])
                         msg = ""
-
-                        if not pkg == "pkg_correct":
+                        # pkgs with faulty/missing launch dependencies or unresolvable rosdeps
+                        if (
+                            not pkg == "pkg_correct"
+                            or type == FormatterType.ALL_ROSDEPS_ARE_UNRESOLVABLE
+                        ):
                             if valid:
                                 with open(xml_file) as f:
                                     msg = (

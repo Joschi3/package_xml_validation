@@ -2,9 +2,10 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from package_xml_validation.package_xml_validator import PackageXmlValidator
+from package_xml_validation.helpers.validation_steps import BuildToolDependStep
 
 
 def _write_package_xml(path: Path, extra_body: str = ""):
@@ -46,17 +47,22 @@ class TestIgnoreFormattingErrorsMode(unittest.TestCase):
 
         validator.formatter.check_for_empty_lines = MagicMock(return_value=False)
         validator.formatter.check_indentation = MagicMock(return_value=False)
-        validator.validate_buildtool_depend = MagicMock(return_value=True)
 
         with open(self.package_xml, "rb") as f:
             before = f.read()
 
-        result = validator.check_and_format_files([str(self.package_xml)])
+        with patch.object(
+            BuildToolDependStep,
+            "perform_check",
+            autospec=True,
+            wraps=BuildToolDependStep.perform_check,
+        ) as buildtool_check:
+            result = validator.check_and_format_files([str(self.package_xml)])
 
         self.assertTrue(result)
         validator.formatter.check_for_empty_lines.assert_not_called()
         validator.formatter.check_indentation.assert_not_called()
-        validator.validate_buildtool_depend.assert_called_once()
+        buildtool_check.assert_called_once()
 
         with open(self.package_xml, "rb") as f:
             after = f.read()
