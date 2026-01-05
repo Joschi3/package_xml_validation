@@ -20,7 +20,7 @@ The recommended way to use this tool is to integrate it into your `pre-commit` w
 ```yaml
 repos:
   - repo: git@github.com:Joschi3/package_xml_validation.git
-    rev: v1.3.0  # Use the latest tag
+    rev: v1.4.2  # Use the latest tag
     hooks:
       - id: format-package-xml
         name: Format package.xml
