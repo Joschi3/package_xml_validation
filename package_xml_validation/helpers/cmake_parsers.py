@@ -301,7 +301,6 @@ def read_cmake_file(file_path: Union[Path, str]) -> list[str]:
         file_path = Path(file_path)
 
     if not file_path.exists():
-        # Ideally logging should be handled by a logger, keeping print for CLI compatibility
         print(f"File not found: {file_path}")
         return []
 
