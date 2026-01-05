@@ -9,9 +9,17 @@ description = "Validates package xml of ros2 pkgs"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
+    "argcomplete",
     "lxml",
+    "PyYAML",
     "rosdep",
 ]
+
+[tool.setuptools]
+packages = ["package_xml_validation", "package_xml_validation.helpers"]
+
+[tool.setuptools.package-data]
+package_xml_validation = ["data/*.yaml"]
 
 [project.scripts]
 package-xml-validator = "package_xml_validation.package_xml_validator:main"
