@@ -41,6 +41,15 @@ class TempTree:
     def close(self):
         self._tmp.cleanup()
 
+    def print_tree(self):
+        # print the directory nicley sorted
+        for path in sorted(self.root.rglob("*")):
+            rel_path = path.relative_to(self.root)
+            if path.is_dir():
+                print(f"{rel_path}/")
+            else:
+                print(f"{rel_path}")
+
 
 def _as_str_set(paths) -> set[str]:
     """Normalize potentially mixed Path/str iterables to a set of strings."""
@@ -73,19 +82,19 @@ class TestWorkspaceHelpers(unittest.TestCase):
         (third_party / "COLCON_IGNORE").write_text("")
         self.pkg_third = self.t.pkg(third_party, "third_pkg", name_in_xml="third_pkg")
 
-        # --- New: coclon_ignore scenarios for find_package_xml_files -----------
-        # Case A: coclon_ignore in the same package directory
-        self.pkg_coclon_ignored = self.t.pkg(
-            src, "pkg_coclon_ignored", name_in_xml="pkg_coclon_ignored"
+        # --- New: colcon_ignore scenarios for find_package_xml_files -----------
+        # Case A: colcon_ignore in the same package directory
+        self.pkg_colcon_ignored = self.t.pkg(
+            src, "pkg_colcon_ignored", name_in_xml="pkg_colcon_ignored"
         )
-        (self.pkg_coclon_ignored / "coclon_ignore").write_text("")
+        (self.pkg_colcon_ignored / "colcon_ignore").write_text("")
 
-        # Case B: coclon_ignore in an ancestor directory
+        # Case B: colcon_ignore in an ancestor directory
         self.vendor = src / "vendor"
         self.vendor.mkdir(parents=True, exist_ok=True)
-        (self.vendor / "coclon_ignore").write_text("")
-        self.pkg_coclon_in_vendor = self.t.pkg(
-            self.vendor, "pkg_coclon_in_vendor", name_in_xml="pkg_coclon_in_vendor"
+        (self.vendor / "colcon_ignore").write_text("")
+        self.pkg_colcon_in_vendor = self.t.pkg(
+            self.vendor, "pkg_colcon_in_vendor", name_in_xml="pkg_colcon_in_vendor"
         )
 
         # File inside pkg1
@@ -158,7 +167,9 @@ class TestWorkspaceHelpers(unittest.TestCase):
 
     # --- pkg_iterator -------------------------------------------------------
     def test_pkg_iterator_lists_pkgs_and_respects_colcon_ignore(self):
+        self.t.print_tree()  # Debug: print the temp tree structure
         pkgs = SUT.pkg_iterator(self.ws / "src")
+        print(pkgs.keys())
         self.assertEqual(set(pkgs.keys()), {"inner_pkg", "pkg1", "pkg_nameless"})
         self.assertNotIn("pkg_ignored", pkgs)
         self.assertNotIn("third_pkg", pkgs)
@@ -211,12 +222,12 @@ class TestWorkspaceHelpers(unittest.TestCase):
             str(self.pkg1 / "package.xml"),
             str(self.pkg_nameless / "package.xml"),
             str(self.inner_pkg / "package.xml"),
-            # coclon_ignore cases are intentionally NOT part of expected
+            # colcon_ignore cases are intentionally NOT part of expected
         }
         self.assertTrue(expected.issubset(results))
-        # Ensure coclon-ignored packages are filtered out
-        self.assertNotIn(str(self.pkg_coclon_ignored / "package.xml"), results)
-        self.assertNotIn(str(self.pkg_coclon_in_vendor / "package.xml"), results)
+        # Ensure colcon-ignored packages are filtered out
+        self.assertNotIn(str(self.pkg_colcon_ignored / "package.xml"), results)
+        self.assertNotIn(str(self.pkg_colcon_in_vendor / "package.xml"), results)
 
     def test_find_package_xml_files_ignores_nonexistent_and_deduplicates(self):
         """Nonexistent inputs are ignored; duplicates (file + dir) collapse to one."""
@@ -227,29 +238,29 @@ class TestWorkspaceHelpers(unittest.TestCase):
         )
         self.assertEqual(results, {str(self.pkg1 / "package.xml")})
 
-    # --- NEW: explicit checks for coclon_ignore behavior --------------------
-    def test_find_package_xml_files_respects_coclon_ignore_same_dir(self):
+    # --- NEW: explicit checks for colcon_ignore behavior --------------------
+    def test_find_package_xml_files_respects_colcon_ignore_same_dir(self):
         """Directly pass the ignored package.xml + scan src; both must exclude it."""
         # Passing file directly should still be excluded
         results_file = _as_str_set(
-            SUT.find_package_xml_files([self.pkg_coclon_ignored / "package.xml"])
+            SUT.find_package_xml_files([self.pkg_colcon_ignored / "package.xml"])
         )
-        self.assertNotIn(str(self.pkg_coclon_ignored / "package.xml"), results_file)
+        self.assertNotIn(str(self.pkg_colcon_ignored / "package.xml"), results_file)
 
         # Scanning directory should exclude it too
         results_dir = _as_str_set(SUT.find_package_xml_files([self.ws / "src"]))
-        self.assertNotIn(str(self.pkg_coclon_ignored / "package.xml"), results_dir)
+        self.assertNotIn(str(self.pkg_colcon_ignored / "package.xml"), results_dir)
 
-    def test_find_package_xml_files_respects_coclon_ignore_in_ancestor(self):
-        """If an ancestor dir has coclon_ignore, nested packages must be excluded."""
+    def test_find_package_xml_files_respects_colcon_ignore_in_ancestor(self):
+        """If an ancestor dir has colcon_ignore, nested packages must be excluded."""
         results = _as_str_set(SUT.find_package_xml_files([self.ws / "src"]))
-        self.assertNotIn(str(self.pkg_coclon_in_vendor / "package.xml"), results)
+        self.assertNotIn(str(self.pkg_colcon_in_vendor / "package.xml"), results)
 
         # Also verify that passing the file directly still excludes it
         direct = _as_str_set(
-            SUT.find_package_xml_files([self.pkg_coclon_in_vendor / "package.xml"])
+            SUT.find_package_xml_files([self.pkg_colcon_in_vendor / "package.xml"])
         )
-        self.assertNotIn(str(self.pkg_coclon_in_vendor / "package.xml"), direct)
+        self.assertNotIn(str(self.pkg_colcon_in_vendor / "package.xml"), direct)
 
     # --- CLI main() ---------------------------------------------------------
     def test_main_lists_packages_names_only(self):
