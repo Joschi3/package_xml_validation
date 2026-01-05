@@ -91,7 +91,6 @@ class FormatterValidationStep(ValidationStep):
 
         if not self.formatter.check_for_non_existing_tags(root, xml_file):
             message = f"Unknown tags found in {xml_file}."
-            result.errors.append(message)
             result.critical_errors.append(message)
             result.valid = False
 
@@ -436,7 +435,6 @@ class RosdepCheckStep(ValidationStep):
             f"Unresolvable ROS dependencies found in {pkg_name}/package.xml: "
             f"{', '.join(unresolvable)}"
         )
-        result.errors.append(message)
         result.critical_errors.append(message)
         result.valid = False
         return result
@@ -485,9 +483,10 @@ class CMakeComparisonStep(ValidationStep):
             message = (
                 f"Cannot check for CMake dependencies, {cmake_file} does not exist."
             )
-            result.errors.append(message)
             if not self.config.auto_fill_missing_deps:
                 result.critical_errors.append(message)
+            else:
+                result.errors.append(message)
             result.valid = False
             return result
 
@@ -560,10 +559,11 @@ class CMakeComparisonStep(ValidationStep):
                         f"Missing {dependency_label} in {pkg_name}/package.xml compared to "
                         f"{pkg_name}/CMakeList.txt:{deps}"
                     )
-                    result.errors.append(message)
                     result.valid = False
                     if not self.config.auto_fill_missing_deps:
                         result.critical_errors.append(message)
+                    else:
+                        result.errors.append(message)
                 else:
                     self.formatter.add_dependencies(root, missing_deps, dependency_tag)
                     result.warnings.append(
@@ -582,7 +582,6 @@ class CMakeComparisonStep(ValidationStep):
                 else:
                     message = f"Unable to resolve {dependency_label} '{dep}' via rosdep resolve, mapping, or rosdep search."
                 if self.config.strict_cmake_checking:
-                    result.errors.append(message)
                     result.valid = False
                     result.critical_errors.append(message)
                 else:
