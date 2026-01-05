@@ -182,8 +182,8 @@ def get_pkgs_in_wrs(path: Path) -> list[str]:
 def _is_ignored_dir(path: Path) -> bool:
     """
     Return True if `path` or any ancestor contains an ignore marker:
-    - 'coclon_ignore' (as requested)
-    - 'COLCON_IGNORE' (colcon's standard)
+    - 'colcon_ignore'
+    - 'COLCON_IGNORE'
 
     Args:
         path: Directory path to inspect.
@@ -194,7 +194,7 @@ def _is_ignored_dir(path: Path) -> bool:
     """
     path = path.resolve()
     for parent in (path, *path.parents):
-        if (parent / "coclon_ignore").exists() or (parent / "COLCON_IGNORE").exists():
+        if (parent / "colcon_ignore").exists() or (parent / "COLCON_IGNORE").exists():
             return True
     return False
 

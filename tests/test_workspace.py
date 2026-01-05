@@ -167,9 +167,7 @@ class TestWorkspaceHelpers(unittest.TestCase):
 
     # --- pkg_iterator -------------------------------------------------------
     def test_pkg_iterator_lists_pkgs_and_respects_colcon_ignore(self):
-        self.t.print_tree()  # Debug: print the temp tree structure
         pkgs = SUT.pkg_iterator(self.ws / "src")
-        print(pkgs.keys())
         self.assertEqual(set(pkgs.keys()), {"inner_pkg", "pkg1", "pkg_nameless"})
         self.assertNotIn("pkg_ignored", pkgs)
         self.assertNotIn("third_pkg", pkgs)
