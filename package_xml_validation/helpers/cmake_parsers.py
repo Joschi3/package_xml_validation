@@ -1,12 +1,65 @@
 from pathlib import Path
 import re
+from typing import Union
+
+# -----------------------------------------------------------------------------
+# Constants & Configuration
+# -----------------------------------------------------------------------------
 
 # Known CMake keys that do not need package xml <depend> entries
-CMAKE_KEYS_NO_ROSDEP = [
+# These are typically system libraries or build tools provided by the environment.
+CMAKE_KEYS_NO_ROSDEP = {
     "Threads",
     "OpenMP",
     "ament_cmake",  # build_tool
-]
+}
+
+# Tokens that mark the end of the package name definition in find_package().
+# Everything after these tokens (including the token itself) is part of the
+# package configuration (components, paths, etc.) and not the package name.
+STOP_TOKENS = {
+    "COMPONENTS",
+    "OPTIONAL_COMPONENTS",
+    "NAMES",
+    "CONFIGS",
+    "HINTS",
+    "PATHS",
+    "PATH_SUFFIXES",
+}
+
+# Keywords that appear in the package name section but are NOT package names.
+# These should be ignored when extracting the dependency.
+SKIP_WORDS = {
+    # Modes & Status
+    "REQUIRED",
+    "QUIET",
+    "NO_MODULE",
+    "CONFIG",
+    "MODULE",
+    "EXACT",
+    "GLOBAL",
+    "NO_POLICY_SCOPE",
+    "BYPASS_PROVIDER",
+    "SYSTEM",  # rare but valid in some contexts
+    # Path Controls (CMake 3.24+)
+    "NO_DEFAULT_PATH",
+    "NO_PACKAGE_ROOT_PATH",
+    "NO_CMAKE_PATH",
+    "NO_CMAKE_ENVIRONMENT_PATH",
+    "NO_SYSTEM_ENVIRONMENT_PATH",
+    "NO_CMAKE_PACKAGE_REGISTRY",
+    "NO_CMAKE_BUILDS_PATH",
+    "NO_CMAKE_SYSTEM_PATH",
+    "NO_CMAKE_SYSTEM_PACKAGE_REGISTRY",
+    "CMAKE_FIND_ROOT_PATH_BOTH",
+    "ONLY_CMAKE_FIND_ROOT_PATH",
+    "NO_CMAKE_FIND_ROOT_PATH",
+}
+
+
+# -----------------------------------------------------------------------------
+# Parsing Functions
+# -----------------------------------------------------------------------------
 
 
 def remove_comments(lines: list[str]) -> list[str]:
@@ -17,7 +70,6 @@ def remove_comments(lines: list[str]) -> list[str]:
 
     Returns:
         A list of lines with comments removed and whitespace stripped.
-
     """
     return [line.split("#", 1)[0].strip() for line in lines]
 
@@ -32,21 +84,12 @@ def read_cmake_lines_with_parens_joined(raw_lines: list[str]) -> list[str]:
 
     Returns:
         A list of logical CMake lines with multiline blocks joined.
-
     """
     lines = []
     buffer = ""
 
     def has_balanced_parens(s: str) -> bool:
-        """Check whether parentheses are balanced in a string.
-
-        Args:
-            s: Input string.
-
-        Returns:
-            True if '(' and ')' counts are equal, otherwise False.
-
-        """
+        """Check whether parentheses are balanced in a string."""
         return s.count("(") == s.count(")")
 
     for raw_line in raw_lines:
@@ -73,14 +116,18 @@ def read_cmake_lines_with_parens_joined(raw_lines: list[str]) -> list[str]:
 def resolve_for_each(raw_lines: list[str]) -> list[str]:
     """Expand simple foreach() loops into repeated lines.
 
+    This is a basic implementation that handles `foreach(... IN LISTS ...)`
+    to ensure we capture dependencies defined inside loops.
+
     Args:
         raw_lines: Preprocessed CMake lines.
 
     Returns:
         A list of lines with foreach variables expanded.
-
     """
     foreach_stack = []
+    lines = []
+    variables = {}
 
     # Regex patterns
     set_pattern = re.compile(
@@ -91,8 +138,7 @@ def resolve_for_each(raw_lines: list[str]) -> list[str]:
         re.IGNORECASE,
     )
     endforeach_pattern = re.compile(r"^\s*endforeach\s*\(?.*\)?\s*$", re.IGNORECASE)
-    variables = {}
-    lines = []
+
     for line in raw_lines:
         stripped = line.strip()
 
@@ -100,8 +146,8 @@ def resolve_for_each(raw_lines: list[str]) -> list[str]:
         set_match = set_pattern.match(stripped)
         if set_match:
             var_name = set_match.group(1)
-            values_str = set_match.group(2)  # everything after var name
-            # Expand any references in the remainder
+            values_str = set_match.group(2)
+            # Expand simple space-separated values
             expanded_vals = values_str.split()
             variables[var_name] = expanded_vals
             lines.append(line)
@@ -112,9 +158,11 @@ def resolve_for_each(raw_lines: list[str]) -> list[str]:
         if foreach_match:
             loop_var = foreach_match.group(1)
             list_var = foreach_match.group(3)
-            # If the list_var is known, store the expansion, otherwise empty
-            list_var = list_var.strip("${}")
-            expanded_vals = variables.get(list_var, [])
+            # Clean variable wrappers like ${...}
+            list_var_key = list_var.strip("${}")
+
+            # Resolve the list of values to iterate over
+            expanded_vals = variables.get(list_var_key, [])
             foreach_stack.append((loop_var, expanded_vals))
             continue
 
@@ -124,57 +172,56 @@ def resolve_for_each(raw_lines: list[str]) -> list[str]:
                 foreach_stack.pop()
             continue
 
+        # ---------- Expand Variables inside Loop ----------
         if foreach_stack:
             loop_var, expanded_vals = foreach_stack[-1]
-            if loop_var in stripped:
+            # If the current line uses the loop variable, replicate the line
+            if f"${{{loop_var}}}" in stripped or f"${loop_var}" in stripped:
                 for val in expanded_vals:
-                    lines.append(stripped.replace(f"${{{loop_var}}}", val))
+                    # Simple string replacement for ${var}
+                    expanded_line = stripped.replace(f"${{{loop_var}}}", val)
+                    expanded_line = expanded_line.replace(f"${loop_var}", val)
+                    lines.append(expanded_line)
+            else:
+                lines.append(line)
         else:
             lines.append(line)
+
     return lines
 
 
-def retrieve_cmake_dependencies(lines: list[str]) -> tuple[list[str], list[str]]:
+def retrieve_cmake_dependencies(
+    lines: Union[list[str], Path],
+) -> tuple[list[str], list[str]]:
     """Parse CMake lines to extract main and test dependencies.
+
+    Identifies `find_package` calls and correctly separates package names
+    from version numbers, components, and CMake flags.
 
     Args:
         lines: CMake lines or a Path to a CMake file.
 
     Returns:
-        Tuple of (main_deps, test_deps) as lists of dependency names.
-
+        Tuple of (main_deps, test_deps) as lists of unique dependency names.
     """
     if isinstance(lines, Path):
         lines = read_cmake_file(lines)
+
     main_deps: list[str] = []
     test_deps: list[str] = []
 
-    # We'll track blocks of 'if(BUILD_TESTING)' with a small stack
+    # Stack to track if we are inside a test-related block
     if_stack = []
     in_test_block = False
 
     # Regex patterns
     if_pattern = re.compile(r"^\s*if\s*\((.*)\)\s*$", re.IGNORECASE)
     endif_pattern = re.compile(r"^\s*endif\s*\(?.*\)?\s*$", re.IGNORECASE)
-
-    # We look for find_package(...) statements, which might contain expansions
-    # e.g. find_package(${PKG} REQUIRED)
     find_package_pattern = re.compile(
         r"^\s*find_package\s*\(\s*([^)]+)\)\s*$", re.IGNORECASE
     )
 
     def add_deps(dep_list: list[str], is_test: bool):
-        """
-        Append dependency names to main_deps or test_deps, depending on is_test.
-
-        Args:
-            dep_list: Dependency names to add.
-            is_test: Whether to add to test deps instead of main deps.
-
-        Returns:
-            None.
-
-        """
         if is_test:
             test_deps.extend(dep_list)
         else:
@@ -187,8 +234,8 @@ def retrieve_cmake_dependencies(lines: list[str]) -> tuple[list[str], list[str]]
         if_match = if_pattern.match(stripped)
         if if_match:
             condition = if_match.group(1).lower()
-            # If condition has 'build_testing', assume test block
-            if "build_testing" in condition:
+            # If condition implies testing, mark block as test
+            if "build_testing" in condition or "ament_cmake_gtest" in condition:
                 if_stack.append("BUILD_TESTING")
                 in_test_block = True
             else:
@@ -199,41 +246,49 @@ def retrieve_cmake_dependencies(lines: list[str]) -> tuple[list[str], list[str]]
         if endif_pattern.match(stripped):
             if if_stack:
                 if_stack.pop()
-            # Recompute in_test_block
+            # Recompute in_test_block based on remaining stack
             in_test_block = any(item == "BUILD_TESTING" for item in if_stack)
             continue
 
         # ---------- Parse find_package(...) lines ----------
         fp_match = find_package_pattern.match(stripped)
         if fp_match:
-            inside = fp_match.group(1)  # content inside parentheses
-            # e.g. 'pluginlib REQUIRED' or '${Dependency} REQUIRED'
-            # Expand tokens
+            inside = fp_match.group(1)
             expanded_tokens = inside.split()
-            # remove all tokens after "COMPONENTS" (if present)
-            if "COMPONENTS" in expanded_tokens:
-                idx = expanded_tokens.index("COMPONENTS")
-                expanded_tokens = expanded_tokens[:idx]
-            # remove version constraints -> remove only number tokens e.g 3.3 or 2.0.1 or 2
-            expanded_tokens = [
-                tok for tok in expanded_tokens if not re.match(r"^\d+(\.\d+)*$", tok)
+
+            # 1. Truncate at the first Stop Token (e.g., COMPONENTS)
+            #    find_package(Pkg 1.0 REQUIRED COMPONENTS a b) -> [Pkg, 1.0, REQUIRED]
+            cut_index = len(expanded_tokens)
+            for token in expanded_tokens:
+                if token in STOP_TOKENS:
+                    idx = expanded_tokens.index(token)
+                    if idx < cut_index:
+                        cut_index = idx
+
+            trimmed_tokens = expanded_tokens[:cut_index]
+
+            # 2. Filter out Version Numbers (e.g., 1.2, 3.0.0)
+            trimmed_tokens = [
+                tok for tok in trimmed_tokens if not re.match(r"^\d+(\.\d+)*$", tok)
             ]
-            # We collect all tokens that don't match known keywords like "REQUIRED", "QUIET", etc.
-            skip_words = {"REQUIRED", "QUIET", "NO_MODULE"}
-            used_deps = [
-                tok for tok in expanded_tokens if tok.upper() not in skip_words
-            ]
+
+            # 3. Filter out Skip Words (CMake keywords/flags)
+            used_deps = [tok for tok in trimmed_tokens if tok.upper() not in SKIP_WORDS]
 
             add_deps(used_deps, in_test_block)
             continue
 
-    # filter out known CMake keys that do not need rosdep resolution
-    main_deps = [dep for dep in main_deps if dep not in CMAKE_KEYS_NO_ROSDEP]
-    test_deps = [dep for dep in test_deps if dep not in CMAKE_KEYS_NO_ROSDEP]
-    return main_deps, test_deps
+    # Clean up results
+    # 1. Remove duplicates
+    # 2. Remove known ignored keys (like 'Threads')
+
+    unique_main = sorted({dep for dep in main_deps if dep not in CMAKE_KEYS_NO_ROSDEP})
+    unique_test = sorted({dep for dep in test_deps if dep not in CMAKE_KEYS_NO_ROSDEP})
+
+    return unique_main, unique_test
 
 
-def read_cmake_file(file_path: Path) -> list[str]:
+def read_cmake_file(file_path: Union[Path, str]) -> list[str]:
     """Read and normalize CMake file lines for dependency parsing.
 
     Args:
@@ -241,24 +296,31 @@ def read_cmake_file(file_path: Path) -> list[str]:
 
     Returns:
         A list of normalized CMake lines.
-
     """
     if isinstance(file_path, str):
         file_path = Path(file_path)
+
     if not file_path.exists():
         print(f"File not found: {file_path}")
         return []
-    with open(file_path) as f:
-        raw_lines = f.readlines()
+
+    try:
+        with open(file_path, encoding="utf-8") as f:
+            raw_lines = f.readlines()
+    except UnicodeDecodeError:
+        print(f"Error: Could not decode {file_path}. Is it a valid text file?")
+        return []
+
     lines = remove_comments(raw_lines)
     lines = read_cmake_lines_with_parens_joined(lines)
     lines = resolve_for_each(lines)
-    # for line in lines:
-    #    print(line)
+
     return lines
 
 
-def read_deps_from_cmake_file(file_path: Path | str) -> tuple[list[str], list[str]]:
+def read_deps_from_cmake_file(
+    file_path: Union[Path, str],
+) -> tuple[list[str], list[str]]:
     """Read a CMake file and return main and test dependencies.
 
     Args:
@@ -266,28 +328,10 @@ def read_deps_from_cmake_file(file_path: Path | str) -> tuple[list[str], list[st
 
     Returns:
         Tuple of (main_deps, test_deps).
-
     """
-    if isinstance(file_path, str):
-        file_path = Path(file_path)
-    lines = read_cmake_file(file_path)
     try:
-        main_deps, test_deps = retrieve_cmake_dependencies(lines)
+        main_deps, test_deps = retrieve_cmake_dependencies(Path(file_path))
+        return main_deps, test_deps
     except Exception as e:
         print(f"Error processing file {file_path}: {e}")
         return [], []
-    return main_deps, test_deps
-
-
-# if __name__ == "__main__":
-#     # Example usage
-#     cmake_file = Path(
-#         "/home/aljoscha-schmidt/hector/src/hector_gamepad_manager/hector_gamepad_manager/CMakeLists.txt"
-#     )
-#     cmake_file = Path(
-#         "/home/aljoscha-schmidt/hector/src/hector_base_velocity_manager/hector_base_velocity_manager/CMakeLists.txt"
-#     )
-#     lines = read_cmake_file(cmake_file)
-#     main_deps, test_deps = retrieve_cmake_dependencies(lines)
-#     print("Main dependencies:", main_deps)
-#     print("Test dependencies:", test_deps)
