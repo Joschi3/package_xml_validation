@@ -1,7 +1,11 @@
+# Pre-commit hook: ROS 2 package.xml validator
+# We set `pass_filenames: false` because the validator scans the entire package directory
+# (reading CMakeLists.txt, launch files, etc.) to verify dependencies. It must run
+# regardless of which specific file in the package triggered the commit.
 -   id: format-package-xml
-    name: Format package.xml files
-    description: Verify the package xml schema and ordering of dependencies
+    name: Format package.xml
+    description: Validate schema, enforce standard ordering, and sync dependencies with CMake and launch files.
     entry: package-xml-validator
     language: python
-    files: ^.*package\.xml$|^.*CMakeLists\.txt$
+    pass_filenames: false
     args: [--compare-with-cmake, --auto-fill-missing-deps]
