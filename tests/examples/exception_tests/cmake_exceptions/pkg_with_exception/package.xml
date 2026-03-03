@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<package format="3">
+  <name>test_pkg</name>
+  <version>0.0.0</version>
+  <description>Test package for exception testing</description>
+  <maintainer email="test@test.com">Test</maintainer>
+  <license>MIT</license>
+
+  <!-- validator:ignore urdf -->
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

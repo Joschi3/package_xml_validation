@@ -155,6 +155,43 @@ package-xml-validator . --compare-with-cmake --auto-fill-missing-deps
 | `--strict-cmake-checking` | Treat unresolved CMake dependencies as errors instead of warnings. |
 | `--skip-rosdep-key-validation` | Skip verifying if dependency names exist in the `rosdep` database. |
 | `--missing-deps-only` | Skips formatting checks; only looks for missing dependencies. |
+| `--ignore-deps dep1,dep2` | Comma-separated list of dependency names to globally ignore in validation. |
+
+---
+
+## Ignoring Dependencies
+
+Sometimes a dependency is detected in your code (CMakeLists.txt or launch files) but you intentionally do not want to declare it in `package.xml`. This can happen when a package pulls in heavy transitive dependencies (e.g., `rviz2`) that should not be installed on every target machine.
+
+> **Recommended approach:** Split your package into two. For example, instead of a single `robot_description` package that contains both URDF/xacro files *and* an RViz visualization launch file, create:
+> - `robot_description` — contains the model files and their dependencies
+> - `robot_description_visualization` — contains launch files for RViz, joint_state_publisher_gui, etc.
+>
+> This way each package only declares the dependencies it truly needs, and deploying `robot_description` to a robot won't pull in `rviz2` and all its GUI dependencies.
+
+If restructuring is not practical, you can suppress specific missing dependency errors using an XML comment directive directly in your `package.xml`:
+
+```xml
+<package format="3">
+  <name>robot_description</name>
+  <!-- ... -->
+
+  <!-- validator:ignore rviz2 joint_state_publisher_gui -->
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <!-- ... -->
+</package>
+```
+
+- List space-separated dependency names after `validator:ignore`
+- Multiple `<!-- validator:ignore ... -->` comments are allowed and will be merged
+- Ignored dependencies will not be flagged as missing and will not be auto-filled
+
+For a global override (e.g., in CI), use the `--ignore-deps` CLI argument:
+
+```bash
+package-xml-validator . --compare-with-cmake --ignore-deps rviz2,joint_state_publisher_gui
+```
 
 ---
 
