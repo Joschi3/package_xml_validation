@@ -10,6 +10,8 @@ find_package(
   REQUIRED
 )
 find_package(Python3 3.10 QUIET)
+find_package(benchmark QUIET)
+find_package(fastcdr REQUIRED QUIET)
 find_package(OpenMP REQUIRED)
 find_package(Threads REQUIRED)
 

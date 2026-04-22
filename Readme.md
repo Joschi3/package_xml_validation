@@ -105,7 +105,7 @@ This tool enforces the standard ROS 2 element order:
 ### 2. Dependency Integrity
 
 * **Launch File Scanning:** Scans `.py`, `.yaml`, and `.xml` launch files. If a package is used in a launch file but missing from `package.xml`, it adds it as an `<exec_depend>` or `<test_depend>`.
-* **CMake Synchronization:** Compares `package.xml` against `CMakeLists.txt` to ensure build dependencies match. It adds missing as `<depend>` or `<test_depend>`.
+* **CMake Synchronization:** Compares `package.xml` against `CMakeLists.txt` to ensure build dependencies match. It adds missing as `<depend>` or `<test_depend>`. Optional lookups of the form `find_package(<pkg> QUIET)` are treated as optional and are not enforced in `package.xml`.
 * **Rosdep Validation:** Verifies that your dependency names exist as valid keys in the rosdep database.
 
 ### 3. Build Configuration
@@ -156,6 +156,7 @@ package-xml-validator . --compare-with-cmake --auto-fill-missing-deps
 | `--skip-rosdep-key-validation` | Skip verifying if dependency names exist in the `rosdep` database. |
 | `--missing-deps-only` | Skips formatting checks; only looks for missing dependencies. |
 | `--ignore-deps dep1,dep2` | Comma-separated list of dependency names to globally ignore in validation. |
+| `--skip-launch-dep-check` | Skip checking for missing dependencies in launch and test files. |
 
 ---
 

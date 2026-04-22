@@ -53,6 +53,7 @@ class PackageXmlValidator:
         path=None,
         verbose=False,
         ignored_deps=None,
+        skip_launch_dep_check=False,
     ):
         """Initialize the package.xml validator with feature flags.
 
@@ -67,6 +68,7 @@ class PackageXmlValidator:
             path: Path used for workspace discovery in rosdep validation.
             verbose: Enable verbose logging.
             ignored_deps: Global set of dependency names to ignore in validation.
+            skip_launch_dep_check: Skip launch and test file dependency checks.
 
         Returns:
             None.
@@ -104,6 +106,7 @@ class PackageXmlValidator:
             strict_cmake_checking=self.strict_cmake_checking,
             missing_deps_only=self.missing_deps_only,
             ignore_formatting_errors=self.ignore_formatting_errors,
+            skip_launch_dep_check=skip_launch_dep_check,
         )
         self.encountered_unresolvable_error = False
 
@@ -392,6 +395,12 @@ def main():
         help="Comma-separated list of dependency names to globally ignore in validation.",
     )
 
+    parser.add_argument(
+        "--skip-launch-dep-check",
+        action="store_true",
+        help="Skip checking for missing dependencies in launch and test files.",
+    )
+
     argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
@@ -430,6 +439,7 @@ def main():
         ignore_formatting_errors=args.ignore_formatting_errors,
         path=args.file if args.file else args.src[0],
         ignored_deps=global_ignored,
+        skip_launch_dep_check=args.skip_launch_dep_check,
     )
 
     if args.file:

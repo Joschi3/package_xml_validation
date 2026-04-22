@@ -17,6 +17,7 @@ class ValidationConfig:
     strict_cmake_checking: bool
     missing_deps_only: bool
     ignore_formatting_errors: bool
+    skip_launch_dep_check: bool = False
 
 
 @dataclass
@@ -657,6 +658,8 @@ class LaunchDependencyStep(ValidationStep):
 
         """
         result = ValidationResult(root=root)
+        if self.config.skip_launch_dep_check:
+            return result
 
         def extract_launch_deps(folder_names: list[str]) -> list[str]:
             """Extract launch dependencies from listed folders.
