@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from .cmake_parsers import read_deps_from_cmake_file
+from .exception_parser import DependencyExceptions
 from .find_launch_dependencies import scan_files
 from .package_types import PackageType, get_package_type
 
@@ -16,6 +17,7 @@ class ValidationConfig:
     strict_cmake_checking: bool
     missing_deps_only: bool
     ignore_formatting_errors: bool
+    skip_launch_dep_check: bool = False
 
 
 @dataclass
@@ -443,13 +445,16 @@ class RosdepCheckStep(ValidationStep):
 class CMakeComparisonStep(ValidationStep):
     name = "CMake dependency comparison"
 
-    def __init__(self, config: ValidationConfig, formatter, rosdep_validator):
+    def __init__(
+        self, config: ValidationConfig, formatter, rosdep_validator, exceptions=None
+    ):
         """Initialize CMake comparison validation step.
 
         Args:
             config: ValidationConfig with feature flags.
             formatter: PackageXmlFormatter instance.
             rosdep_validator: RosdepValidator instance.
+            exceptions: DependencyExceptions for per-package ignored deps.
 
         Returns:
             None.
@@ -458,6 +463,7 @@ class CMakeComparisonStep(ValidationStep):
         super().__init__(config)
         self.formatter = formatter
         self.rosdep_validator = rosdep_validator
+        self.exceptions = exceptions or DependencyExceptions()
 
     def perform_check(self, root, xml_file: str) -> ValidationResult:
         """Compare CMakeLists.txt dependencies to package.xml entries.
@@ -552,6 +558,16 @@ class CMakeComparisonStep(ValidationStep):
                     continue
                 unresolved_deps.append((dep, candidates))
 
+            # Filter out excepted dependencies
+            missing_deps = [
+                dep for dep in missing_deps if not self.exceptions.is_ignored(dep)
+            ]
+            unresolved_deps = [
+                (dep, candidates)
+                for dep, candidates in unresolved_deps
+                if not self.exceptions.is_ignored(dep)
+            ]
+
             if missing_deps:
                 deps = "\n\t\t" + "\n\t\t".join(dedupe_dependencies(missing_deps))
                 if self.config.check_only or not self.config.auto_fill_missing_deps:
@@ -605,6 +621,7 @@ class LaunchDependencyStep(ValidationStep):
         package_name: str,
         exec_deps: list[str],
         test_deps: list[str],
+        exceptions=None,
     ):
         """Initialize launch dependency validation step.
 
@@ -615,6 +632,7 @@ class LaunchDependencyStep(ValidationStep):
             package_name: Name of the package being checked.
             exec_deps: Existing exec dependencies from package.xml.
             test_deps: Existing test dependencies from package.xml.
+            exceptions: DependencyExceptions for per-package ignored deps.
 
         Returns:
             None.
@@ -626,6 +644,7 @@ class LaunchDependencyStep(ValidationStep):
         self.package_name = package_name
         self.exec_deps = exec_deps
         self.test_deps = test_deps
+        self.exceptions = exceptions or DependencyExceptions()
 
     def perform_check(self, root, xml_file: str) -> ValidationResult:
         """Validate launch/test file dependencies against package.xml.
@@ -639,6 +658,8 @@ class LaunchDependencyStep(ValidationStep):
 
         """
         result = ValidationResult(root=root)
+        if self.config.skip_launch_dep_check:
+            return result
 
         def extract_launch_deps(folder_names: list[str]) -> list[str]:
             """Extract launch dependencies from listed folders.
@@ -678,7 +699,9 @@ class LaunchDependencyStep(ValidationStep):
             missing_deps = [
                 dep
                 for dep in launch_deps
-                if dep not in xml_deps and dep != self.package_name
+                if dep not in xml_deps
+                and dep != self.package_name
+                and not self.exceptions.is_ignored(dep)
             ]
             if not missing_deps:
                 return

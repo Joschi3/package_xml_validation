@@ -177,6 +177,54 @@ class TestPackageXmlValidator(unittest.TestCase):
                     print(f"->   {line1.rstrip()} != {line2.rstrip()}")
         return result
 
+    def test_skip_launch_dep_check_silences_missing_launch_and_test_deps(self):
+        """With skip_launch_dep_check=True, packages that are only invalid due to
+        missing launch/test file dependencies should validate as correct and the
+        package.xml should be left untouched."""
+        formatter = PackageXmlValidator(
+            check_only=False,
+            verbose=True,
+            auto_fill_missing_deps=True,
+            check_rosdeps=True,
+            compare_with_cmake=True,
+            skip_launch_dep_check=True,
+        )
+        formatter.rosdep_validator = MagicMock()
+        formatter.rosdep_validator.resolve_cmake_dependency.side_effect = lambda x: x
+        formatter.rosdep_validator.check_rosdeps_and_local_pkgs = MagicMock(
+            side_effect=lambda deps: []
+        )
+
+        example_pkgs = os.listdir(self.examples_dir)
+        bad_pkg_names = {"pkg_missing_launch_deps", "pkg_missing_test_depends"}
+        checked = 0
+        for example_pkg in example_pkgs:
+            pkg_dir = os.path.join(self.test_dir, example_pkg)
+            for pkg in os.listdir(pkg_dir):
+                if pkg not in bad_pkg_names:
+                    continue
+                xml_file = os.path.join(pkg_dir, pkg, "package.xml")
+                original_xml = os.path.join(
+                    self.examples_dir, example_pkg, pkg, "package.xml"
+                )
+                shutil.copy2(original_xml, xml_file)
+                with self.subTest(example_pkg=example_pkg, pkg=pkg):
+                    valid = formatter.check_and_format_files([xml_file])
+                    self.assertTrue(
+                        valid,
+                        f"XML file {xml_file} expected to validate when launch dep "
+                        f"check is skipped, but was reported invalid.",
+                    )
+                    self.assertTrue(
+                        self._compare_xml_files_and_print(xml_file, original_xml),
+                        f"XML file {xml_file} was modified even though "
+                        f"skip_launch_dep_check=True should leave it untouched.",
+                    )
+                    checked += 1
+        self.assertGreater(
+            checked, 0, "No bad-case example packages were exercised by this test."
+        )
+
     def test_xml_formatting(self):
         """
         Iterate over all example packages in the test directory,
