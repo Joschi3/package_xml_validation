@@ -4,9 +4,9 @@ import re
 import yaml
 import difflib
 from importlib import resources
+from pathlib import Path
 from typing import Any
 from collections.abc import Iterable
-from re import Pattern
 
 from . import rosdep_wrapper
 
@@ -22,7 +22,7 @@ try:
     from .workspace import get_pkgs_in_wrs
 except ImportError:
 
-    def get_pkgs_in_wrs(path: Any) -> list[str]:
+    def get_pkgs_in_wrs(path: str | Path) -> list[str]:
         """Fallback workspace package discovery when helpers cannot be imported.
 
         Args:
@@ -154,7 +154,9 @@ class RosdepValidator:
             A list of up to five candidate rosdep keys, sorted by relevance.
 
         """
-        regexes = []
+        # ``regex`` and ``re`` produce distinct (but duck-compatible) Pattern
+        # types. Annotated as Any to let either populate the list.
+        regexes: list[Any] = []
         if HAS_REGEX_MODULE:
             # Fuzzy matching: allow 2 errors for long strings, 1 for short
             error_tolerance = 2 if len(dependency) >= 7 else 1
@@ -164,7 +166,7 @@ class RosdepValidator:
             # Fallback: standard regex
             regexes.append(re.compile(re.escape(dependency), re.IGNORECASE))
 
-        found_keys = []
+        found_keys: list[str] = []
 
         # Iterate over cached views
         for view_name in self.sources_loader.get_loadable_views():
@@ -211,9 +213,7 @@ class RosdepValidator:
 
         return sorted(unique_keys, key=sort_key)[:5]
 
-    def _search_view_data(
-        self, view: Any, compiled_regexes: list[Pattern[str]]
-    ) -> list[str]:
+    def _search_view_data(self, view: Any, compiled_regexes: list[Any]) -> list[str]:
         """Search a rosdep view for matching keys or payload values.
 
         Args:
@@ -236,7 +236,7 @@ class RosdepValidator:
         return matches
 
     def _check_payload_match(
-        self, os_payload: Any, compiled_regexes: list[Pattern[str]]
+        self, os_payload: Any, compiled_regexes: list[Any]
     ) -> bool:
         """Check whether a payload contains any regex matches.
 

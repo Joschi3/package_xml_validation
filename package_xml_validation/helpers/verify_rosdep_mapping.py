@@ -98,8 +98,8 @@ def verify_mappings() -> None:
     # 4. Reporting
     if errors:
         print("\nFound invalid mappings:")
-        for e in errors:
-            print(e)
+        for err in errors:
+            print(err)
         print("\nVerification FAILED.")
         sys.exit(1)
     else:

@@ -8,7 +8,7 @@ import os
 from typing import TYPE_CHECKING
 from collections.abc import Iterable
 
-import argcomplete  # type: ignore[import-untyped]
+import argcomplete
 import lxml.etree as ET
 
 try:

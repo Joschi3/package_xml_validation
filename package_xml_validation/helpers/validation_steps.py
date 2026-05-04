@@ -353,7 +353,7 @@ class BuildTypeExportStep(ValidationStep):
         pkg_type, _ = get_package_type(xml_file)
         export = root.find("export")
         export_exists = export is not None
-        build_type = export.find("build_type") if export_exists else None
+        build_type = export.find("build_type") if export is not None else None
         build_type_correct = (
             (
                 pkg_type == PackageType.CMAKE_PKG

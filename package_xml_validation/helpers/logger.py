@@ -94,7 +94,9 @@ def get_logger(name: str = __name__, level: str | int = "normal") -> logging.Log
     logger.setLevel(logging.DEBUG)
 
     ch = logging.StreamHandler(sys.stdout)  # stdout is better for CI
-    ch.flush = sys.stdout.flush  # force flush after each log
+    # Force-flush after each log entry so CI output stays in order. mypy
+    # flags reassigning a method, but the runtime behavior is the point.
+    ch.flush = sys.stdout.flush  # type: ignore[method-assign]
 
     ch.setLevel(_resolve_level(level))
 

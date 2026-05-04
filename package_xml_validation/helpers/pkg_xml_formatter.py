@@ -131,14 +131,19 @@ class PackageXmlFormatter:
         """
 
         dependency_order = [elm[0] for elm in ELEMENTS]
-        dependencies_with_comments = {dep: [] for dep in dependency_order}
-        current_order = []
+        dependencies_with_comments: dict[
+            str, list[tuple[XmlElement, list[XmlElement]]]
+        ] = {dep: [] for dep in dependency_order}
+        current_order: list[str] = []
 
         # Collect dependencies and track their order
-        current_comments = []
+        current_comments: list[XmlElement] = []
         for elem in root:
-            if elem.tag is ET.Comment:
-                current_comments.append(elem)
+            # lxml-stubs types ``elem.tag`` as ``str``; at runtime comment
+            # nodes have ``tag is ET.Comment`` (a callable), so the identity
+            # check is intentional.
+            if elem.tag is ET.Comment:  # type: ignore[comparison-overlap]
+                current_comments.append(elem)  # type: ignore[unreachable]
             if isinstance(elem.tag, str) and elem.tag in dependency_order:
                 dependencies_with_comments[elem.tag].append((elem, current_comments))
                 current_comments = []
@@ -160,7 +165,7 @@ class PackageXmlFormatter:
         # Check alphabetical order within each group
         if current_order == correct_order:
             for dep_type, elem_with_commtents in dependencies_with_comments.items():
-                names = [e[0].text for e in elem_with_commtents]
+                names = [e[0].text or "" for e in elem_with_commtents]
                 if names != sorted(names):
                     self.logger.debug(
                         f"Dependency order in {xml_file} is incorrect: {dep_type} elements are not sorted."
@@ -181,10 +186,10 @@ class PackageXmlFormatter:
         indentation = self._resolve_indentation(root)
         # Remove old dependency elements from root
         for dep_type in dependency_order:
-            for elem in dependencies_with_comments[dep_type]:
-                for comment in elem[1]:
+            for dep_elem, dep_comments in dependencies_with_comments[dep_type]:
+                for comment in dep_comments:
                     root.remove(comment)
-                root.remove(elem[0])
+                root.remove(dep_elem)
         # filter out empty lists from dependency order
         dependency_order = [
             dep for dep in dependency_order if dependencies_with_comments[dep]
@@ -192,7 +197,7 @@ class PackageXmlFormatter:
         insert_index = 0
         for index, dep_type in enumerate(dependency_order):
             sorted_elems = sorted(
-                dependencies_with_comments[dep_type], key=lambda x: x[0].text
+                dependencies_with_comments[dep_type], key=lambda x: x[0].text or ""
             )
             for i, elem_with_comment in enumerate(sorted_elems):
                 if (
@@ -240,11 +245,11 @@ class PackageXmlFormatter:
             """
             return ET.tostring(elem, with_tail=False)
 
-        seen = set()
-        duplicates = []
+        seen: set[bytes] = set()
+        duplicates: list[XmlElement] = []
         for elem in root:
-            if elem.tag is ET.Comment:
-                continue
+            if elem.tag is ET.Comment:  # type: ignore[comparison-overlap]
+                continue  # type: ignore[unreachable]
             combined = element_signature(elem)
             if combined in seen:
                 duplicates.append(elem)
@@ -391,14 +396,14 @@ class PackageXmlFormatter:
                 return len(element_order)
 
         # Extract elements and their preceding comments
-        elements_with_comments = []
-        current_comments = []
+        elements_with_comments: list[tuple[XmlElement, list[XmlElement]]] = []
+        current_comments: list[XmlElement] = []
 
         last_tail = ""
         indentation = self._resolve_indentation(root)
         for elem in root:
-            if elem.tag is ET.Comment:
-                self.logger.error(f"Found comment: {elem.text}")
+            if elem.tag is ET.Comment:  # type: ignore[comparison-overlap]
+                self.logger.error(f"Found comment: {elem.text}")  # type: ignore[unreachable]
                 if last_tail and last_tail[-1] == NEW_LINE:
                     # inline comment -> append to previous element
                     elements_with_comments[-1][0].tail = elem.tail
@@ -740,7 +745,8 @@ class PackageXmlFormatter:
         if dep_type not in dep_types:
             raise ValueError(f"Invalid dependency type: {dep_type}")
         indentation = self._resolve_indentation(root)
-        insert_position, first_of_group = 0, 0
+        insert_position: int = 0
+        first_of_group: int | None = 0
         for dep in dependencies:
             new_elem = ET.Element(dep_type)
             new_elem.text = dep
@@ -748,13 +754,13 @@ class PackageXmlFormatter:
             # add element to root at correct position -> correct dep group and alphabetical order
             # case 1: dependency group is empty
             if not root.findall(dep_type):
-                previous_element = elements[elements.index(dep_type) - 1]
-                while not root.findall(previous_element):
-                    previous_element = elements[elements.index(previous_element) - 1]
-                # find last element with previous_element tag
+                previous_tag = elements[elements.index(dep_type) - 1]
+                while not root.findall(previous_tag):
+                    previous_tag = elements[elements.index(previous_tag) - 1]
+                # find last element with previous_tag
                 last_element_count = 0
                 for count, elm in enumerate(root):
-                    if isinstance(elm.tag, str) and elm.tag == previous_element:
+                    if isinstance(elm.tag, str) and elm.tag == previous_tag:
                         last_element_count = count
                 insert_position = last_element_count + 1
                 first_of_group = insert_position
@@ -768,7 +774,7 @@ class PackageXmlFormatter:
                         if first_of_group is None:
                             first_of_group = i
                             insert_position = i
-                        if elm.text < new_elem.text:
+                        if (elm.text or "") < (new_elem.text or ""):
                             insert_position = i + 1
             root.insert(insert_position, new_elem)
             # adapt empty lines -> in case element prior ends with empty line move it to the new element
@@ -777,10 +783,10 @@ class PackageXmlFormatter:
                 and first_of_group is not None
                 and insert_position > first_of_group
             ):
-                previous_element = root[insert_position - 1]
-                if previous_element.tail and previous_element.tail.count(NEW_LINE) > 1:
-                    new_elem.tail = previous_element.tail
-                    previous_element.tail = NEW_LINE + indentation
+                prev_elem = root[insert_position - 1]
+                if prev_elem.tail and prev_elem.tail.count(NEW_LINE) > 1:
+                    new_elem.tail = prev_elem.tail
+                    prev_elem.tail = NEW_LINE + indentation
             if insert_position < len(root) - 1:
                 # if next tag is different than the new element, add empty line
                 next_element = root[insert_position + 1]

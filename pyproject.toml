@@ -15,6 +15,13 @@ dependencies = [
     "rosdep",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "mypy",
+    "types-PyYAML",
+    "lxml-stubs",
+]
+
 [tool.setuptools]
 packages = ["package_xml_validation", "package_xml_validation.helpers"]
 
@@ -23,3 +30,35 @@ package_xml_validation = ["data/*.yaml"]
 
 [project.scripts]
 package-xml-validator = "package_xml_validation.package_xml_validator:main"
+
+[tool.mypy]
+python_version = "3.9"
+files = ["package_xml_validation"]
+# Strictness flags - everything in the package is annotated, so we can run
+# tight from the start. Stubs that may be incomplete (lxml-stubs) are why
+# we don't enable `--strict` wholesale: it would force `disallow_any_*`
+# on the lxml interop boundary.
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_return_any = true
+warn_unreachable = true
+no_implicit_optional = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+strict_equality = true
+
+# Untyped third-party packages. Listed explicitly (rather than
+# `ignore_missing_imports = true` globally) so a missing stub for any
+# *other* dep surfaces as a real error.
+[[tool.mypy.overrides]]
+module = ["rosdep2.*", "argcomplete.*", "regex"]
+ignore_missing_imports = true
+
+# Top-level `helpers.X` is the fallback path for the dual-import shim used
+# when the package is run as a script rather than installed. The real
+# imports go through the package-relative form; this fallback only matters
+# at runtime when sys.path is rooted at the package directory.
+[[tool.mypy.overrides]]
+module = ["helpers.*"]
+ignore_missing_imports = true
