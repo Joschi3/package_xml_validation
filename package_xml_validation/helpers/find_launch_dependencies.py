@@ -167,7 +167,7 @@ def _decomment_for_suffix(suffix: str, text: str) -> str:
     return text
 
 
-def scan_file(path: str, found: set[str], verbose: bool = False):
+def scan_file(path: str, found: set[str], verbose: bool = False) -> None:
     """Scan a single launch file for package references.
 
     Args:

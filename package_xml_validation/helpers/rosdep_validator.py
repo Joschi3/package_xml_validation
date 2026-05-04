@@ -3,13 +3,7 @@ import yaml
 import difflib
 from importlib import resources
 
-# ROS imports
-import rosdep2
-from rosdep2.sources_list import (
-    SourcesListLoader,
-    CachedDataSource,
-    get_sources_cache_dir,
-)
+from . import rosdep_wrapper
 
 # Try importing regex for fuzzy matching
 try:
@@ -51,8 +45,8 @@ class RosdepValidator:
             None.
 
         """
-        self.rosdep_installer_context = rosdep2.create_default_installer_context()
-        self.rosdep = rosdep2.RosdepLookup.create_from_rospkg()
+        self.rosdep_installer_context = rosdep_wrapper.create_installer_context()
+        self.rosdep = rosdep_wrapper.create_lookup_from_rospkg()
 
         (
             self.rosdep_os_name,
@@ -60,12 +54,14 @@ class RosdepValidator:
         ) = self.rosdep_installer_context.get_os_name_and_version()
 
         self.rosdep_view = self.rosdep.get_rosdep_view(
-            rosdep2.rospkg_loader.DEFAULT_VIEW_KEY
+            rosdep_wrapper.get_default_view_key()
         )
 
-        self.sources_loader = SourcesListLoader.create_default(
-            sources_cache_dir=get_sources_cache_dir(), verbose=False
+        self.sources_loader = rosdep_wrapper.create_default_sources_loader(
+            verbose=False
         )
+
+        self._cached_data_source_cls = rosdep_wrapper.get_cached_data_source_cls()
 
         self.local_pkgs = []
         if pkg_path:
@@ -119,7 +115,7 @@ class RosdepValidator:
                 ),
             )
             return installer is not None
-        except (rosdep2.ResolutionError, KeyError):
+        except (rosdep_wrapper.ResolutionError, KeyError):
             return False
         except Exception:
             return False
@@ -173,7 +169,7 @@ class RosdepValidator:
                 continue
 
             # Skip remote sources
-            if not isinstance(view, CachedDataSource) or not hasattr(
+            if not isinstance(view, self._cached_data_source_cls) or not hasattr(
                 view, "rosdep_data"
             ):
                 continue

@@ -1,6 +1,18 @@
+from __future__ import annotations
+
 import os
 import re
 from enum import Enum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from lxml.etree import _Element
+
+    # Project-wide alias for an lxml element. Centralizing it here means the
+    # rest of the codebase imports `XmlElement` instead of
+    # `lxml.etree._Element`, so swapping the underlying type (e.g. wrapping
+    # it in a domain class) only requires editing this line.
+    XmlElement = _Element
 
 
 class PackageType(Enum):

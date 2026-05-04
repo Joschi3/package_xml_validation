@@ -3,16 +3,16 @@ import sys
 import yaml
 import pathlib
 
-# Try importing rosdep2
 try:
-    import rosdep2
-    from rosdep2.rospkg_loader import DEFAULT_VIEW_KEY
+    import rosdep2  # noqa: F401  # presence check; real calls go via rosdep_wrapper
 except ImportError:
     print(
         "Error: 'rosdep2' module not found. Please install python3-rosdep.",
         file=sys.stderr,
     )
     sys.exit(1)
+
+from . import rosdep_wrapper
 
 
 def verify_mappings():
@@ -46,9 +46,9 @@ def verify_mappings():
 
     # 2. Setup Rosdep Lookup
     try:
-        installer_context = rosdep2.create_default_installer_context()
-        lookup = rosdep2.RosdepLookup.create_from_rospkg()
-        view = lookup.get_rosdep_view(DEFAULT_VIEW_KEY)
+        installer_context = rosdep_wrapper.create_installer_context()
+        lookup = rosdep_wrapper.create_lookup_from_rospkg()
+        view = lookup.get_rosdep_view(rosdep_wrapper.get_default_view_key())
 
         # We need an OS to check against (e.g., ubuntu) to see if a rule exists
         os_name, os_version = installer_context.get_os_name_and_version()

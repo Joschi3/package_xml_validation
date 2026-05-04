@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import logging
 import os
 import sys
+from typing import Any
 
 
 class ColoredFormatter(logging.Formatter):
@@ -24,7 +27,7 @@ class ColoredFormatter(logging.Formatter):
         logging.CRITICAL: RED,
     }
 
-    def __init__(self, *args, use_color: bool = True, **kwargs):
+    def __init__(self, *args: Any, use_color: bool = True, **kwargs: Any) -> None:
         """Initialize the formatter with optional ANSI coloring.
 
         Args:
@@ -39,7 +42,7 @@ class ColoredFormatter(logging.Formatter):
         super().__init__(*args, **kwargs)
         self.use_color = use_color
 
-    def format(self, record):
+    def format(self, record: logging.LogRecord) -> str:
         """Format a log record and optionally colorize the output.
 
         Args:
