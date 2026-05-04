@@ -1,7 +1,12 @@
+from __future__ import annotations
+
 import re
 import yaml
 import difflib
 from importlib import resources
+from typing import Any
+from collections.abc import Iterable
+from re import Pattern
 
 from . import rosdep_wrapper
 
@@ -17,7 +22,7 @@ try:
     from .workspace import get_pkgs_in_wrs
 except ImportError:
 
-    def get_pkgs_in_wrs(path):
+    def get_pkgs_in_wrs(path: Any) -> list[str]:
         """Fallback workspace package discovery when helpers cannot be imported.
 
         Args:
@@ -35,7 +40,7 @@ class RosdepValidator:
     Class to validate ROS dependencies using rosdep.
     """
 
-    def __init__(self, pkg_path=None):
+    def __init__(self, pkg_path: str | None = None) -> None:
         """Initialize rosdep lookup and optional workspace package list.
 
         Args:
@@ -63,7 +68,7 @@ class RosdepValidator:
 
         self._cached_data_source_cls = rosdep_wrapper.get_cached_data_source_cls()
 
-        self.local_pkgs = []
+        self.local_pkgs: list[str] = []
         if pkg_path:
             self.local_pkgs = get_pkgs_in_wrs(pkg_path)
 
@@ -180,7 +185,7 @@ class RosdepValidator:
         unique_keys = list(set(found_keys))
 
         # --- IMPROVED SORTING LOGIC ---
-        def sort_key(candidate):
+        def sort_key(candidate: str) -> tuple[int, float]:
             cand_lower = candidate.lower()
             dep_lower = dependency.lower()
 
@@ -206,7 +211,9 @@ class RosdepValidator:
 
         return sorted(unique_keys, key=sort_key)[:5]
 
-    def _search_view_data(self, view, compiled_regexes) -> list[str]:
+    def _search_view_data(
+        self, view: Any, compiled_regexes: list[Pattern[str]]
+    ) -> list[str]:
         """Search a rosdep view for matching keys or payload values.
 
         Args:
@@ -228,7 +235,9 @@ class RosdepValidator:
                     matches.append(key)
         return matches
 
-    def _check_payload_match(self, os_payload, compiled_regexes) -> bool:
+    def _check_payload_match(
+        self, os_payload: Any, compiled_regexes: list[Pattern[str]]
+    ) -> bool:
         """Check whether a payload contains any regex matches.
 
         Args:
@@ -257,7 +266,7 @@ class RosdepValidator:
                     return True
         return False
 
-    def check_rosdeps(self, dependencies) -> list[str]:
+    def check_rosdeps(self, dependencies: Iterable[str]) -> list[str]:
         """Return a list of rosdep keys that cannot be resolved.
 
         Args:
@@ -273,7 +282,7 @@ class RosdepValidator:
                 unresolvable.append(dep)
         return unresolvable
 
-    def check_rosdeps_and_local_pkgs(self, dependencies) -> list[str]:
+    def check_rosdeps_and_local_pkgs(self, dependencies: Iterable[str]) -> list[str]:
         """Return rosdep keys unresolved and not satisfied by local packages.
 
         Args:

@@ -15,7 +15,7 @@ except ImportError:
 from . import rosdep_wrapper
 
 
-def verify_mappings():
+def verify_mappings() -> None:
     """
     Reads the cmake_rosdep_map.yaml and verifies that every target rosdep key
     exists in the local rosdep database.

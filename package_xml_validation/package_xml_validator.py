@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 # PYTHON_ARGCOMPLETE_OK
 
+from __future__ import annotations
+
 import argparse
 import os
+from typing import TYPE_CHECKING
+from collections.abc import Iterable
+
+import argcomplete  # type: ignore[import-untyped]
 import lxml.etree as ET
-import argcomplete
 
 try:
     from .helpers.logger import get_logger
@@ -19,13 +24,14 @@ try:
         RosdepCheckStep,
         CMakeComparisonStep,
         LaunchDependencyStep,
+        ValidationStep,
     )
     from .helpers.workspace import find_package_xml_files
 except ImportError:
-    from helpers.logger import get_logger
-    from helpers.rosdep_validator import RosdepValidator
-    from helpers.pkg_xml_formatter import PackageXmlFormatter
-    from helpers.validation_steps import (
+    from helpers.logger import get_logger  # type: ignore[no-redef]
+    from helpers.rosdep_validator import RosdepValidator  # type: ignore[no-redef]
+    from helpers.pkg_xml_formatter import PackageXmlFormatter  # type: ignore[no-redef]
+    from helpers.validation_steps import (  # type: ignore[no-redef]
         ValidationConfig,
         FormatterValidationStep,
         BuildToolDependStep,
@@ -34,23 +40,27 @@ except ImportError:
         RosdepCheckStep,
         CMakeComparisonStep,
         LaunchDependencyStep,
+        ValidationStep,
     )
-    from helpers.workspace import find_package_xml_files
+    from helpers.workspace import find_package_xml_files  # type: ignore[no-redef]
+
+if TYPE_CHECKING:
+    from .helpers.package_types import XmlElement
 
 
 class PackageXmlValidator:
     def __init__(
         self,
-        check_only=False,
-        check_rosdeps=True,
-        compare_with_cmake=False,
-        auto_fill_missing_deps=False,
-        strict_cmake_checking=False,
-        missing_deps_only=False,
-        ignore_formatting_errors=False,
-        path=None,
-        verbose=False,
-    ):
+        check_only: bool = False,
+        check_rosdeps: bool = True,
+        compare_with_cmake: bool = False,
+        auto_fill_missing_deps: bool = False,
+        strict_cmake_checking: bool = False,
+        missing_deps_only: bool = False,
+        ignore_formatting_errors: bool = False,
+        path: str | None = None,
+        verbose: bool = False,
+    ) -> None:
         """Initialize the package.xml validator with feature flags.
 
         Args:
@@ -82,6 +92,7 @@ class PackageXmlValidator:
             self.compare_with_cmake = False
         self.strict_cmake_checking = strict_cmake_checking
         self.auto_fill_missing_deps = auto_fill_missing_deps
+        self.rosdep_validator: RosdepValidator | None = None
         if self.check_rosdeps:
             self.rosdep_validator = RosdepValidator(pkg_path=path)
         self.formatter = PackageXmlFormatter(
@@ -104,7 +115,7 @@ class PackageXmlValidator:
         self.num_checks = self._calculate_num_checks()
         self.check_count = 1
 
-    def _calculate_num_checks(self):
+    def _calculate_num_checks(self) -> int:
         """Calculate the total number of checks based on configuration.
 
         Args:
@@ -129,7 +140,7 @@ class PackageXmlValidator:
             base_checks += 1
         return base_checks
 
-    def log_check_result(self, check_name, result):
+    def log_check_result(self, check_name: str, result: bool) -> None:
         """Log the result of a check and advance the counter.
 
         Args:
@@ -152,7 +163,9 @@ class PackageXmlValidator:
         if self.check_count > self.num_checks:
             self.check_count = 1
 
-    def _build_steps(self, root, xml_file, package_name):
+    def _build_steps(
+        self, root: XmlElement, xml_file: str, package_name: str | None
+    ) -> list[ValidationStep]:
         """Build the list of validation steps for a given package.
 
         Args:
@@ -188,23 +201,28 @@ class PackageXmlValidator:
                 ]
             )
 
-        if self.check_rosdeps and not self.missing_deps_only:
+        rosdep_validator = self.rosdep_validator
+        if (
+            self.check_rosdeps
+            and not self.missing_deps_only
+            and rosdep_validator is not None
+        ):
             steps.append(
                 RosdepCheckStep(
-                    self.validation_config, self.formatter, self.rosdep_validator
+                    self.validation_config, self.formatter, rosdep_validator
                 )
             )
 
-        if self.compare_with_cmake:
+        if self.compare_with_cmake and rosdep_validator is not None:
             steps.append(
                 CMakeComparisonStep(
-                    self.validation_config, self.formatter, self.rosdep_validator
+                    self.validation_config, self.formatter, rosdep_validator
                 )
             )
 
         return steps
 
-    def check_and_format_files(self, package_xml_files):
+    def check_and_format_files(self, package_xml_files: Iterable[str]) -> bool:
         """Validate and optionally format a list of package.xml files.
 
         Args:
@@ -285,7 +303,7 @@ class PackageXmlValidator:
             )
             return True
 
-    def check_and_format(self, src):
+    def check_and_format(self, src: Iterable[str]) -> bool:
         """Find package.xml files under a path and validate them.
 
         Args:
@@ -304,7 +322,7 @@ class PackageXmlValidator:
         return self.check_and_format_files(package_xml_files)
 
 
-def main():
+def main() -> None:
     """CLI entrypoint for package.xml validation.
 
     Args:

@@ -2,17 +2,23 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 from enum import Enum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from lxml.etree import _Element
 
+    if sys.version_info >= (3, 10):
+        from typing import TypeAlias
+    else:
+        from typing_extensions import TypeAlias
+
     # Project-wide alias for an lxml element. Centralizing it here means the
     # rest of the codebase imports `XmlElement` instead of
     # `lxml.etree._Element`, so swapping the underlying type (e.g. wrapping
     # it in a domain class) only requires editing this line.
-    XmlElement = _Element
+    XmlElement: TypeAlias = _Element
 
 
 class PackageType(Enum):
