@@ -11,45 +11,23 @@ from collections.abc import Iterable
 import argcomplete
 import lxml.etree as ET
 
-try:
-    from .helpers.cmake_parsers import _DEFAULT_CMAKE_KEYS_NO_ROSDEP
-    from .helpers.exception_parser import DependencyExceptions, parse_exceptions
-    from .helpers.logger import get_logger
-    from .helpers.rosdep_validator import RosdepValidator
-    from .helpers.pkg_xml_formatter import PackageXmlFormatter
-    from .helpers.validation_steps import (
-        ValidationConfig,
-        FormatterValidationStep,
-        BuildToolDependStep,
-        MemberOfGroupStep,
-        BuildTypeExportStep,
-        RosdepCheckStep,
-        CMakeComparisonStep,
-        LaunchDependencyStep,
-        ValidationStep,
-    )
-    from .helpers.workspace import find_package_xml_files
-except ImportError:
-    from helpers.cmake_parsers import _DEFAULT_CMAKE_KEYS_NO_ROSDEP  # type: ignore[no-redef]
-    from helpers.exception_parser import (  # type: ignore[no-redef]
-        DependencyExceptions,
-        parse_exceptions,
-    )
-    from helpers.logger import get_logger  # type: ignore[no-redef]
-    from helpers.rosdep_validator import RosdepValidator  # type: ignore[no-redef]
-    from helpers.pkg_xml_formatter import PackageXmlFormatter  # type: ignore[no-redef]
-    from helpers.validation_steps import (  # type: ignore[no-redef]
-        ValidationConfig,
-        FormatterValidationStep,
-        BuildToolDependStep,
-        MemberOfGroupStep,
-        BuildTypeExportStep,
-        RosdepCheckStep,
-        CMakeComparisonStep,
-        LaunchDependencyStep,
-        ValidationStep,
-    )
-    from helpers.workspace import find_package_xml_files  # type: ignore[no-redef]
+from .helpers.cmake_parsers import _DEFAULT_CMAKE_KEYS_NO_ROSDEP
+from .helpers.exception_parser import DependencyExceptions, parse_exceptions
+from .helpers.logger import get_logger
+from .helpers.pkg_xml_formatter import PackageXmlFormatter
+from .helpers.rosdep_validator import RosdepValidator
+from .helpers.validation_steps import (
+    BuildToolDependStep,
+    BuildTypeExportStep,
+    CMakeComparisonStep,
+    FormatterValidationStep,
+    LaunchDependencyStep,
+    MemberOfGroupStep,
+    RosdepCheckStep,
+    ValidationConfig,
+    ValidationStep,
+)
+from .helpers.workspace import find_package_xml_files
 
 if TYPE_CHECKING:
     from .helpers.package_types import XmlElement

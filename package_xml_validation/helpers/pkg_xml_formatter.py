@@ -4,26 +4,11 @@ import logging
 from typing import TYPE_CHECKING, Any
 from collections.abc import Iterable
 
-try:
-    from .formatter import dependency_queries, mutations, structural_checks
-    from .formatter.constants import ELEMENTS, NEW_LINE, NEW_LINE_BEFORE
-    from .formatter.indentation import prettyprint as _prettyprint
-    from .formatter.indentation import resolve_indentation
-    from .logger import get_logger
-except ImportError:
-    from helpers.formatter import (  # type: ignore[no-redef]
-        dependency_queries,
-        mutations,
-        structural_checks,
-    )
-    from helpers.formatter.constants import (  # type: ignore[no-redef]
-        ELEMENTS,
-        NEW_LINE,
-        NEW_LINE_BEFORE,
-    )
-    from helpers.formatter.indentation import prettyprint as _prettyprint  # type: ignore[no-redef]
-    from helpers.formatter.indentation import resolve_indentation  # type: ignore[no-redef]
-    from helpers.logger import get_logger  # type: ignore[no-redef]
+from .formatter import dependency_queries, mutations, structural_checks
+from .formatter.constants import ELEMENTS, NEW_LINE, NEW_LINE_BEFORE
+from .formatter.indentation import prettyprint as _prettyprint
+from .formatter.indentation import resolve_indentation
+from .logger import get_logger
 
 if TYPE_CHECKING:
     from .package_types import XmlElement

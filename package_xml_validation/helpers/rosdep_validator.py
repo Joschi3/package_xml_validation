@@ -4,7 +4,6 @@ import re
 import yaml
 import difflib
 from importlib import resources
-from pathlib import Path
 from typing import Any
 from collections.abc import Iterable
 
@@ -18,21 +17,7 @@ try:
 except ImportError:
     HAS_REGEX_MODULE = False
 
-try:
-    from .workspace import get_pkgs_in_wrs
-except ImportError:
-
-    def get_pkgs_in_wrs(path: str | Path) -> list[str]:
-        """Fallback workspace package discovery when helpers cannot be imported.
-
-        Args:
-            path: Workspace path to inspect.
-
-        Returns:
-            An empty list, indicating no local packages were discovered.
-
-        """
-        return []
+from .workspace import get_pkgs_in_wrs
 
 
 class RosdepValidator:
