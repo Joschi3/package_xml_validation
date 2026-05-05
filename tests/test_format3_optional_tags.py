@@ -10,6 +10,7 @@ from package_xml_validation.helpers.formatter.dependency_queries import (
     retrieve_all_dependencies,
 )
 from package_xml_validation.helpers.formatter.structural_checks import (
+    check_dependency_order,
     check_for_non_existing_tags,
 )
 from package_xml_validation.helpers.logger import get_logger
@@ -61,6 +62,30 @@ class TestFormat3OptionalTags(unittest.TestCase):
         self.assertIn("real_dep", deps)
         self.assertNotIn("old_pkg", deps)
         self.assertNotIn("legacy_pkg", deps)
+
+    def test_conflict_and_replace_sorted_alphabetically_within_group(self):
+        """Multiple <conflict> / <replace> entries should be sorted by text,
+        like other dependency groups."""
+        xml = """<?xml version="1.0"?>
+<package format="3">
+  <name>demo</name>
+  <version>0.0.1</version>
+  <description>demo</description>
+  <maintainer email="a@example.com">Alex</maintainer>
+  <license>Apache-2.0</license>
+  <conflict>zeta_pkg</conflict>
+  <conflict>alpha_pkg</conflict>
+  <replace>zeta_legacy</replace>
+  <replace>alpha_legacy</replace>
+</package>
+"""
+        root = ET.fromstring(xml.encode("utf-8"))
+        # check_only=False so the function fixes the order in place.
+        check_dependency_order(root, "inline.xml", False, self.logger)
+        conflicts = [e.text for e in root.findall("conflict")]
+        replaces = [e.text for e in root.findall("replace")]
+        self.assertEqual(conflicts, ["alpha_pkg", "zeta_pkg"])
+        self.assertEqual(replaces, ["alpha_legacy", "zeta_legacy"])
 
 
 if __name__ == "__main__":

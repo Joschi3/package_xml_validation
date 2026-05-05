@@ -7,7 +7,7 @@
 
 **Automate `package.xml` consistency in your ROS 2 projects.**
 
-This tool checks your package manifests for required tags, schema-defined ordering, and missing dependencies discovered in `CMakeLists.txt` and launch files, then automatically formats the XML to standard conventions. It does **not** perform full XSD validation — for that, run `xmllint --schema package_format3.xsd` separately. **Designed primarily as a [pre-commit](https://pre-commit.com/) hook.**
+This tool checks your package manifests for required tags, schema-defined ordering, [REP-149](https://www.ros.org/reps/rep-0149.html) invariants, and missing dependencies discovered in `CMakeLists.txt` and launch files, then automatically formats the XML to standard conventions. **Designed primarily as a [pre-commit](https://pre-commit.com/) hook.**
 
 ---
 
@@ -97,18 +97,26 @@ This tool enforces the standard ROS 2 element order:
 
 ### 1. XML Formatting & Standards
 
-* **Required Tags:** Enforces the presence of required tags (`name`, `version`, `description`, `maintainer`, `license`) and rejects unknown top-level child tags. Does not perform full XSD validation (e.g. `format` attribute values, attribute requirements like `<maintainer email="…">`, or contents of `<export>`); pair with `xmllint --schema` if you need that.
+* **Required Tags:** Enforces the presence of required tags (`name`, `version`, `description`, `maintainer`, `license`) and rejects unknown top-level child tags. Accepts every REP-149 dependency tag including the anti-dependency `<conflict>` and `<replace>` tags.
 * **Strict Ordering:** Reorders elements to match the official ROS 2 standard ([package_format3.xsd](http://download.ros.org/schema/package_format3.xsd)).
 * **Intelligent Sorting:** Groups dependencies (e.g., `build_depend`, `exec_depend`) and sorts them alphabetically.
 * **Non-Destructive:** Preserves your existing comments and indentation.
 
-### 2. Dependency Integrity
+### 2. [REP-149](https://www.ros.org/reps/rep-0149.html) Conformance
+
+* **Manifest Invariants:** Validates that the root element is `<package>`, that `<package format="3">` is present, `<name>` syntax matches `^[a-z][a-z0-9_]*$`, `<version>` syntax matches `MAJOR.MINOR.PATCH`, and every `<maintainer>` has a non-empty `email="…"` attribute. These can't be safely auto-filled, so they're report-only.
+* **Conditional Dependencies:** Honours REP-149 `condition="…"` attributes on dependency tags. Entries whose condition evaluates to `False` against `os.environ` are skipped during rosdep checks, CMake comparison, launch-file scanning, build-type matching, and `<member_of_group>` checks — matching what colcon does at build time. Disable with `--ignore-conditions` if your validation environment differs from build time.
+* **`<depend>` Exclusivity:** REP-149 forbids declaring the same key in both `<depend>` and any of `<build_depend>`/`<build_export_depend>`/`<exec_depend>`. The validator reports overlaps; with `--auto-fill-missing-deps` it collapses redundant granular tags into the canonical `<depend>` form.
+* **Multiple `<build_type>`:** When more than one `<build_type>` is active after condition evaluation, the validator picks the last one (REP-149 last-wins rule) and warns — multiple actives almost always indicate a config mistake.
+* **Interface Packages:** Message/service/action packages are required to declare `<exec_depend>rosidl_default_runtime</exec_depend>` (or the unified `<depend>` equivalent), per the rolling "Custom interfaces" tutorial. Auto-filled when `--auto-fill-missing-deps` is on.
+
+### 3. Dependency Integrity
 
 * **Launch File Scanning:** Scans `.py`, `.yaml`, and `.xml` launch files. If a package is used in a launch file but missing from `package.xml`, it adds it as an `<exec_depend>` or `<test_depend>`. Can be disabled with `--skip-launch-dep-check` when launch scanning produces false positives or is not desired for a given package.
 * **CMake Synchronization:** Compares `package.xml` against `CMakeLists.txt` to ensure build dependencies match, adding missing entries as `<depend>` or `<test_depend>`. Calls of the form `find_package(<pkg> QUIET)` (with `QUIET` and no `REQUIRED`) are treated as optional and skipped; all other forms — `find_package(<pkg>)`, `find_package(<pkg> REQUIRED)`, and `find_package(<pkg> REQUIRED QUIET)` — are enforced in `package.xml`.
 * **Rosdep Validation:** Verifies that your dependency names exist as valid keys in the rosdep database.
 
-### 3. Build Configuration
+### 4. Build Configuration
 
 * **Export Validation:** Ensures the correct `<build_type>` (e.g., `ament_cmake`) is exported.
 * **Test Dependencies:** Parses `test/` folders to ensure testing libraries are declared as `<test_depend>`.
@@ -180,6 +188,7 @@ package-xml-validator . --compare-with-cmake --auto-fill-missing-deps
 | `--ignore-cmake-key KEY` | Treat `find_package(KEY ...)` in `CMakeLists.txt` as not requiring a `package.xml` `<depend>` entry. Repeatable. Merged with the built-in defaults (`Threads`, `OpenMP`, `ament_cmake`). |
 | `--ignore-deps dep1,dep2` | Comma-separated list of dependency names to globally ignore in validation. |
 | `--skip-launch-dep-check` | Skip checking for missing dependencies in launch and test files. |
+| `--ignore-conditions` | Disable evaluation of REP-149 `condition="…"` attributes; every entry is then evaluated regardless of its condition. |
 
 ---
 
