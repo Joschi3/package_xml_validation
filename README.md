@@ -7,7 +7,7 @@
 
 **Automate `package.xml` consistency in your ROS 2 projects.**
 
-This tool validates your package manifests against the ROS 2 schema, checks for missing dependencies in code/launch files, and automatically formats the XML to standard conventions. **It is designed primarily to be used as a [pre-commit](https://pre-commit.com/) hook.**
+This tool checks your package manifests for required tags, schema-defined ordering, and missing dependencies discovered in `CMakeLists.txt` and launch files, then automatically formats the XML to standard conventions. It does **not** perform full XSD validation — for that, run `xmllint --schema package_format3.xsd` separately. **Designed primarily as a [pre-commit](https://pre-commit.com/) hook.**
 
 ---
 
@@ -97,7 +97,7 @@ This tool enforces the standard ROS 2 element order:
 
 ### 1. XML Formatting & Standards
 
-* **Schema Compliance:** Enforces the presence of required tags (`name`, `version`, `description`, `maintainer`, `license`).
+* **Required Tags:** Enforces the presence of required tags (`name`, `version`, `description`, `maintainer`, `license`) and rejects unknown top-level child tags. Does not perform full XSD validation (e.g. `format` attribute values, attribute requirements like `<maintainer email="…">`, or contents of `<export>`); pair with `xmllint --schema` if you need that.
 * **Strict Ordering:** Reorders elements to match the official ROS 2 standard ([package_format3.xsd](http://download.ros.org/schema/package_format3.xsd)).
 * **Intelligent Sorting:** Groups dependencies (e.g., `build_depend`, `exec_depend`) and sorts them alphabetically.
 * **Non-Destructive:** Preserves your existing comments and indentation.

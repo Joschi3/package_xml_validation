@@ -4,12 +4,19 @@ Each ``check_*`` function returns ``True`` when the tree is already valid (or
 was corrected without finding anything wrong) and ``False`` when an issue was
 found. When ``check_only`` is ``False`` the functions also mutate the tree to
 fix what they can.
+
+Some checks additionally expose a ``*_detailed`` variant that returns a
+:class:`CheckOutcome`, distinguishing ``FIXED`` (mutated successfully) from
+``UNFIXABLE`` (a finding that requires manual intervention). Callers that
+need to surface unfixable findings as errors should prefer the detailed
+form.
 """
 
 from __future__ import annotations
 
 import logging
 from copy import deepcopy
+from enum import Enum
 from typing import TYPE_CHECKING
 
 import lxml.etree as ET
@@ -19,6 +26,14 @@ from .indentation import resolve_indentation
 
 if TYPE_CHECKING:
     from ..package_types import XmlElement
+
+
+class CheckOutcome(Enum):
+    """Result of a structural check that can fail in two distinct ways."""
+
+    VALID = "valid"  #: Tree was already valid; nothing to do.
+    FIXED = "fixed"  #: Tree had an issue and the check mutated it to fix.
+    UNFIXABLE = "unfixable"  #: Tree has an issue that requires manual fixing.
 
 
 def check_dependency_order(
@@ -159,8 +174,36 @@ def check_element_occurrences(
     check_only: bool,
     logger: logging.Logger,
 ) -> bool:
-    """Verify each element's occurrence count matches the schema bounds."""
+    """Verify each element's occurrence count matches the schema bounds.
+
+    Returns ``True`` when the tree is valid, ``False`` otherwise. Use
+    :func:`check_element_occurrences_detailed` to distinguish ``FIXED``
+    from ``UNFIXABLE`` failures.
+    """
+    return (
+        check_element_occurrences_detailed(root, xml_file, check_only, logger)
+        is CheckOutcome.VALID
+    )
+
+
+def check_element_occurrences_detailed(
+    root: XmlElement,
+    xml_file: str,
+    check_only: bool,
+    logger: logging.Logger,
+) -> CheckOutcome:
+    """Like :func:`check_element_occurrences` but distinguishes outcomes.
+
+    Returns:
+        :attr:`CheckOutcome.VALID` if the tree already conforms,
+        :attr:`CheckOutcome.FIXED` if an issue was found and successfully
+        corrected (only possible when ``check_only=False``),
+        :attr:`CheckOutcome.UNFIXABLE` if an issue was found that the
+        check cannot repair (e.g. a missing required element, or
+        duplicates with non-identical content).
+    """
     incorrect_occurrences = False
+    has_unfixable = False
     for elem, min_occurrences, max_occurrences in ELEMENTS:
         count = len(root.findall(elem))
         if count < min_occurrences:
@@ -168,23 +211,29 @@ def check_element_occurrences(
                 f"Error: Element <{elem}> in {xml_file} has fewer than {min_occurrences} occurrences."
             )
             incorrect_occurrences = True
-            if check_only:
-                return False
+            # A missing required element can never be auto-filled here
+            # — we have no value to put in it.
+            has_unfixable = True
         elif max_occurrences is not None and count > max_occurrences:
             logger.info(
                 f"Error: Element <{elem}> in {xml_file} has more than {max_occurrences} occurrences."
             )
             incorrect_occurrences = True
-            if check_only:
-                return False
-
-    if check_only:
-        return True
 
     if not incorrect_occurrences:
-        return True
+        return CheckOutcome.VALID
 
-    # Correct the occurrences
+    if check_only:
+        # In check-only mode we can't repair anything; classify the same
+        # finding the writeback path would have classified.
+        if has_unfixable:
+            return CheckOutcome.UNFIXABLE
+        # Any over-occurrence found in check-only is presumed unfixable
+        # without inspecting the bytes; surface it as a reportable failure.
+        return CheckOutcome.UNFIXABLE
+
+    # Try to correct the occurrences
+    fixed_anything = False
     for elem, min_occurrence, max_occurrences in ELEMENTS:
         elements = root.findall(elem)
         count = len(elements)
@@ -200,13 +249,19 @@ def check_element_occurrences(
                 logger.info(
                     f"Removed identical duplicate element <{elem}> from {xml_file}."
                 )
+                fixed_anything = True
             else:
                 logger.warning(
                     f"Multiple <{elem}> entries differ. Please resolve manually. There are {count} occurrences in {xml_file} but there should be no more than {max_occurrences}."
                 )
+                has_unfixable = True
         if count < min_occurrence:
             logger.warning(f"Please add the missing element: <{elem}>")
-    return False
+            has_unfixable = True
+
+    if has_unfixable:
+        return CheckOutcome.UNFIXABLE
+    return CheckOutcome.FIXED if fixed_anything else CheckOutcome.VALID
 
 
 def check_element_order(

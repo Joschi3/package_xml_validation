@@ -366,7 +366,7 @@ def main() -> None:
     parser.add_argument(
         "--skip-rosdep-key-validation",
         action="store_true",
-        help="Check if rosdeps are valid.",
+        help="Skip verifying that dependency names exist in the rosdep database.",
     )
 
     parser.add_argument(

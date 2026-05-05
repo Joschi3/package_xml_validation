@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable
 
+from ..formatter.structural_checks import (
+    CheckOutcome,
+    check_element_occurrences_detailed,
+)
 from ._base import ValidationConfig, ValidationResult, ValidationStep
 
 if TYPE_CHECKING:
@@ -48,6 +52,26 @@ class FormatterValidationStep(ValidationStep):
         if self.config.ignore_formatting_errors:
             return result
 
+        # Element-occurrence check needs to distinguish "fixed" from
+        # "unfixable" (e.g. missing required tag, or duplicates with
+        # diverging content) so we can route unfixable findings to
+        # critical_errors instead of misreporting them as "corrected".
+        outcome = check_element_occurrences_detailed(
+            root, xml_file, self.config.check_only, self.formatter.logger
+        )
+        if outcome is CheckOutcome.UNFIXABLE:
+            result.critical_errors.append(
+                f"Element-occurrence violations in {xml_file} require manual "
+                "intervention (see warnings above)."
+            )
+            result.valid = False
+        elif outcome is CheckOutcome.FIXED:
+            result.warnings.append(
+                f"Check element occurrences corrected in {xml_file}."
+            )
+            result.changed = True
+            result.valid = False
+
         checks: list[tuple[str, Callable[..., bool], tuple]] = [
             (
                 "Check for empty lines",
@@ -57,11 +81,6 @@ class FormatterValidationStep(ValidationStep):
             (
                 "Check for duplicate elements",
                 self.formatter.check_for_duplicates,
-                (root, xml_file),
-            ),
-            (
-                "Check element occurrences",
-                self.formatter.check_element_occurrences,
                 (root, xml_file),
             ),
             (
