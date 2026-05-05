@@ -118,7 +118,6 @@ class PackageXmlValidator:
             ignore_formatting_errors=self.ignore_formatting_errors,
             cmake_keys_no_rosdep=effective_cmake_keys,
         )
-        self.encountered_unresolvable_error = False
 
         # num_checks and check_count are set per-file in check_and_format_files
         # once the actual step list has been built.
@@ -216,6 +215,7 @@ class PackageXmlValidator:
 
         """
         self.all_valid = True
+        encountered_unresolvable_error = False
         for xml_file in package_xml_files:
             self.xml_valid = True
             pkg_name = os.path.basename(os.path.dirname(xml_file))
@@ -254,12 +254,18 @@ class PackageXmlValidator:
                     self.logger.error(error)
                 for critical in result.critical_errors:
                     self.logger.error(critical)
-                    self.encountered_unresolvable_error = True
+                    encountered_unresolvable_error = True
 
                 self.log_check_result(step.name, result.valid and not result.changed)
 
             # Write back to file if not in check-only mode
             if not self.xml_valid and not self.check_only:
+                # Final normalization: any auto-fill step (e.g. add_buildtool_depends)
+                # may leave whitespace or indentation in a slightly off state.
+                # Re-run the cheap structural fixers so the file we write is
+                # always well-formed regardless of which mutator ran.
+                self.formatter.check_for_empty_lines(root, xml_file)
+                self.formatter.check_indentation(root)
                 tree.write(
                     xml_file, encoding="utf-8", xml_declaration=True, pretty_print=True
                 )
@@ -272,7 +278,7 @@ class PackageXmlValidator:
             )
             return False
         elif not self.all_valid:
-            if self.encountered_unresolvable_error:
+            if encountered_unresolvable_error:
                 self.logger.warning(
                     "⚠️ Some `package.xml` files have unresolvable errors. Please check the logs for details. 🔍"
                 )

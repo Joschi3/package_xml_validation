@@ -70,6 +70,10 @@ class TestIgnoreFormattingErrorsMode(unittest.TestCase):
 
     def test_still_reports_structural_errors(self):
         _write_package_xml(self.package_xml)
+        # CMakeLists.txt makes this a CMAKE_PKG so the missing-buildtool
+        # branch fires; without it, the package type is UNKNOWN and the
+        # buildtool step (correctly) skips, leaving nothing to flag.
+        (self.pkg_dir / "CMakeLists.txt").write_text("", encoding="utf-8")
 
         validator = PackageXmlValidator(
             ignore_formatting_errors=True, check_rosdeps=False, verbose=True

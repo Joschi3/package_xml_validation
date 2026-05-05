@@ -25,6 +25,9 @@ class PackageType(Enum):
     CMAKE_PKG = "ament_cmake"
     PYTHON_PKG = "ament_python"
     MSG_PKG = "rosidl_default_generators"
+    # Manifest-only / non-build package: neither CMakeLists.txt nor setup.py
+    # is present. Auto-fill steps must not infer a build type for these.
+    UNKNOWN = ""
 
 
 def get_package_type(xml_file: str) -> tuple[PackageType, bool]:
@@ -34,13 +37,14 @@ def get_package_type(xml_file: str) -> tuple[PackageType, bool]:
         xml_file: Path to a package.xml file.
 
     Returns:
-        A tuple of (PackageType, is_msg_pkg).
+        A tuple of (PackageType, is_msg_pkg). When neither ``CMakeLists.txt``
+        nor ``setup.py`` is present alongside the manifest, the type is
+        :attr:`PackageType.UNKNOWN`.
 
     """
     cmake_file = os.path.join(os.path.dirname(xml_file), "CMakeLists.txt")
     setup_file = os.path.join(os.path.dirname(xml_file), "setup.py")
     is_msg_pkg = False
-    pkg_type = PackageType.CMAKE_PKG
     if os.path.exists(cmake_file):
         regex = r"rosidl_generate_interfaces\s*\(\s*.*?\)"
         with open(cmake_file) as f:
@@ -50,4 +54,6 @@ def get_package_type(xml_file: str) -> tuple[PackageType, bool]:
         pkg_type = PackageType.CMAKE_PKG
     elif os.path.exists(setup_file):
         pkg_type = PackageType.PYTHON_PKG
+    else:
+        pkg_type = PackageType.UNKNOWN
     return pkg_type, is_msg_pkg

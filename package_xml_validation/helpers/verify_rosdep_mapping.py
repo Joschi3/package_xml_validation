@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import sys
+from importlib import resources
 import yaml
-import pathlib
 
 try:
     import rosdep2  # noqa: F401  # presence check; real calls go via rosdep_wrapper
@@ -28,17 +28,13 @@ def verify_mappings() -> None:
 
     """
 
-    # 1. Locate the YAML file
-    # Adjust this path if your script location changes relative to the data file
+    # 1. Load the YAML file from package resources (works for installed and
+    # source-tree usage; no dependence on the current working directory).
     try:
-        # If running from source root
-        yaml_path = pathlib.Path("package_xml_validation/data/cmake_rosdep_map.yaml")
-        if not yaml_path.exists():
-            # Fallback/alternative path strategies could go here
-            print(f"Error: Could not find mapping file at {yaml_path}", file=sys.stderr)
-            sys.exit(1)
-
-        with open(yaml_path) as f:
+        map_file = resources.files("package_xml_validation").joinpath(
+            "data/cmake_rosdep_map.yaml"
+        )
+        with map_file.open("r", encoding="utf-8") as f:
             mapping = yaml.safe_load(f) or {}
     except (OSError, yaml.YAMLError) as e:
         print(f"Failed to load YAML file: {e}", file=sys.stderr)
