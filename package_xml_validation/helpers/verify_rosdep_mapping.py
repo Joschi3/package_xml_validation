@@ -40,7 +40,7 @@ def verify_mappings() -> None:
 
         with open(yaml_path) as f:
             mapping = yaml.safe_load(f) or {}
-    except Exception as e:
+    except (OSError, yaml.YAMLError) as e:
         print(f"Failed to load YAML file: {e}", file=sys.stderr)
         sys.exit(1)
 
@@ -53,7 +53,7 @@ def verify_mappings() -> None:
         # We need an OS to check against (e.g., ubuntu) to see if a rule exists
         os_name, os_version = installer_context.get_os_name_and_version()
         print(f"Verifying against ROSDEP database for OS: {os_name} {os_version}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — top-level CLI guard: any init failure should print and exit
         print(
             f"Failed to initialize rosdep: {e}\nDid you run 'sudo rosdep init' and 'rosdep update'?",
             file=sys.stderr,
@@ -92,7 +92,7 @@ def verify_mappings() -> None:
                 # Uncomment the next line to be strict:
                 # errors.append(f"⚠️ '{cmake_key}': '{rosdep_key}' exists but has no rule for {os_name}:{os_version}")
                 pass
-        except Exception:
+        except (rosdep_wrapper.ResolutionError, KeyError):
             errors.append(f"❌ '{cmake_key}': Error looking up '{rosdep_key}'")
 
     # 4. Reporting

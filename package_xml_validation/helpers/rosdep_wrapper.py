@@ -30,14 +30,19 @@ if TYPE_CHECKING:
     SourcesLoader = Any
     CachedDataSourceT = Any
     ResolutionError = Exception
+    ResourceNotFound = Exception
 
 
 def __getattr__(name: str) -> Any:
-    """Lazily expose select rosdep2 attributes (e.g. ``ResolutionError``)."""
+    """Lazily expose select rosdep2/rospkg attributes."""
     if name == "ResolutionError":
         import rosdep2
 
         return rosdep2.ResolutionError
+    if name == "ResourceNotFound":
+        import rospkg
+
+        return rospkg.ResourceNotFound
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 

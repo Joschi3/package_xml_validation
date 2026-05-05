@@ -170,8 +170,6 @@ class PackageXmlValidator:
                 f"❌ [{self.check_count}/{self.num_checks}] {check_name} failed."
             )
         self.check_count += 1
-        if self.check_count > self.num_checks:
-            self.check_count = 1
 
     def _build_steps(
         self, root: XmlElement, xml_file: str, package_name: str | None

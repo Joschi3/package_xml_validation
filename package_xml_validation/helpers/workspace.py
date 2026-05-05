@@ -168,7 +168,7 @@ def get_pkgs_in_wrs(path: str | Path) -> list[str]:
         pkg_dir = find_package_dir(path)
         ws_root = find_workspace_root(pkg_dir)
         src_dir = ws_root / "src"
-    except Exception as e:
+    except (ValueError, OSError) as e:
         print(f"Exception extracting local pkgs: {e}")
         if pkg_dir and os.path.exists(pkg_dir.absolute()):
             print(f"Attempting to extract local pkgs from {pkg_dir}")

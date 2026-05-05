@@ -23,7 +23,12 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["package_xml_validation", "package_xml_validation.helpers"]
+packages = [
+    "package_xml_validation",
+    "package_xml_validation.helpers",
+    "package_xml_validation.helpers.formatter",
+    "package_xml_validation.helpers.validation_steps",
+]
 
 [tool.setuptools.package-data]
 package_xml_validation = ["data/*.yaml"]
@@ -52,7 +57,7 @@ strict_equality = true
 # `ignore_missing_imports = true` globally) so a missing stub for any
 # *other* dep surfaces as a real error.
 [[tool.mypy.overrides]]
-module = ["rosdep2.*", "argcomplete.*", "regex"]
+module = ["rosdep2.*", "rospkg.*", "argcomplete.*", "regex"]
 ignore_missing_imports = true
 
 # Top-level `helpers.X` is the fallback path for the dual-import shim used

@@ -90,7 +90,7 @@ class RosdepValidator:
             )
             with map_file.open("r", encoding="utf-8") as handle:
                 mapping = yaml.safe_load(handle) or {}
-        except Exception:
+        except (OSError, yaml.YAMLError):
             return {}
 
         if not isinstance(mapping, dict):
@@ -121,8 +121,6 @@ class RosdepValidator:
             )
             return installer is not None
         except (rosdep_wrapper.ResolutionError, KeyError):
-            return False
-        except Exception:
             return False
 
     def resolve_cmake_dependency(self, dependency: str) -> str | None:
@@ -172,7 +170,7 @@ class RosdepValidator:
         for view_name in self.sources_loader.get_loadable_views():
             try:
                 view = self.sources_loader.get_source(view_name=view_name)
-            except Exception:
+            except rosdep_wrapper.ResourceNotFound:
                 continue
 
             # Skip remote sources
