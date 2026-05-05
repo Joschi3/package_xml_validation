@@ -20,6 +20,7 @@ from .helpers.validation_steps import (
     BuildToolDependStep,
     BuildTypeExportStep,
     CMakeComparisonStep,
+    DependencyExclusivityStep,
     FormatterValidationStep,
     LaunchDependencyStep,
     ManifestSchemaStep,
@@ -184,6 +185,7 @@ class PackageXmlValidator:
         if not self.missing_deps_only:
             steps.extend(
                 [
+                    DependencyExclusivityStep(self.validation_config),
                     BuildToolDependStep(self.validation_config, self.formatter),
                     MemberOfGroupStep(self.validation_config, self.formatter),
                     BuildTypeExportStep(self.validation_config, self.formatter),

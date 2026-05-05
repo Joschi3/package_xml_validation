@@ -8,6 +8,7 @@ from ._base import ValidationConfig, ValidationResult, ValidationStep
 from .build_type_export_step import BuildTypeExportStep
 from .buildtool_step import BuildToolDependStep
 from .cmake_comparison_step import CMakeComparisonStep
+from .dependency_exclusivity_step import DependencyExclusivityStep
 from .formatter_step import FormatterValidationStep
 from .launch_dependency_step import LaunchDependencyStep
 from .manifest_schema_step import ManifestSchemaStep
@@ -18,6 +19,7 @@ __all__ = [
     "BuildToolDependStep",
     "BuildTypeExportStep",
     "CMakeComparisonStep",
+    "DependencyExclusivityStep",
     "FormatterValidationStep",
     "LaunchDependencyStep",
     "ManifestSchemaStep",
