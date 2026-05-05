@@ -26,6 +26,7 @@ from .helpers.validation_steps import (
     ManifestSchemaStep,
     MemberOfGroupStep,
     RosdepCheckStep,
+    RosidlInterfaceRuntimeStep,
     ValidationConfig,
     ValidationStep,
 )
@@ -159,9 +160,6 @@ class PackageXmlValidator:
             List of ValidationStep instances to run.
 
         """
-        exec_deps = self.formatter.retrieve_exec_dependencies(root)
-        test_deps = self.formatter.retrieve_test_dependencies(root)
-
         # Parse per-package exceptions from XML comments and merge with global
         exceptions = parse_exceptions(root)
         if self.global_ignored_deps:
@@ -176,8 +174,6 @@ class PackageXmlValidator:
                 self.formatter,
                 self.rosdep_validator if self.check_rosdeps else None,
                 package_name,
-                exec_deps,
-                test_deps,
                 exceptions,
             ),
         ]
@@ -189,6 +185,7 @@ class PackageXmlValidator:
                     BuildToolDependStep(self.validation_config, self.formatter),
                     MemberOfGroupStep(self.validation_config, self.formatter),
                     BuildTypeExportStep(self.validation_config, self.formatter),
+                    RosidlInterfaceRuntimeStep(self.validation_config, self.formatter),
                 ]
             )
 

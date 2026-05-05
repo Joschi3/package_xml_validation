@@ -21,6 +21,7 @@ class ManifestSchemaStep(ValidationStep):
     """Validate REP-149 structural invariants on the parsed tree.
 
     Rules:
+      - Root element is ``<package>`` (REP-149 allows nothing else).
       - ``<package format="3">`` is required. Missing or unsupported value
         is an error; ``"1"`` or ``"2"`` is a warning (older formats are
         still accepted by ROS but new packages should use 3).
@@ -45,6 +46,7 @@ class ManifestSchemaStep(ValidationStep):
         pkg_name = os.path.basename(os.path.dirname(xml_file))
         location = f"{pkg_name}/package.xml"
 
+        self._check_root_tag(root, location, result)
         self._check_format(root, location, result)
         self._check_name(root, location, result)
         self._check_version(root, location, result)
@@ -53,6 +55,16 @@ class ManifestSchemaStep(ValidationStep):
         if result.errors:
             result.valid = False
         return result
+
+    @staticmethod
+    def _check_root_tag(
+        root: XmlElement, location: str, result: ValidationResult
+    ) -> None:
+        if root.tag != "package":
+            result.errors.append(
+                f"Root element of {location} is <{root.tag}>; REP-149 requires "
+                "<package>."
+            )
 
     @staticmethod
     def _check_format(

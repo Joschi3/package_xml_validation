@@ -14,6 +14,7 @@ from .launch_dependency_step import LaunchDependencyStep
 from .manifest_schema_step import ManifestSchemaStep
 from .member_of_group_step import MemberOfGroupStep
 from .rosdep_check_step import RosdepCheckStep
+from .rosidl_runtime_step import RosidlInterfaceRuntimeStep
 
 __all__ = [
     "BuildToolDependStep",
@@ -25,6 +26,7 @@ __all__ = [
     "ManifestSchemaStep",
     "MemberOfGroupStep",
     "RosdepCheckStep",
+    "RosidlInterfaceRuntimeStep",
     "ValidationConfig",
     "ValidationResult",
     "ValidationStep",
