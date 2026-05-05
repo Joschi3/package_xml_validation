@@ -14,6 +14,19 @@ if TYPE_CHECKING:
 
 
 class BuildToolDependStep(ValidationStep):
+    """Verify (and optionally insert) the package's ``<buildtool_depend>``.
+
+    Rule: a CMake package needs ``<buildtool_depend>ament_cmake</buildtool_depend>``;
+    a Python package needs ``ament_python``; message packages additionally
+    need ``rosidl_default_generators``. Manifest-only packages (UNKNOWN
+    type) are skipped with a warning rather than auto-filled.
+
+    Reads: ``root``, plus ``CMakeLists.txt``/``setup.py`` siblings via
+    ``get_package_type``. Mutates only when ``auto_fill_missing_deps=True``;
+    otherwise emits a critical error. Skipped when
+    ``missing_deps_only=True``.
+    """
+
     name = "Build tool dependency"
 
     def __init__(

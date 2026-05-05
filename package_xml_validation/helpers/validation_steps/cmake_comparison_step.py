@@ -16,6 +16,20 @@ if TYPE_CHECKING:
 
 
 class CMakeComparisonStep(ValidationStep):
+    """Cross-check ``find_package(...)`` calls in ``CMakeLists.txt`` against
+    ``<build_depend>``/``<test_depend>`` in package.xml.
+
+    For each CMake dependency, attempts (in order) direct rosdep
+    resolution, the project's CMake→rosdep mapping, and a fuzzy rosdep
+    search. Missing entries are reported, or auto-filled when
+    ``auto_fill_missing_deps=True``. Unresolvable entries become
+    warnings unless ``strict_cmake_checking=True``, in which case they
+    escalate to critical errors.
+
+    Only runs for CMake packages with ``compare_with_cmake=True``;
+    Python and manifest-only packages are no-ops.
+    """
+
     name = "CMake dependency comparison"
 
     def __init__(

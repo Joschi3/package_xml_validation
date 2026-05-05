@@ -115,6 +115,28 @@ This tool enforces the standard ROS 2 element order:
 
 ---
 
+## 🧭 Architecture
+
+The validator is structured as a small pipeline. For each `package.xml`,
+`PackageXmlValidator` parses the file once, runs a list of validation steps
+against the in-memory tree, and writes back only if a step actually mutated.
+
+| Module | Responsibility |
+| --- | --- |
+| `package_xml_validator.py` | CLI entry point and per-file orchestration (parse → run steps → optionally write). |
+| `helpers/validation_steps/` | One `*Step` class per validation rule. Each docstring states the rule, inputs, and when (if ever) it mutates the tree. |
+| `helpers/formatter/` | Pure structural checks (`structural_checks.py`), tree mutators (`mutations.py`), indentation/pretty-print helpers, and shared schema constants. `PackageXmlFormatter` is a thin facade. |
+| `helpers/cmake_parsers.py` | Lightweight regex-based CMake parser used by `CMakeComparisonStep`. |
+| `helpers/find_launch_dependencies.py` | Extracts package names referenced from launch files for `LaunchDependencyStep`. |
+| `helpers/rosdep_validator.py`, `rosdep_wrapper.py` | Resolve rosdep keys + workspace packages; the wrapper is the single boundary against the untyped `rosdep2`. |
+| `helpers/workspace.py` | ROS workspace layout discovery (locate the `<ws>/src` for a given path). |
+
+To add a new validation rule, create a new file under `helpers/validation_steps/`
+exporting a subclass of `ValidationStep`, then register it in
+`PackageXmlValidator._build_steps`.
+
+---
+
 ## 🛠️ Manual Usage (CLI)
 
 If you need to run the validator manually or in a CI environment without pre-commit, you can install it via pip.

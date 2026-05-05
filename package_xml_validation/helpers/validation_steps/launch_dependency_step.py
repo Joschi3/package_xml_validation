@@ -15,6 +15,19 @@ if TYPE_CHECKING:
 
 
 class LaunchDependencyStep(ValidationStep):
+    """Cross-check packages referenced from launch files against package.xml.
+
+    Scans ``launch/`` and ``components/`` folders for package references
+    (via ``find_launch_dependencies.scan_files``); anything not already
+    in ``<exec_depend>`` is reported. The ``test/`` folder is checked
+    against ``<test_depend>``. The package's own name is excluded.
+
+    When ``auto_fill_missing_deps=True``, missing deps are validated
+    against rosdep before being added — names that don't resolve are
+    flagged rather than auto-filled. When ``check_only=True`` or
+    auto-fill is off, missing deps become errors.
+    """
+
     name = "Launch dependency check"
 
     def __init__(

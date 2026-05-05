@@ -14,6 +14,18 @@ if TYPE_CHECKING:
 
 
 class BuildTypeExportStep(ValidationStep):
+    """Verify (and optionally insert) ``<export><build_type>`` for build packages.
+
+    Rule: CMake packages must declare ``ament_cmake``; Python packages
+    must declare ``ament_python``. Other package types (message-only,
+    manifest-only/UNKNOWN) require no ``<build_type>`` and are skipped.
+
+    Reads ``root`` plus the package directory (via ``get_package_type``).
+    Mutates only when ``auto_fill_missing_deps=True``; otherwise emits a
+    critical error. Skipped when ``missing_deps_only=True``. Other
+    ``<export>`` children (besides ``<build_type>``) are left untouched.
+    """
+
     name = "Build type export"
 
     def __init__(

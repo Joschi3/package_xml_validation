@@ -14,6 +14,17 @@ if TYPE_CHECKING:
 
 
 class RosdepCheckStep(ValidationStep):
+    """Verify every ``<*_depend>`` value resolves via rosdep or workspace.
+
+    For each dependency tag value, asks the ``RosdepValidator`` whether it
+    resolves either as a rosdep key for the current platform or as a
+    local workspace package. Anything else is reported as a critical
+    error.
+
+    Read-only — never mutates the tree. Skipped when ``check_rosdeps=False``
+    or ``missing_deps_only=True``.
+    """
+
     name = "ROS dependency check"
 
     def __init__(

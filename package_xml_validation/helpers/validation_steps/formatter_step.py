@@ -12,6 +12,19 @@ if TYPE_CHECKING:
 
 
 class FormatterValidationStep(ValidationStep):
+    """Run all structural/formatting checks against the package.xml tree.
+
+    Enforces: schema-allowlisted tag set, element ordering, occurrence
+    bounds, dependency ordering, blank-line policy, indentation, no
+    duplicate elements.
+
+    Reads: ``root`` only. Mutates the tree to fix any check that fails
+    when ``check_only=False``. Skipped entirely when
+    ``missing_deps_only=True`` and partially when
+    ``ignore_formatting_errors=True`` (only the unknown-tag check still
+    runs in that mode).
+    """
+
     name = "Formatter validation"
 
     def __init__(

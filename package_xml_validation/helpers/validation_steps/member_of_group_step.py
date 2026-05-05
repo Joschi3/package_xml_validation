@@ -14,6 +14,14 @@ if TYPE_CHECKING:
 
 
 class MemberOfGroupStep(ValidationStep):
+    """Ensure message packages declare ``<member_of_group>rosidl_interface_packages</member_of_group>``.
+
+    Only message packages (those whose ``CMakeLists.txt`` calls
+    ``rosidl_generate_interfaces``) are checked; other package types are
+    no-ops. Mutates only when ``auto_fill_missing_deps=True``; otherwise
+    emits a critical error. Skipped when ``missing_deps_only=True``.
+    """
+
     name = "Member of group"
 
     def __init__(
