@@ -8,18 +8,23 @@ version = "0.1.0"
 description = "Validates package xml of ros2 pkgs"
 readme = "README.md"
 requires-python = ">=3.9"
-dependencies = [
-    "argcomplete",
-    "lxml",
-    "PyYAML",
-    "rosdep",
+# Version bounds: floor = a release we've tested; ceiling = the next major,
+# so a breaking upstream release (lxml 7.x, etc.) surfaces as an explicit
+# resolver conflict for downstream users rather than a silent break. This
+# project is a published library, so we deliberately do not commit a lock
+# file (pip install consumers don't read it).
+dependencies = [  # NOSONAR S8565: library, not application; lock file would not affect consumers
+    "argcomplete>=3.1,<4",
+    "lxml>=5,<7",
+    "PyYAML>=6,<7",
+    "rosdep>=0.22,<1",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "mypy",
-    "types-PyYAML",
-    "lxml-stubs",
+    "mypy>=1.10,<2",
+    "types-PyYAML>=6,<7",
+    "lxml-stubs>=0.5,<1",
 ]
 
 [tool.setuptools]

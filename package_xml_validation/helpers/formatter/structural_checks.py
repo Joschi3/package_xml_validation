@@ -44,12 +44,42 @@ def check_dependency_order(
 ) -> bool:
     """Check, and optionally correct, dependency ordering."""
     dependency_order = [elm[0] for elm in ELEMENTS]
-    dependencies_with_comments: dict[str, list[tuple[XmlElement, list[XmlElement]]]] = {
+    dependencies_with_comments, current_order = _collect_dependencies_with_comments(
+        root, dependency_order
+    )
+    order_mismatch = _detect_dependency_order_mismatch(
+        dependencies_with_comments, current_order, dependency_order, xml_file, logger
+    )
+
+    if check_only:
+        if order_mismatch:
+            logger.error(f"Dependency order in {xml_file} is incorrect.")
+            return False
+        return True
+
+    if not order_mismatch:
+        return True
+
+    _reinsert_dependencies_in_order(root, dependencies_with_comments, dependency_order)
+    logger.info(f"Corrected dependency order in {xml_file}.")
+    return False
+
+
+_DepsWithComments = dict[str, list[tuple["XmlElement", list["XmlElement"]]]]
+
+
+def _collect_dependencies_with_comments(
+    root: XmlElement, dependency_order: list[str]
+) -> tuple[_DepsWithComments, list[str]]:
+    """Walk ``root`` once, grouping dependency elements with their preceding comments.
+
+    Returns a ``(dependencies_with_comments, observed_order)`` pair where
+    ``observed_order`` is the dep-type sequence as it appears in the tree.
+    """
+    dependencies_with_comments: _DepsWithComments = {
         dep: [] for dep in dependency_order
     }
-    current_order: list[str] = []
-
-    # Collect dependencies and track their order
+    observed_order: list[str] = []
     current_comments: list[XmlElement] = []
     for elem in root:
         # lxml-stubs types ``elem.tag`` as ``str``; at runtime comment
@@ -60,76 +90,76 @@ def check_dependency_order(
         if isinstance(elem.tag, str) and elem.tag in dependency_order:
             dependencies_with_comments[elem.tag].append((elem, current_comments))
             current_comments = []
-            current_order.append(elem.tag)
+            observed_order.append(elem.tag)
+    return dependencies_with_comments, observed_order
 
-    # Determine correct order for type grouping
-    correct_order = []
+
+def _detect_dependency_order_mismatch(
+    dependencies_with_comments: _DepsWithComments,
+    observed_order: list[str],
+    dependency_order: list[str],
+    xml_file: str,
+    logger: logging.Logger,
+) -> bool:
+    """Return True when the tree violates either type-grouping or alphabetical order."""
+    expected_order: list[str] = []
     for dep_type in dependency_order:
-        correct_order.extend([dep_type] * len(dependencies_with_comments[dep_type]))
+        expected_order.extend([dep_type] * len(dependencies_with_comments[dep_type]))
 
-    # Check type order mismatch
-    order_mismatch = False
-    if current_order != correct_order:
+    if observed_order != expected_order:
         logger.error(f"Dependency order in {xml_file} is incorrect.")
-        order_mismatch = True
-
-    if check_only and order_mismatch:
-        return False
-    # Check alphabetical order within each group
-    if current_order == correct_order:
-        for dep_type, elem_with_commtents in dependencies_with_comments.items():
-            names = [e[0].text or "" for e in elem_with_commtents]
-            if names != sorted(names):
-                logger.debug(
-                    f"Dependency order in {xml_file} is incorrect: {dep_type} elements are not sorted."
-                )
-                order_mismatch = True
-                break
-
-    if check_only and order_mismatch:
-        logger.error(f"Dependency order in {xml_file} is incorrect.")
-        return False
-
-    if check_only:
         return True
 
-    if not order_mismatch:
-        return True
+    for dep_type, elem_with_comments in dependencies_with_comments.items():
+        names = [e[0].text or "" for e in elem_with_comments]
+        if names != sorted(names):
+            logger.debug(
+                f"Dependency order in {xml_file} is incorrect: {dep_type} elements are not sorted."
+            )
+            return True
 
+    return False
+
+
+def _reinsert_dependencies_in_order(
+    root: XmlElement,
+    dependencies_with_comments: _DepsWithComments,
+    dependency_order: list[str],
+) -> None:
+    """Remove all collected dependency nodes and reinsert them sorted, with
+    the schema-defined blank-line policy between groups."""
     indentation = resolve_indentation(root)
-    # Remove old dependency elements from root
     for dep_type in dependency_order:
         for dep_elem, dep_comments in dependencies_with_comments[dep_type]:
             for comment in dep_comments:
                 root.remove(comment)
             root.remove(dep_elem)
-    # filter out empty lists from dependency order
-    dependency_order = [
+
+    non_empty_order = [
         dep for dep in dependency_order if dependencies_with_comments[dep]
     ]
     insert_index = 0
-    for index, dep_type in enumerate(dependency_order):
+    for index, dep_type in enumerate(non_empty_order):
         sorted_elems = sorted(
             dependencies_with_comments[dep_type], key=lambda x: x[0].text or ""
         )
         for i, elem_with_comment in enumerate(sorted_elems):
-            if (
-                i == len(sorted_elems) - 1
-                and index + 1 < len(dependency_order)
-                and dependency_order[index + 1] in NEW_LINE_BEFORE
-            ):
-                elem_with_comment[0].tail = "\n\n" + indentation
-            else:
-                elem_with_comment[0].tail = NEW_LINE + indentation
+            is_last_in_group = i == len(sorted_elems) - 1
+            next_group_starts_block = (
+                index + 1 < len(non_empty_order)
+                and non_empty_order[index + 1] in NEW_LINE_BEFORE
+            )
+            elem_with_comment[0].tail = (
+                "\n\n" + indentation
+                if is_last_in_group and next_group_starts_block
+                else NEW_LINE + indentation
+            )
             for comment in elem_with_comment[1]:
                 root.insert(insert_index, comment)
                 insert_index += 1
             root.insert(insert_index, elem_with_comment[0])
             insert_index += 1
     root[-1].tail = NEW_LINE
-
-    logger.info(f"Corrected dependency order in {xml_file}.")
-    return False
 
 
 def check_for_duplicates(
@@ -421,7 +451,6 @@ def check_indentation(
 def check_for_non_existing_tags(
     root: XmlElement,
     xml_file: str,
-    check_only: bool,  # noqa: ARG001 — kept for signature consistency
     logger: logging.Logger,
 ) -> bool:
     """Reject tags that are not part of the package.xml schema."""

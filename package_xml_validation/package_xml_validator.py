@@ -250,7 +250,12 @@ class PackageXmlValidator:
             if not os.path.isfile(xml_file):
                 raise IsADirectoryError(f"{xml_file} is not a file.")
             try:
-                parser = ET.XMLParser()
+                # Explicit hardening against XXE: disable network access for
+                # external entities and skip entity resolution entirely.
+                # lxml 5.x already defaults to no_network=True and
+                # resolve_entities='internal', but stating it at the call
+                # site documents intent and survives future lxml/parser swaps.
+                parser = ET.XMLParser(no_network=True, resolve_entities=False)
                 tree = ET.parse(xml_file, parser)
                 root = tree.getroot()
             except (ET.XMLSyntaxError, OSError) as e:

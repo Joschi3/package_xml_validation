@@ -184,7 +184,14 @@ class TestPackageXmlValidator(unittest.TestCase):
             package_xml_file = os.path.join(package_dir, "package.xml")
 
             try:
-                parser = ET.XMLParser(remove_blank_text=True)
+                # XXE-safe: lxml 5.x already defaults to no_network=True and
+                # resolve_entities='internal'; stating both at the call site
+                # documents intent and survives future lxml/parser swaps.
+                parser = ET.XMLParser(
+                    remove_blank_text=True,
+                    no_network=True,
+                    resolve_entities=False,
+                )
                 tree = ET.parse(package_xml_file, parser)
                 root = tree.getroot()
             except ET.XMLSyntaxError:

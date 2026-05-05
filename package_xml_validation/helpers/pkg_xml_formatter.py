@@ -105,7 +105,7 @@ class PackageXmlFormatter:
     def check_for_non_existing_tags(self, root: XmlElement, xml_file: str) -> bool:
         """Reject tags that are not part of the package.xml schema."""
         return structural_checks.check_for_non_existing_tags(
-            root, xml_file, self.check_only, self.logger
+            root, xml_file, self.logger
         )
 
     def retrieve_all_dependencies(self, root: XmlElement) -> list[str]:

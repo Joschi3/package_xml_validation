@@ -85,7 +85,7 @@ class BuildToolDependStep(ValidationStep):
                 )
             else:
                 result.errors.append(
-                    f"Incorrect <buildtool_depend> in {pkg_name}/package.xml. Expected {corrected_buildtool_str}, found {buildtool if buildtool is not None else 'None'}."
+                    f"Incorrect <buildtool_depend> in {pkg_name}/package.xml. Expected {corrected_buildtool_str}, found {buildtool}."
                 )
             result.valid = False
             return result
