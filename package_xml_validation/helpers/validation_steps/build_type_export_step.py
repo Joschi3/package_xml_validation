@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
+from ..condition_eval import evaluate_condition
+from ..logger import get_logger
 from ..package_types import PackageType, get_package_type
 from ._base import ValidationConfig, ValidationResult, ValidationStep
 
@@ -34,6 +36,7 @@ class BuildTypeExportStep(ValidationStep):
         """Initialize build type export validation step."""
         super().__init__(config)
         self.formatter = formatter
+        self._logger = get_logger(__name__)
 
     def perform_check(self, root: XmlElement, xml_file: str) -> ValidationResult:
         """Validate and optionally fix <export><build_type> for packages."""
@@ -44,7 +47,11 @@ class BuildTypeExportStep(ValidationStep):
         pkg_type, _ = get_package_type(xml_file)
         export = root.find("export")
         export_exists = export is not None
-        build_type = export.find("build_type") if export is not None else None
+        # REP-149: a <build_type> with a condition that evaluates to False
+        # doesn't apply, so we should treat it as absent for matching.
+        build_type = (
+            self._find_active_build_type(export) if export is not None else None
+        )
         expected = _expected_build_type(pkg_type)
 
         # No expected build_type means the package type doesn't require one;
@@ -77,6 +84,19 @@ class BuildTypeExportStep(ValidationStep):
         result.changed = True
         result.valid = False
         return result
+
+    def _find_active_build_type(self, export: XmlElement) -> XmlElement | None:
+        """Return the first ``<build_type>`` whose ``condition`` is active.
+
+        With ``evaluate_conditions=False`` the first ``<build_type>`` wins
+        unconditionally (preserving prior behaviour).
+        """
+        for bt in export.findall("build_type"):
+            if not self.config.evaluate_conditions or evaluate_condition(
+                bt.get("condition"), logger=self._logger
+            ):
+                return bt
+        return None
 
 
 def _expected_build_type(pkg_type: PackageType) -> str | None:

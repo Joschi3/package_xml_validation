@@ -15,6 +15,7 @@ requires-python = ">=3.9"
 # file (pip install consumers don't read it).
 dependencies = [  # NOSONAR S8565: library, not application; lock file would not affect consumers
     "argcomplete>=3.1,<4",
+    "catkin-pkg>=1.0,<2",
     "lxml>=5,<7",
     "PyYAML>=6,<7",
     "rosdep>=0.22,<1",
@@ -62,5 +63,5 @@ strict_equality = true
 # `ignore_missing_imports = true` globally) so a missing stub for any
 # *other* dep surfaces as a real error.
 [[tool.mypy.overrides]]
-module = ["rosdep2.*", "rospkg.*", "argcomplete.*", "regex"]
+module = ["rosdep2.*", "rospkg.*", "argcomplete.*", "catkin_pkg.*", "regex"]
 ignore_missing_imports = true

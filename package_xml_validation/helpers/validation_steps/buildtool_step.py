@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
+from ..condition_eval import evaluate_condition
+from ..logger import get_logger
 from ..package_types import PackageType, get_package_type
 from ._base import ValidationConfig, ValidationResult, ValidationStep
 
@@ -35,6 +37,7 @@ class BuildToolDependStep(ValidationStep):
         """Initialize buildtool dependency validation step."""
         super().__init__(config)
         self.formatter = formatter
+        self._logger = get_logger(__name__)
 
     def perform_check(self, root: XmlElement, xml_file: str) -> ValidationResult:
         """Validate and optionally fix buildtool dependency tags."""
@@ -53,7 +56,14 @@ class BuildToolDependStep(ValidationStep):
             )
             return result
 
-        buildtool = [tool.text for tool in root.findall("buildtool_depend")]
+        # REP-149: a <buildtool_depend> with a condition that evaluates to
+        # False is not active and therefore doesn't satisfy the rule.
+        buildtool = [
+            tool.text
+            for tool in root.findall("buildtool_depend")
+            if not self.config.evaluate_conditions
+            or evaluate_condition(tool.get("condition"), logger=self._logger)
+        ]
         is_buildtool_correct = (
             len(buildtool) > 0
             and (

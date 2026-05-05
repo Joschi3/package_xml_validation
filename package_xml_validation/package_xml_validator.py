@@ -49,6 +49,7 @@ class PackageXmlValidator:
         cmake_keys_no_rosdep: Iterable[str] | None = None,
         ignored_deps: Iterable[str] | None = None,
         skip_launch_dep_check: bool = False,
+        evaluate_conditions: bool = True,
     ) -> None:
         """Initialize the package.xml validator with feature flags.
 
@@ -67,6 +68,11 @@ class PackageXmlValidator:
                 built-in defaults; never replaces them.
             ignored_deps: Global set of dependency names to ignore in validation.
             skip_launch_dep_check: Skip launch and test file dependency checks.
+            evaluate_conditions: Honour REP-149 ``condition="…"`` attributes on
+                dependency tags. When True (default), entries whose condition
+                evaluates to False against ``os.environ`` are skipped during
+                rosdep / CMake comparison. Disable with ``--ignore-conditions``
+                to evaluate every entry regardless.
 
         Returns:
             None.
@@ -109,6 +115,7 @@ class PackageXmlValidator:
             ignore_formatting_errors=self.ignore_formatting_errors,
             cmake_keys_no_rosdep=effective_cmake_keys,
             skip_launch_dep_check=skip_launch_dep_check,
+            evaluate_conditions=evaluate_conditions,
         )
 
         # num_checks and check_count are set per-file in check_and_format_files
@@ -409,6 +416,17 @@ def main() -> None:
         help="Skip checking for missing dependencies in launch and test files.",
     )
 
+    parser.add_argument(
+        "--ignore-conditions",
+        action="store_true",
+        help=(
+            'Disable evaluation of REP-149 condition="…" attributes. By default '
+            "dependencies whose condition evaluates to False against the current "
+            "environment are skipped during rosdep / CMake comparison; with this "
+            "flag every entry is evaluated regardless of its condition."
+        ),
+    )
+
     argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
@@ -449,6 +467,7 @@ def main() -> None:
         cmake_keys_no_rosdep=args.ignore_cmake_key,
         ignored_deps=global_ignored,
         skip_launch_dep_check=args.skip_launch_dep_check,
+        evaluate_conditions=not args.ignore_conditions,
     )
 
     if args.file:
