@@ -30,9 +30,8 @@ class BuildToolDependStep(ValidationStep):
             return result
 
         pkg_type, is_msg_pkg = get_package_type(xml_file)
-        # Manifest-only package (no CMakeLists.txt, no setup.py): we have no
-        # signal to pick a buildtool. Skip the check rather than silently
-        # auto-filling ament_cmake.
+        # Manifest-only package: no signal to pick a buildtool. Skip rather
+        # than silently auto-filling ament_cmake.
         if pkg_type == PackageType.UNKNOWN:
             pkg_name = os.path.basename(os.path.dirname(xml_file))
             result.warnings.append(

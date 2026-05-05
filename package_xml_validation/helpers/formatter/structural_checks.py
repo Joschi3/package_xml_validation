@@ -383,9 +383,7 @@ def check_for_non_existing_tags(
     return True
 
 
-# ---------------------------------------------------------------------------
-# Module-private helpers
-# ---------------------------------------------------------------------------
+# --- Module-private helpers ---
 
 
 def _remove_inner_newlines(s: str) -> str:

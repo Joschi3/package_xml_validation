@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-# tuple of (element_name, min_occurrences, max_occurrences)
-# min_occurrences is 1 if the element is required, 0 if it can be missing
-# max_occurrences is None if there is no limit, otherwise it is a positive integer
+# (element_name, min_occurrences, max_occurrences); max=None means unbounded.
 ELEMENTS: list[tuple[str, int, int | None]] = [
     ("name", 1, 1),
     ("version", 1, 1),

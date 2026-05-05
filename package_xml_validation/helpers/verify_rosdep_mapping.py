@@ -3,15 +3,6 @@ import sys
 from importlib import resources
 import yaml
 
-try:
-    import rosdep2  # noqa: F401  # presence check; real calls go via rosdep_wrapper
-except ImportError:
-    print(
-        "Error: 'rosdep2' module not found. Please install python3-rosdep.",
-        file=sys.stderr,
-    )
-    sys.exit(1)
-
 from . import rosdep_wrapper
 
 
@@ -27,6 +18,16 @@ def verify_mappings() -> None:
         None.
 
     """
+    # Presence check is local to this function (not at import time) so the
+    # module remains safe to import in environments without rosdep2.
+    try:
+        import rosdep2  # noqa: F401  # real calls go via rosdep_wrapper
+    except ImportError:
+        print(
+            "Error: 'rosdep2' module not found. Please install python3-rosdep.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # 1. Load the YAML file from package resources (works for installed and
     # source-tree usage; no dependence on the current working directory).
@@ -73,21 +74,13 @@ def verify_mappings() -> None:
             )
             continue
 
-        # Optional strict check: Check if it resolves for the CURRENT platform
-        # This might be too strict if you map windows/macos specific keys,
-        # but for standard ROS development (Ubuntu), this catches bad keys.
+        # Lenient platform check: missing a rule for the current OS is not
+        # treated as an error, since maps may target other platforms.
         try:
             dep = view.lookup(rosdep_key)
-            rule = dep.get_rule_for_platform(
+            dep.get_rule_for_platform(
                 os_name, os_version, ["apt", "pip", "source"], "apt"
             )
-            # rule returns (installer_key, resolved_rule)
-            if rule[0] is None:
-                # Often not an error (just not supported on this specific OS version),
-                # but worth a warning if you expect standard support.
-                # Uncomment the next line to be strict:
-                # errors.append(f"⚠️ '{cmake_key}': '{rosdep_key}' exists but has no rule for {os_name}:{os_version}")
-                pass
         except (rosdep_wrapper.ResolutionError, KeyError):
             errors.append(f"❌ '{cmake_key}': Error looking up '{rosdep_key}'")
 

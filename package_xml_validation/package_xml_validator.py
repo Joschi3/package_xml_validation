@@ -241,12 +241,14 @@ class PackageXmlValidator:
             self.num_checks = len(steps)
             self.check_count = 1
 
+            xml_changed = False
             for step in steps:
                 result = step.perform_check(root, xml_file)
                 root = result.root
                 # Invariant: any step that sets `changed=True` also sets
                 # `valid=False`, so AND-ing with `valid` is sufficient.
                 self.xml_valid &= result.valid
+                xml_changed |= result.changed
 
                 for warning in result.warnings:
                     self.logger.warning(warning)
@@ -258,12 +260,11 @@ class PackageXmlValidator:
 
                 self.log_check_result(step.name, result.valid and not result.changed)
 
-            # Write back to file if not in check-only mode
-            if not self.xml_valid and not self.check_only:
-                # Final normalization: any auto-fill step (e.g. add_buildtool_depends)
-                # may leave whitespace or indentation in a slightly off state.
-                # Re-run the cheap structural fixers so the file we write is
-                # always well-formed regardless of which mutator ran.
+            # Only write when a step actually mutated; an unfixable failure
+            # must not dirty the user's tree with a no-op reserialization.
+            if xml_changed and not self.check_only:
+                # Re-normalize whitespace/indentation in case a mutator
+                # (e.g. add_buildtool_depends) left the tree slightly off.
                 self.formatter.check_for_empty_lines(root, xml_file)
                 self.formatter.check_indentation(root)
                 tree.write(

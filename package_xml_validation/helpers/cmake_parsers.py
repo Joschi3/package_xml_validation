@@ -6,14 +6,8 @@ import re
 
 logger = logging.getLogger(__name__)
 
-# -----------------------------------------------------------------------------
-# Constants & Configuration
-# -----------------------------------------------------------------------------
-
-# Known CMake keys that do not need package xml <depend> entries.
-# These are typically system libraries or build tools provided by the environment.
-# Users may extend this set via the validator's --ignore-cmake-key flag; the
-# defaults are always merged in, never replaced.
+# CMake keys that don't need a <depend>. Users extend (never replace) this set
+# via --ignore-cmake-key; the defaults below are always merged in.
 _DEFAULT_CMAKE_KEYS_NO_ROSDEP: frozenset[str] = frozenset(
     {
         "Threads",
@@ -22,9 +16,8 @@ _DEFAULT_CMAKE_KEYS_NO_ROSDEP: frozenset[str] = frozenset(
     }
 )
 
-# Tokens that mark the end of the package name definition in find_package().
-# Everything after these tokens (including the token itself) is part of the
-# package configuration (components, paths, etc.) and not the package name.
+# Tokens after which find_package() arguments are configuration, not package
+# names — truncate at the first occurrence.
 STOP_TOKENS = {
     "COMPONENTS",
     "OPTIONAL_COMPONENTS",
@@ -63,11 +56,6 @@ SKIP_WORDS = {
     "ONLY_CMAKE_FIND_ROOT_PATH",
     "NO_CMAKE_FIND_ROOT_PATH",
 }
-
-
-# -----------------------------------------------------------------------------
-# Parsing Functions
-# -----------------------------------------------------------------------------
 
 
 def remove_comments(lines: list[str]) -> list[str]:
@@ -296,10 +284,6 @@ def retrieve_cmake_dependencies(
 
             add_deps(used_deps, in_test_block)
             continue
-
-    # Clean up results
-    # 1. Remove duplicates
-    # 2. Remove known ignored keys (like 'Threads')
 
     unique_main = sorted({dep for dep in main_deps if dep not in keys_no_rosdep})
     unique_test = sorted({dep for dep in test_deps if dep not in keys_no_rosdep})
