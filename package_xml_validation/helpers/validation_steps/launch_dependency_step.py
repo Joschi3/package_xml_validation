@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
+from ..exception_parser import DependencyExceptions
 from ..find_launch_dependencies import scan_files
 from ._base import ValidationConfig, ValidationResult, ValidationStep
 
@@ -38,6 +39,7 @@ class LaunchDependencyStep(ValidationStep):
         package_name: str | None,
         exec_deps: list[str],
         test_deps: list[str],
+        exceptions: DependencyExceptions | None = None,
     ) -> None:
         """Initialize launch dependency validation step."""
         super().__init__(config)
@@ -46,10 +48,13 @@ class LaunchDependencyStep(ValidationStep):
         self.package_name = package_name
         self.exec_deps = exec_deps
         self.test_deps = test_deps
+        self.exceptions = exceptions or DependencyExceptions()
 
     def perform_check(self, root: XmlElement, xml_file: str) -> ValidationResult:
         """Validate launch/test file dependencies against package.xml."""
         result = ValidationResult(root=root)
+        if self.config.skip_launch_dep_check:
+            return result
         self._validate_folders(
             result,
             root,
@@ -80,7 +85,9 @@ class LaunchDependencyStep(ValidationStep):
         missing_deps = [
             dep
             for dep in launch_deps
-            if dep not in xml_deps and dep != self.package_name
+            if dep not in xml_deps
+            and dep != self.package_name
+            and not self.exceptions.is_ignored(dep)
         ]
         if not missing_deps:
             return

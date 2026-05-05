@@ -6,6 +6,7 @@ import os
 from typing import TYPE_CHECKING
 
 from ..cmake_parsers import read_deps_from_cmake_file
+from ..exception_parser import DependencyExceptions
 from ..package_types import PackageType, get_package_type
 from ._base import ValidationConfig, ValidationResult, ValidationStep
 
@@ -37,11 +38,13 @@ class CMakeComparisonStep(ValidationStep):
         config: ValidationConfig,
         formatter: PackageXmlFormatter,
         rosdep_validator: RosdepValidator,
+        exceptions: DependencyExceptions | None = None,
     ) -> None:
         """Initialize CMake comparison validation step."""
         super().__init__(config)
         self.formatter = formatter
         self.rosdep_validator = rosdep_validator
+        self.exceptions = exceptions or DependencyExceptions()
 
     def perform_check(self, root: XmlElement, xml_file: str) -> ValidationResult:
         """Compare CMakeLists.txt dependencies to package.xml entries."""
@@ -118,6 +121,16 @@ class CMakeComparisonStep(ValidationStep):
             if candidates and any(candidate in xml_deps for candidate in candidates):
                 continue
             unresolved_deps.append((dep, candidates))
+
+        # Filter out excepted dependencies
+        missing_deps = [
+            dep for dep in missing_deps if not self.exceptions.is_ignored(dep)
+        ]
+        unresolved_deps = [
+            (dep, candidates)
+            for dep, candidates in unresolved_deps
+            if not self.exceptions.is_ignored(dep)
+        ]
 
         if missing_deps:
             deps = "\n\t\t" + "\n\t\t".join(_dedupe(missing_deps))

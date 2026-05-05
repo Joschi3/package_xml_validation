@@ -1,0 +1,16 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<package format="3">
+  <name>launch_test_pkg</name>
+  <version>0.0.0</version>
+  <description>Test package for launch exception testing</description>
+  <maintainer email="test@test.com">Test</maintainer>
+  <license>MIT</license>
+
+  <!-- validator:ignore robot_state_publisher -->
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

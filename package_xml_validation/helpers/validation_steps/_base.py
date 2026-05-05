@@ -19,6 +19,7 @@ class ValidationConfig:
     missing_deps_only: bool
     ignore_formatting_errors: bool
     cmake_keys_no_rosdep: frozenset[str] = frozenset()
+    skip_launch_dep_check: bool = False
 
 
 @dataclass

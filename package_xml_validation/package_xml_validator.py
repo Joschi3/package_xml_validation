@@ -13,6 +13,7 @@ import lxml.etree as ET
 
 try:
     from .helpers.cmake_parsers import _DEFAULT_CMAKE_KEYS_NO_ROSDEP
+    from .helpers.exception_parser import DependencyExceptions, parse_exceptions
     from .helpers.logger import get_logger
     from .helpers.rosdep_validator import RosdepValidator
     from .helpers.pkg_xml_formatter import PackageXmlFormatter
@@ -30,6 +31,10 @@ try:
     from .helpers.workspace import find_package_xml_files
 except ImportError:
     from helpers.cmake_parsers import _DEFAULT_CMAKE_KEYS_NO_ROSDEP  # type: ignore[no-redef]
+    from helpers.exception_parser import (  # type: ignore[no-redef]
+        DependencyExceptions,
+        parse_exceptions,
+    )
     from helpers.logger import get_logger  # type: ignore[no-redef]
     from helpers.rosdep_validator import RosdepValidator  # type: ignore[no-redef]
     from helpers.pkg_xml_formatter import PackageXmlFormatter  # type: ignore[no-redef]
@@ -63,6 +68,8 @@ class PackageXmlValidator:
         path: str | None = None,
         verbose: bool = False,
         cmake_keys_no_rosdep: Iterable[str] | None = None,
+        ignored_deps: Iterable[str] | None = None,
+        skip_launch_dep_check: bool = False,
     ) -> None:
         """Initialize the package.xml validator with feature flags.
 
@@ -79,12 +86,17 @@ class PackageXmlValidator:
             cmake_keys_no_rosdep: Additional CMake `find_package` names that do
                 not require a `package.xml` `<depend>` entry. Merged with the
                 built-in defaults; never replaces them.
+            ignored_deps: Global set of dependency names to ignore in validation.
+            skip_launch_dep_check: Skip launch and test file dependency checks.
 
         Returns:
             None.
 
         """
         self.verbose = verbose
+        self.global_ignored_deps = (
+            frozenset(ignored_deps) if ignored_deps else frozenset()
+        )
         self.missing_deps_only = missing_deps_only
         self.ignore_formatting_errors = ignore_formatting_errors
         self.check_only = check_only or missing_deps_only or ignore_formatting_errors
@@ -117,6 +129,7 @@ class PackageXmlValidator:
             missing_deps_only=self.missing_deps_only,
             ignore_formatting_errors=self.ignore_formatting_errors,
             cmake_keys_no_rosdep=effective_cmake_keys,
+            skip_launch_dep_check=skip_launch_dep_check,
         )
 
         # num_checks and check_count are set per-file in check_and_format_files
@@ -162,6 +175,12 @@ class PackageXmlValidator:
         exec_deps = self.formatter.retrieve_exec_dependencies(root)
         test_deps = self.formatter.retrieve_test_dependencies(root)
 
+        # Parse per-package exceptions from XML comments and merge with global
+        exceptions = parse_exceptions(root)
+        if self.global_ignored_deps:
+            merged = exceptions.ignored_deps | self.global_ignored_deps
+            exceptions = DependencyExceptions(ignored_deps=merged)
+
         steps = [
             FormatterValidationStep(self.validation_config, self.formatter),
             LaunchDependencyStep(
@@ -171,6 +190,7 @@ class PackageXmlValidator:
                 package_name,
                 exec_deps,
                 test_deps,
+                exceptions,
             ),
         ]
 
@@ -198,7 +218,10 @@ class PackageXmlValidator:
         if self.compare_with_cmake and rosdep_validator is not None:
             steps.append(
                 CMakeComparisonStep(
-                    self.validation_config, self.formatter, rosdep_validator
+                    self.validation_config,
+                    self.formatter,
+                    rosdep_validator,
+                    exceptions,
                 )
             )
 
@@ -388,6 +411,19 @@ def main() -> None:
         ),
     )
 
+    parser.add_argument(
+        "--ignore-deps",
+        type=str,
+        default="",
+        help="Comma-separated list of dependency names to globally ignore in validation.",
+    )
+
+    parser.add_argument(
+        "--skip-launch-dep-check",
+        action="store_true",
+        help="Skip checking for missing dependencies in launch and test files.",
+    )
+
     argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
@@ -407,6 +443,12 @@ def main() -> None:
         print("Cannot use --compare-with-cmake with --skip-rosdep-key-validation.")
         args.compare_with_cmake = False
 
+    global_ignored = (
+        [d.strip() for d in args.ignore_deps.split(",") if d.strip()]
+        if args.ignore_deps
+        else []
+    )
+
     formatter = PackageXmlValidator(
         check_only=args.check_only
         or args.missing_deps_only
@@ -420,6 +462,8 @@ def main() -> None:
         ignore_formatting_errors=args.ignore_formatting_errors,
         path=args.file if args.file else args.src[0],
         cmake_keys_no_rosdep=args.ignore_cmake_key,
+        ignored_deps=global_ignored,
+        skip_launch_dep_check=args.skip_launch_dep_check,
     )
 
     if args.file:

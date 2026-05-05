@@ -104,8 +104,8 @@ This tool enforces the standard ROS 2 element order:
 
 ### 2. Dependency Integrity
 
-* **Launch File Scanning:** Scans `.py`, `.yaml`, and `.xml` launch files. If a package is used in a launch file but missing from `package.xml`, it adds it as an `<exec_depend>` or `<test_depend>`.
-* **CMake Synchronization:** Compares `package.xml` against `CMakeLists.txt` to ensure build dependencies match. It adds missing as `<depend>` or `<test_depend>`.
+* **Launch File Scanning:** Scans `.py`, `.yaml`, and `.xml` launch files. If a package is used in a launch file but missing from `package.xml`, it adds it as an `<exec_depend>` or `<test_depend>`. Can be disabled with `--skip-launch-dep-check` when launch scanning produces false positives or is not desired for a given package.
+* **CMake Synchronization:** Compares `package.xml` against `CMakeLists.txt` to ensure build dependencies match, adding missing entries as `<depend>` or `<test_depend>`. Calls of the form `find_package(<pkg> QUIET)` (with `QUIET` and no `REQUIRED`) are treated as optional and skipped; all other forms — `find_package(<pkg>)`, `find_package(<pkg> REQUIRED)`, and `find_package(<pkg> REQUIRED QUIET)` — are enforced in `package.xml`.
 * **Rosdep Validation:** Verifies that your dependency names exist as valid keys in the rosdep database.
 
 ### 3. Build Configuration
@@ -178,6 +178,41 @@ package-xml-validator . --compare-with-cmake --auto-fill-missing-deps
 | `--skip-rosdep-key-validation` | Skip verifying if dependency names exist in the `rosdep` database. |
 | `--missing-deps-only` | Skips formatting checks; only looks for missing dependencies. |
 | `--ignore-cmake-key KEY` | Treat `find_package(KEY ...)` in `CMakeLists.txt` as not requiring a `package.xml` `<depend>` entry. Repeatable. Merged with the built-in defaults (`Threads`, `OpenMP`, `ament_cmake`). |
+| `--ignore-deps dep1,dep2` | Comma-separated list of dependency names to globally ignore in validation. |
+| `--skip-launch-dep-check` | Skip checking for missing dependencies in launch and test files. |
+
+---
+
+## Ignoring Dependencies
+
+Some dependencies detected in `CMakeLists.txt` or launch files should not be declared in `package.xml` — typically when a package pulls in heavy transitive dependencies (e.g. `rviz2` and its GUI stack) that should not be installed on every target machine.
+
+> **Prefer splitting the package first.** For example, rather than a single `robot_description` package containing both URDF/xacro files *and* an RViz visualization launch file, split it into `robot_description` (model files) and `robot_description_visualization` (RViz launch files). Each package then declares only what it truly needs, and deploying `robot_description` to a robot won't drag in `rviz2`.
+
+If splitting is not practical, the tool recognizes a `validator:ignore` directive inside XML comments:
+
+```xml
+<package format="3">
+  <name>robot_description</name>
+  <!-- ... -->
+
+  <!-- validator:ignore rviz2 joint_state_publisher_gui -->
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <!-- ... -->
+</package>
+```
+
+- Names are space-separated after `validator:ignore`.
+- The directive may appear anywhere inside the `<package>` element; multiple directives in the same file are merged.
+- Listed dependencies are neither flagged as missing nor added by `--auto-fill-missing-deps`.
+- Scope is per-file — each `package.xml` manages its own ignore list.
+
+For a global override — typically in CI — use the `--ignore-deps` CLI argument:
+
+```bash
+package-xml-validator . --compare-with-cmake --ignore-deps rviz2,joint_state_publisher_gui
+```
 
 ---
 
