@@ -166,7 +166,18 @@ class TestPackageXmlValidator(unittest.TestCase):
                             xml_file,
                         )
                         valid = formatter.check_and_format_files([xml_file])
-                        if not pkg == "pkg_correct":
+                        # Plain Python packages get a soft finding (warning,
+                        # not error) when <buildtool_depend>ament_python</…>
+                        # is missing or wrong — the rolling tutorial's
+                        # generated package.xml omits it entirely. So in
+                        # non-FULL modes these fixtures pass validation.
+                        is_soft_finding = (
+                            build_type == "ament_python"
+                            and pkg
+                            in ("pkg_no_buildtool_depend", "pkg_false_buildtool_depend")
+                            and type != FormatterType.FULL
+                        )
+                        if not pkg == "pkg_correct" and not is_soft_finding:
                             self.assertFalse(
                                 valid,
                                 f"XML file {xml_file} is expected to be invalid but was valid. (using formatter: {type.value})",

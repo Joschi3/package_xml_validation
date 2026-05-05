@@ -18,15 +18,20 @@ if TYPE_CHECKING:
 class BuildToolDependStep(ValidationStep):
     """Verify (and optionally insert) the package's ``<buildtool_depend>``.
 
-    Rule: a CMake package needs ``<buildtool_depend>ament_cmake</buildtool_depend>``;
-    a Python package needs ``ament_python``; message packages additionally
-    need ``rosidl_default_generators``. Manifest-only packages (UNKNOWN
-    type) are skipped with a warning rather than auto-filled.
+    Rule: a CMake package needs ``<buildtool_depend>ament_cmake</buildtool_depend>``
+    (hard requirement — the package will not build without it); message
+    packages additionally need ``rosidl_default_generators``. Python
+    packages *should* declare ``ament_python``, but the rolling
+    "Creating a package" tutorial generates a ``package.xml`` without
+    it (only ``<export><build_type>ament_python</build_type></export>``)
+    and still works, so absence is reported as a warning rather than an
+    error. Manifest-only packages (UNKNOWN type) are skipped with a
+    warning rather than auto-filled.
 
     Reads: ``root``, plus ``CMakeLists.txt``/``setup.py`` siblings via
     ``get_package_type``. Mutates only when ``auto_fill_missing_deps=True``;
-    otherwise emits a critical error. Skipped when
-    ``missing_deps_only=True``.
+    otherwise emits a critical error (CMake/msg) or a warning (Python).
+    Skipped when ``missing_deps_only=True``.
     """
 
     name = "Build tool dependency"
@@ -88,23 +93,38 @@ class BuildToolDependStep(ValidationStep):
                 f" <buildtool_depend>{PackageType.MSG_PKG.value}</buildtool_depend>"
             )
 
+        # The ament_python tag is optional per the rolling tutorial; a plain
+        # Python package missing it is a soft finding, not a hard error.
+        is_soft_finding = pkg_type == PackageType.PYTHON_PKG and not is_msg_pkg
+
         if self.config.check_only:
             if len(buildtool) == 0:
-                result.errors.append(
-                    f"Missing <buildtool_depend> tag in {pkg_name}/package.xml. Please include {corrected_buildtool_str}."
+                msg = (
+                    f"Missing <buildtool_depend> tag in {pkg_name}/package.xml. "
+                    f"Please include {corrected_buildtool_str}."
                 )
             else:
-                result.errors.append(
-                    f"Incorrect <buildtool_depend> in {pkg_name}/package.xml. Expected {corrected_buildtool_str}, found {buildtool}."
+                msg = (
+                    f"Incorrect <buildtool_depend> in {pkg_name}/package.xml. "
+                    f"Expected {corrected_buildtool_str}, found {buildtool}."
                 )
-            result.valid = False
+            if is_soft_finding:
+                result.warnings.append(msg)
+            else:
+                result.errors.append(msg)
+                result.valid = False
             return result
 
         if not self.config.auto_fill_missing_deps:
-            result.critical_errors.append(
-                f"Cannot auto-fill missing <buildtool_depend> in {pkg_name}/package.xml. Please add it manually."
+            msg = (
+                f"Cannot auto-fill missing <buildtool_depend> in "
+                f"{pkg_name}/package.xml. Please add it manually."
             )
-            result.valid = False
+            if is_soft_finding:
+                result.warnings.append(msg)
+            else:
+                result.critical_errors.append(msg)
+                result.valid = False
             return result
 
         self.formatter.add_buildtool_depends(
