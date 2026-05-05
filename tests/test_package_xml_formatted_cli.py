@@ -130,8 +130,8 @@ class TestPackageXmlFormattedCLI(unittest.TestCase):
         self.assertFalse(inst.init_kwargs["check_rosdeps"])
         self.assertFalse(inst.init_kwargs["compare_with_cmake"])
 
-    def test_cli_verbose_and_xmllint_flags_propagate(self):
-        """--verbose and --check-with-xmllint should propagate to validator args."""
+    def test_cli_verbose_flag_propagates(self):
+        """--verbose should propagate to validator args."""
         fake_cls, constructed = make_fake_validator_factory()
         with mock.patch.object(SUT, "PackageXmlValidator", fake_cls):
             with mock.patch.object(sys, "argv", ["prog", "--verbose"]):

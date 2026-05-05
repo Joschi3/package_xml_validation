@@ -11,8 +11,11 @@ Now ignores matches that occur inside comments:
 - YAML: # line comments
 """
 
+import logging
 import os
 import re
+
+logger = logging.getLogger(__name__)
 
 
 REGEX_EXPR = [
@@ -189,8 +192,11 @@ def scan_file(path: str, found: set[str], verbose: bool = False) -> None:
             pkg = m.group(1)
             found.add(pkg)
             if verbose:
-                print(
-                    f"Found package '{pkg}' in {os.path.basename(path)} with regex {REGEX_EXPR[i]}"
+                logger.debug(
+                    "Found package '%s' in %s with regex %s",
+                    pkg,
+                    os.path.basename(path),
+                    REGEX_EXPR[i],
                 )
 
 
@@ -210,7 +216,7 @@ def scan_files(launch_dir: str, verbose: bool = False) -> list[str]:
 
     """
     if not os.path.isdir(launch_dir):
-        print(f"Error: '{launch_dir}' is not a directory.")
+        logger.error("'%s' is not a directory.", launch_dir)
         return []
 
     pkgs: set[str] = set()

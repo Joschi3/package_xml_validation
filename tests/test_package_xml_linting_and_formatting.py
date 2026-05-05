@@ -337,6 +337,48 @@ class TestPackageXmlValidator(unittest.TestCase):
                     f"Unfixable file {fname} should remain invalid when attempting to fix again.",
                 )
 
+    def test_unfixable_packages_logged_as_unresolvable_not_corrected(self):
+        """Unfixable structural failures must surface as 'unresolvable errors',
+        not as a 'Corrected successfully' message — the validator's final
+        summary is what users (and CI) read.
+
+        Regression: previously check_element_occurrences returned False both
+        when it fixed something and when it found an unfixable problem; the
+        FormatterValidationStep treated every False as 'corrected', so a
+        manifest with two diverging <description> tags was reported as a
+        success.
+        """
+        unfixable_files = [
+            f for f in os.listdir(self.unfixable_dir) if f.endswith(".xml")
+        ]
+        self.assertGreater(len(unfixable_files), 0)
+
+        for fname in unfixable_files:
+            with self.subTest(file=fname):
+                src = os.path.join(self.unfixable_dir, fname)
+                dst = os.path.join(self.test_dir, fname)
+                shutil.copy2(src, dst)
+
+                formatter = PackageXmlValidator(
+                    check_only=False, verbose=True, check_rosdeps=False
+                )
+                with self.assertLogs(formatter.logger, level="WARNING") as captured:
+                    valid = formatter.check_and_format_files([dst])
+
+                self.assertFalse(valid)
+                joined = "\n".join(captured.output)
+                self.assertIn(
+                    "unresolvable errors",
+                    joined,
+                    f"Unfixable file {fname} should report 'unresolvable errors' "
+                    f"in the final summary, not be silently corrected. Got:\n{joined}",
+                )
+                self.assertNotIn(
+                    "Corrected `package.xml` files successfully",
+                    joined,
+                    f"Unfixable file {fname} must not be reported as successfully corrected.",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -7,7 +7,7 @@
 
 **Automate `package.xml` consistency in your ROS 2 projects.**
 
-This tool validates your package manifests against the ROS 2 schema, checks for missing dependencies in code/launch files, and automatically formats the XML to standard conventions. **It is designed primarily to be used as a [pre-commit](https://pre-commit.com/) hook.**
+This tool checks your package manifests for required tags, schema-defined ordering, and missing dependencies discovered in `CMakeLists.txt` and launch files, then automatically formats the XML to standard conventions. It does **not** perform full XSD validation — for that, run `xmllint --schema package_format3.xsd` separately. **Designed primarily as a [pre-commit](https://pre-commit.com/) hook.**
 
 ---
 
@@ -97,7 +97,7 @@ This tool enforces the standard ROS 2 element order:
 
 ### 1. XML Formatting & Standards
 
-* **Schema Compliance:** Enforces the presence of required tags (`name`, `version`, `description`, `maintainer`, `license`).
+* **Required Tags:** Enforces the presence of required tags (`name`, `version`, `description`, `maintainer`, `license`) and rejects unknown top-level child tags. Does not perform full XSD validation (e.g. `format` attribute values, attribute requirements like `<maintainer email="…">`, or contents of `<export>`); pair with `xmllint --schema` if you need that.
 * **Strict Ordering:** Reorders elements to match the official ROS 2 standard ([package_format3.xsd](http://download.ros.org/schema/package_format3.xsd)).
 * **Intelligent Sorting:** Groups dependencies (e.g., `build_depend`, `exec_depend`) and sorts them alphabetically.
 * **Non-Destructive:** Preserves your existing comments and indentation.
@@ -112,6 +112,28 @@ This tool enforces the standard ROS 2 element order:
 
 * **Export Validation:** Ensures the correct `<build_type>` (e.g., `ament_cmake`) is exported.
 * **Test Dependencies:** Parses `test/` folders to ensure testing libraries are declared as `<test_depend>`.
+
+---
+
+## 🧭 Architecture
+
+The validator is structured as a small pipeline. For each `package.xml`,
+`PackageXmlValidator` parses the file once, runs a list of validation steps
+against the in-memory tree, and writes back only if a step actually mutated.
+
+| Module | Responsibility |
+| --- | --- |
+| `package_xml_validator.py` | CLI entry point and per-file orchestration (parse → run steps → optionally write). |
+| `helpers/validation_steps/` | One `*Step` class per validation rule. Each docstring states the rule, inputs, and when (if ever) it mutates the tree. |
+| `helpers/formatter/` | Pure structural checks (`structural_checks.py`), tree mutators (`mutations.py`), indentation/pretty-print helpers, and shared schema constants. `PackageXmlFormatter` is a thin facade. |
+| `helpers/cmake_parsers.py` | Lightweight regex-based CMake parser used by `CMakeComparisonStep`. |
+| `helpers/find_launch_dependencies.py` | Extracts package names referenced from launch files for `LaunchDependencyStep`. |
+| `helpers/rosdep_validator.py`, `rosdep_wrapper.py` | Resolve rosdep keys + workspace packages; the wrapper is the single boundary against the untyped `rosdep2`. |
+| `helpers/workspace.py` | ROS workspace layout discovery (locate the `<ws>/src` for a given path). |
+
+To add a new validation rule, create a new file under `helpers/validation_steps/`
+exporting a subclass of `ValidationStep`, then register it in
+`PackageXmlValidator._build_steps`.
 
 ---
 
@@ -155,6 +177,7 @@ package-xml-validator . --compare-with-cmake --auto-fill-missing-deps
 | `--strict-cmake-checking` | Treat unresolved CMake dependencies as errors instead of warnings. |
 | `--skip-rosdep-key-validation` | Skip verifying if dependency names exist in the `rosdep` database. |
 | `--missing-deps-only` | Skips formatting checks; only looks for missing dependencies. |
+| `--ignore-cmake-key KEY` | Treat `find_package(KEY ...)` in `CMakeLists.txt` as not requiring a `package.xml` `<depend>` entry. Repeatable. Merged with the built-in defaults (`Threads`, `OpenMP`, `ament_cmake`). |
 | `--ignore-deps dep1,dep2` | Comma-separated list of dependency names to globally ignore in validation. |
 | `--skip-launch-dep-check` | Skip checking for missing dependencies in launch and test files. |
 

@@ -5,7 +5,7 @@ import sys
 if os.getenv("COVERAGE", "1") == "1":
     import coverage
 
-    cov = coverage.Coverage(source=["package_xml_validation"])
+    cov = coverage.Coverage(source=["package_xml_validation"], branch=True)
     cov.start()
 
 suite = unittest.defaultTestLoader.discover("tests")

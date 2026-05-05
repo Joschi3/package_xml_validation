@@ -11,43 +11,23 @@ from collections.abc import Iterable
 import argcomplete
 import lxml.etree as ET
 
-try:
-    from .helpers.exception_parser import DependencyExceptions, parse_exceptions
-    from .helpers.logger import get_logger
-    from .helpers.rosdep_validator import RosdepValidator
-    from .helpers.pkg_xml_formatter import PackageXmlFormatter
-    from .helpers.validation_steps import (
-        ValidationConfig,
-        FormatterValidationStep,
-        BuildToolDependStep,
-        MemberOfGroupStep,
-        BuildTypeExportStep,
-        RosdepCheckStep,
-        CMakeComparisonStep,
-        LaunchDependencyStep,
-        ValidationStep,
-    )
-    from .helpers.workspace import find_package_xml_files
-except ImportError:
-    from helpers.exception_parser import (  # type: ignore[no-redef]
-        DependencyExceptions,
-        parse_exceptions,
-    )
-    from helpers.logger import get_logger  # type: ignore[no-redef]
-    from helpers.rosdep_validator import RosdepValidator  # type: ignore[no-redef]
-    from helpers.pkg_xml_formatter import PackageXmlFormatter  # type: ignore[no-redef]
-    from helpers.validation_steps import (  # type: ignore[no-redef]
-        ValidationConfig,
-        FormatterValidationStep,
-        BuildToolDependStep,
-        MemberOfGroupStep,
-        BuildTypeExportStep,
-        RosdepCheckStep,
-        CMakeComparisonStep,
-        LaunchDependencyStep,
-        ValidationStep,
-    )
-    from helpers.workspace import find_package_xml_files  # type: ignore[no-redef]
+from .helpers.cmake_parsers import _DEFAULT_CMAKE_KEYS_NO_ROSDEP
+from .helpers.exception_parser import DependencyExceptions, parse_exceptions
+from .helpers.logger import get_logger
+from .helpers.pkg_xml_formatter import PackageXmlFormatter
+from .helpers.rosdep_validator import RosdepValidator
+from .helpers.validation_steps import (
+    BuildToolDependStep,
+    BuildTypeExportStep,
+    CMakeComparisonStep,
+    FormatterValidationStep,
+    LaunchDependencyStep,
+    MemberOfGroupStep,
+    RosdepCheckStep,
+    ValidationConfig,
+    ValidationStep,
+)
+from .helpers.workspace import find_package_xml_files
 
 if TYPE_CHECKING:
     from .helpers.package_types import XmlElement
@@ -65,6 +45,7 @@ class PackageXmlValidator:
         ignore_formatting_errors: bool = False,
         path: str | None = None,
         verbose: bool = False,
+        cmake_keys_no_rosdep: Iterable[str] | None = None,
         ignored_deps: Iterable[str] | None = None,
         skip_launch_dep_check: bool = False,
     ) -> None:
@@ -80,6 +61,9 @@ class PackageXmlValidator:
             ignore_formatting_errors: Skip formatting-only checks.
             path: Path used for workspace discovery in rosdep validation.
             verbose: Enable verbose logging.
+            cmake_keys_no_rosdep: Additional CMake `find_package` names that do
+                not require a `package.xml` `<depend>` entry. Merged with the
+                built-in defaults; never replaces them.
             ignored_deps: Global set of dependency names to ignore in validation.
             skip_launch_dep_check: Skip launch and test file dependency checks.
 
@@ -109,8 +93,10 @@ class PackageXmlValidator:
             self.rosdep_validator = RosdepValidator(pkg_path=path)
         self.formatter = PackageXmlFormatter(
             check_only=self.check_only,
-            check_with_xmllint=False,
             verbose=verbose,
+        )
+        effective_cmake_keys = _DEFAULT_CMAKE_KEYS_NO_ROSDEP | frozenset(
+            cmake_keys_no_rosdep or ()
         )
         self.validation_config = ValidationConfig(
             check_only=self.check_only,
@@ -120,38 +106,14 @@ class PackageXmlValidator:
             strict_cmake_checking=self.strict_cmake_checking,
             missing_deps_only=self.missing_deps_only,
             ignore_formatting_errors=self.ignore_formatting_errors,
+            cmake_keys_no_rosdep=effective_cmake_keys,
             skip_launch_dep_check=skip_launch_dep_check,
         )
-        self.encountered_unresolvable_error = False
 
-        # calculate num checks
-        self.num_checks = self._calculate_num_checks()
+        # num_checks and check_count are set per-file in check_and_format_files
+        # once the actual step list has been built.
+        self.num_checks = 0
         self.check_count = 1
-
-    def _calculate_num_checks(self) -> int:
-        """Calculate the total number of checks based on configuration.
-
-        Args:
-            None.
-
-        Returns:
-            Number of checks expected to run.
-
-        """
-        if self.missing_deps_only:
-            num_checks = 1  # launch dependency check always runs
-            if self.compare_with_cmake:
-                num_checks += 1
-            return num_checks
-
-        base_checks = 11
-        if self.ignore_formatting_errors:
-            base_checks -= 6  # Skip formatting-only checks
-        if self.check_rosdeps:
-            base_checks += 1
-        if self.compare_with_cmake:
-            base_checks += 1
-        return base_checks
 
     def log_check_result(self, check_name: str, result: bool) -> None:
         """Log the result of a check and advance the counter.
@@ -173,8 +135,6 @@ class PackageXmlValidator:
                 f"❌ [{self.check_count}/{self.num_checks}] {check_name} failed."
             )
         self.check_count += 1
-        if self.check_count > self.num_checks:
-            self.check_count = 1
 
     def _build_steps(
         self, root: XmlElement, xml_file: str, package_name: str | None
@@ -256,6 +216,7 @@ class PackageXmlValidator:
 
         """
         self.all_valid = True
+        encountered_unresolvable_error = False
         for xml_file in package_xml_files:
             self.xml_valid = True
             pkg_name = os.path.basename(os.path.dirname(xml_file))
@@ -267,12 +228,18 @@ class PackageXmlValidator:
             if not os.path.isfile(xml_file):
                 raise IsADirectoryError(f"{xml_file} is not a file.")
             try:
-                parser = ET.XMLParser()
+                # Explicit hardening against XXE: disable network access for
+                # external entities and skip entity resolution entirely.
+                # lxml 5.x already defaults to no_network=True and
+                # resolve_entities='internal', but stating it at the call
+                # site documents intent and survives future lxml/parser swaps.
+                parser = ET.XMLParser(no_network=True, resolve_entities=False)
                 tree = ET.parse(xml_file, parser)
                 root = tree.getroot()
-            except Exception as e:
-                self.logger.error(f"Error processing {xml_file}: {e}")
+            except (ET.XMLSyntaxError, OSError) as e:
+                self.logger.error(f"Error parsing {xml_file}: {e}")
                 self.xml_valid = False
+                self.all_valid = False
                 continue
 
             package_name = self.formatter.get_package_name(root)
@@ -280,12 +247,14 @@ class PackageXmlValidator:
             self.num_checks = len(steps)
             self.check_count = 1
 
+            xml_changed = False
             for step in steps:
                 result = step.perform_check(root, xml_file)
                 root = result.root
+                # Invariant: any step that sets `changed=True` also sets
+                # `valid=False`, so AND-ing with `valid` is sufficient.
                 self.xml_valid &= result.valid
-                if result.changed:
-                    self.xml_valid = False
+                xml_changed |= result.changed
 
                 for warning in result.warnings:
                     self.logger.warning(warning)
@@ -293,13 +262,17 @@ class PackageXmlValidator:
                     self.logger.error(error)
                 for critical in result.critical_errors:
                     self.logger.error(critical)
-                    self.encountered_unresolvable_error = True
+                    encountered_unresolvable_error = True
 
                 self.log_check_result(step.name, result.valid and not result.changed)
 
-            # Write back to file if not in check-only mode
-            if not self.xml_valid and not self.check_only:
-                # ET.indent(root, space="  ")
+            # Only write when a step actually mutated; an unfixable failure
+            # must not dirty the user's tree with a no-op reserialization.
+            if xml_changed and not self.check_only:
+                # Re-normalize whitespace/indentation in case a mutator
+                # (e.g. add_buildtool_depends) left the tree slightly off.
+                self.formatter.check_for_empty_lines(root, xml_file)
+                self.formatter.check_indentation(root)
                 tree.write(
                     xml_file, encoding="utf-8", xml_declaration=True, pretty_print=True
                 )
@@ -312,7 +285,7 @@ class PackageXmlValidator:
             )
             return False
         elif not self.all_valid:
-            if self.encountered_unresolvable_error:
+            if encountered_unresolvable_error:
                 self.logger.warning(
                     "⚠️ Some `package.xml` files have unresolvable errors. Please check the logs for details. 🔍"
                 )
@@ -376,7 +349,7 @@ def main() -> None:
     parser.add_argument(
         "--skip-rosdep-key-validation",
         action="store_true",
-        help="Check if rosdeps are valid.",
+        help="Skip verifying that dependency names exist in the rosdep database.",
     )
 
     parser.add_argument(
@@ -407,6 +380,18 @@ def main() -> None:
         "--strict-cmake-checking",
         action="store_true",
         help="Treat unresolved CMake dependencies as errors instead of warnings.",
+    )
+
+    parser.add_argument(
+        "--ignore-cmake-key",
+        action="append",
+        default=[],
+        metavar="KEY",
+        help=(
+            "CMake find_package name that does not require a package.xml "
+            "<depend> entry. May be passed multiple times. Merged with the "
+            "built-in defaults (Threads, OpenMP, ament_cmake)."
+        ),
     )
 
     parser.add_argument(
@@ -459,6 +444,7 @@ def main() -> None:
         missing_deps_only=args.missing_deps_only,
         ignore_formatting_errors=args.ignore_formatting_errors,
         path=args.file if args.file else args.src[0],
+        cmake_keys_no_rosdep=args.ignore_cmake_key,
         ignored_deps=global_ignored,
         skip_launch_dep_check=args.skip_launch_dep_check,
     )

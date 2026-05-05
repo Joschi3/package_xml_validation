@@ -12,11 +12,14 @@ $ python3 find_ros_ws_pkgs.py --full-paths .           # prints names + paths
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from collections.abc import Iterable
 import os
+
+logger = logging.getLogger(__name__)
 
 
 def find_package_dir(path: Path) -> Path:
@@ -168,13 +171,13 @@ def get_pkgs_in_wrs(path: str | Path) -> list[str]:
         pkg_dir = find_package_dir(path)
         ws_root = find_workspace_root(pkg_dir)
         src_dir = ws_root / "src"
-    except Exception as e:
-        print(f"Exception extracting local pkgs: {e}")
+    except (ValueError, OSError) as e:
+        logger.warning("Exception extracting local pkgs: %s", e)
         if pkg_dir and os.path.exists(pkg_dir.absolute()):
-            print(f"Attempting to extract local pkgs from {pkg_dir}")
+            logger.info("Attempting to extract local pkgs from %s", pkg_dir)
             src_dir = pkg_dir.parent
         else:
-            print("Unable to extract local pkgs")
+            logger.warning("Unable to extract local pkgs")
             return []
     pkgs = pkg_iterator(src_dir)
     return sorted(pkgs)

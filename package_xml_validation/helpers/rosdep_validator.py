@@ -4,7 +4,6 @@ import re
 import yaml
 import difflib
 from importlib import resources
-from pathlib import Path
 from typing import Any
 from collections.abc import Iterable
 
@@ -18,21 +17,7 @@ try:
 except ImportError:
     HAS_REGEX_MODULE = False
 
-try:
-    from .workspace import get_pkgs_in_wrs
-except ImportError:
-
-    def get_pkgs_in_wrs(path: str | Path) -> list[str]:
-        """Fallback workspace package discovery when helpers cannot be imported.
-
-        Args:
-            path: Workspace path to inspect.
-
-        Returns:
-            An empty list, indicating no local packages were discovered.
-
-        """
-        return []
+from .workspace import get_pkgs_in_wrs
 
 
 class RosdepValidator:
@@ -90,7 +75,7 @@ class RosdepValidator:
             )
             with map_file.open("r", encoding="utf-8") as handle:
                 mapping = yaml.safe_load(handle) or {}
-        except Exception:
+        except (OSError, yaml.YAMLError):
             return {}
 
         if not isinstance(mapping, dict):
@@ -121,8 +106,6 @@ class RosdepValidator:
             )
             return installer is not None
         except (rosdep_wrapper.ResolutionError, KeyError):
-            return False
-        except Exception:
             return False
 
     def resolve_cmake_dependency(self, dependency: str) -> str | None:
@@ -172,7 +155,7 @@ class RosdepValidator:
         for view_name in self.sources_loader.get_loadable_views():
             try:
                 view = self.sources_loader.get_source(view_name=view_name)
-            except Exception:
+            except rosdep_wrapper.ResourceNotFound:
                 continue
 
             # Skip remote sources

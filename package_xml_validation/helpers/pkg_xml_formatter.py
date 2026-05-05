@@ -1,57 +1,19 @@
 from __future__ import annotations
 
 import logging
-from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 from collections.abc import Iterable
 
-import lxml.etree as ET
-
-try:
-    from .logger import get_logger
-except ImportError:
-    from helpers.logger import get_logger  # type: ignore[no-redef]
+from .formatter import dependency_queries, mutations, structural_checks
+from .formatter.constants import ELEMENTS, NEW_LINE, NEW_LINE_BEFORE
+from .formatter.indentation import prettyprint as _prettyprint
+from .formatter.indentation import resolve_indentation
+from .logger import get_logger
 
 if TYPE_CHECKING:
     from .package_types import XmlElement
 
-# tuple of (element_name, min_occurrences, max_occurrences)
-# min_occurrences is 1 if the element is required, 0 if it can be missing
-# max_occurrences is None if there is no limit, otherwise it is a positive integer
-ELEMENTS = [
-    ("name", 1, 1),
-    ("version", 1, 1),
-    ("description", 1, 1),
-    ("maintainer", 1, None),
-    ("license", 1, None),
-    ("url", 0, None),
-    ("author", 0, None),
-    ("buildtool_depend", 0, None),
-    ("buildtool_export_depend", 0, None),
-    ("build_depend", 0, None),
-    ("build_export_depend", 0, None),
-    ("depend", 0, None),
-    ("exec_depend", 0, None),
-    ("doc_depend", 0, None),
-    ("test_depend", 0, None),
-    ("group_depend", 0, None),
-    ("member_of_group", 0, None),
-    ("export", 0, 1),
-]
-
-NEW_LINE_BEFORE = [
-    "buildtool_depend",
-    "build_depend",
-    "depend",
-    "exec_depend",
-    "doc_depend",
-    "test_depend",
-    "group_depend",
-    "member_of_group",
-    "export",
-]
-
-NEW_LINE = "\n"
+__all__ = ["ELEMENTS", "NEW_LINE", "NEW_LINE_BEFORE", "PackageXmlFormatter"]
 
 
 class PackageXmlFormatter:
@@ -59,7 +21,6 @@ class PackageXmlFormatter:
         self,
         check_only: bool = False,
         verbose: bool = False,
-        check_with_xmllint: bool = False,
         logger: logging.Logger | None = None,
     ) -> None:
         """Initialize formatter configuration and logger.
@@ -67,7 +28,6 @@ class PackageXmlFormatter:
         Args:
             check_only: If True, do not mutate XML when checks fail.
             verbose: If True, enable verbose logging.
-            check_with_xmllint: If True, enable xmllint checks (unused here).
             logger: Optional logger instance to use.
 
         Returns:
@@ -75,824 +35,98 @@ class PackageXmlFormatter:
 
         """
         self.check_only = check_only
-        self.check_with_xmllint = check_with_xmllint
         self.logger = (
             logger
             if logger
             else get_logger(__name__, level="verbose" if verbose else "normal")
         )
-        self.encountered_unresolvable_error = False
 
     def _resolve_indentation(self, root: XmlElement, default: str = "  ") -> str:
-        """Infer indentation from the first child tail, or return a default.
-
-        Args:
-            root: XML root element.
-            default: Indentation string to use when inference fails.
-
-        Returns:
-            The inferred indentation string.
-
-        """
-        if len(root) == 0:
-            return default
-        tail = root[0].tail
-        if not tail or not isinstance(tail, str):
-            return default
-        if NEW_LINE in tail:
-            return tail[tail.rfind(NEW_LINE) + 1 :]
-        return tail
+        """Infer indentation from the first child tail, or return a default."""
+        return resolve_indentation(root, default)
 
     def prettyprint(self, element: XmlElement, **kwargs: Any) -> None:
-        """Print a pretty-printed XML element to stdout.
-
-        Args:
-            element: XML element to print.
-            **kwargs: Keyword args forwarded to lxml.etree.tostring.
-
-        Returns:
-            None.
-
-        """
-        xml = ET.tostring(element, pretty_print=True, **kwargs)
-        print(xml.decode(), end="")
+        """Print a pretty-printed XML element to stdout."""
+        _prettyprint(element, **kwargs)
 
     def check_dependency_order(self, root: XmlElement, xml_file: str) -> bool:
-        """Check and optionally correct dependency ordering.
-
-        Args:
-            root: XML root element.
-            xml_file: Path to the XML file (used for logging).
-
-        Returns:
-            True if order is correct (or check_only is False and no changes needed),
-            False if incorrect or corrected.
-
-        """
-
-        dependency_order = [elm[0] for elm in ELEMENTS]
-        dependencies_with_comments: dict[
-            str, list[tuple[XmlElement, list[XmlElement]]]
-        ] = {dep: [] for dep in dependency_order}
-        current_order: list[str] = []
-
-        # Collect dependencies and track their order
-        current_comments: list[XmlElement] = []
-        for elem in root:
-            # lxml-stubs types ``elem.tag`` as ``str``; at runtime comment
-            # nodes have ``tag is ET.Comment`` (a callable), so the identity
-            # check is intentional.
-            if elem.tag is ET.Comment:  # type: ignore[comparison-overlap]
-                current_comments.append(elem)  # type: ignore[unreachable]
-            if isinstance(elem.tag, str) and elem.tag in dependency_order:
-                dependencies_with_comments[elem.tag].append((elem, current_comments))
-                current_comments = []
-                current_order.append(elem.tag)
-
-        # Determine correct order for type grouping
-        correct_order = []
-        for dep_type in dependency_order:
-            correct_order.extend([dep_type] * len(dependencies_with_comments[dep_type]))
-
-        # Check type order mismatch
-        order_mismatch = False
-        if current_order != correct_order:
-            self.logger.error(f"Dependency order in {xml_file} is incorrect.")
-            order_mismatch = True
-
-        if self.check_only and order_mismatch:
-            return False
-        # Check alphabetical order within each group
-        if current_order == correct_order:
-            for dep_type, elem_with_commtents in dependencies_with_comments.items():
-                names = [e[0].text or "" for e in elem_with_commtents]
-                if names != sorted(names):
-                    self.logger.debug(
-                        f"Dependency order in {xml_file} is incorrect: {dep_type} elements are not sorted."
-                    )
-                    order_mismatch = True
-                    break
-
-        if self.check_only and order_mismatch:
-            self.logger.error(f"Dependency order in {xml_file} is incorrect.")
-            return False
-
-        if self.check_only:
-            return True
-
-        if not order_mismatch:
-            return True
-
-        indentation = self._resolve_indentation(root)
-        # Remove old dependency elements from root
-        for dep_type in dependency_order:
-            for dep_elem, dep_comments in dependencies_with_comments[dep_type]:
-                for comment in dep_comments:
-                    root.remove(comment)
-                root.remove(dep_elem)
-        # filter out empty lists from dependency order
-        dependency_order = [
-            dep for dep in dependency_order if dependencies_with_comments[dep]
-        ]
-        insert_index = 0
-        for index, dep_type in enumerate(dependency_order):
-            sorted_elems = sorted(
-                dependencies_with_comments[dep_type], key=lambda x: x[0].text or ""
-            )
-            for i, elem_with_comment in enumerate(sorted_elems):
-                if (
-                    i == len(sorted_elems) - 1
-                    and index + 1 < len(dependency_order)
-                    and dependency_order[index + 1] in NEW_LINE_BEFORE
-                ):
-                    elem_with_comment[0].tail = "\n\n" + indentation
-                else:
-                    elem_with_comment[0].tail = NEW_LINE + indentation
-                for comment in elem_with_comment[1]:
-                    root.insert(insert_index, comment)
-                    insert_index += 1
-                root.insert(insert_index, elem_with_comment[0])
-                insert_index += 1
-        root[-1].tail = NEW_LINE
-
-        self.logger.info(f"Corrected dependency order in {xml_file}.")
-        return False
+        """Check and optionally correct dependency ordering."""
+        return structural_checks.check_dependency_order(
+            root, xml_file, self.check_only, self.logger
+        )
 
     def check_for_duplicates(self, root: XmlElement, xml_file: str) -> bool:
-        """
-        Check for duplicate elements in the XML file.
-        -> meaning tag, text, attributes, and children are the same
-
-        Args:
-            root: XML root element.
-            xml_file: Path to the XML file (used for logging).
-
-        Returns:
-            True if no duplicates found or in check_only mode after successful check.
-            False if duplicates exist (and may be removed if not check_only).
-
-        """
-
-        def element_signature(elem: XmlElement) -> bytes:
-            """Serialize an element to bytes for duplicate detection.
-
-            Args:
-                elem: XML element to serialize.
-
-            Returns:
-                Byte string representing the element without tail content.
-
-            """
-            return ET.tostring(elem, with_tail=False)
-
-        seen: set[bytes] = set()
-        duplicates: list[XmlElement] = []
-        for elem in root:
-            if elem.tag is ET.Comment:  # type: ignore[comparison-overlap]
-                continue  # type: ignore[unreachable]
-            combined = element_signature(elem)
-            if combined in seen:
-                duplicates.append(elem)
-            else:
-                seen.add(combined)
-
-        if duplicates:
-            self.logger.info(
-                f"Duplicate elements found in {xml_file}: {', '.join([elem.tag for elem in duplicates])}"
-            )
-            if self.check_only:
-                return False
-
-        if self.check_only:
-            return True
-
-        if not duplicates:
-            return True
-
-        # Remove duplicates
-        for elem in duplicates:
-            root.remove(elem)
-        return False
+        """Detect (and optionally remove) duplicate elements."""
+        return structural_checks.check_for_duplicates(
+            root, xml_file, self.check_only, self.logger
+        )
 
     def check_element_occurrences(self, root: XmlElement, xml_file: str) -> bool:
-        """
-        Check the min/max occurrences of elements in the XML file.
-        If self.check_only is True, only check for errors without correcting.
-        Otherwise, it removes the extra elements.
-
-        Args:
-            root: XML root element.
-            xml_file: Path to the XML file (used for logging).
-
-        Returns:
-            True if element counts are within allowed bounds.
-            False if counts are incorrect or were corrected.
-
-        """
-        incorrect_occurrences = False
-        for elem, min_occurrences, max_occurrences in ELEMENTS:
-            count = len(root.findall(elem))
-            if count < min_occurrences:
-                self.logger.info(
-                    f"Error: Element <{elem}> in {xml_file} has fewer than {min_occurrences} occurrences."
-                )
-                incorrect_occurrences = True
-                if self.check_only:
-                    return False
-            elif max_occurrences is not None and count > max_occurrences:
-                self.logger.info(
-                    f"Error: Element <{elem}> in {xml_file} has more than {max_occurrences} occurrences."
-                )
-                incorrect_occurrences = True
-                if self.check_only:
-                    return False
-
-        if self.check_only:
-            return True
-
-        if not incorrect_occurrences:
-            return True
-
-        # Correct the occurrences
-        for elem, min_occurrence, max_occurrences in ELEMENTS:
-            elements = root.findall(elem)
-            count = len(elements)
-            if max_occurrences is not None and count > max_occurrences:
-                reference = (
-                    ET.tostring(elements[0], with_tail=False)
-                    if len(elements) > 0
-                    else None
-                )
-                if reference and all(
-                    ET.tostring(elm, with_tail=False) == reference
-                    for elm in elements[1:]
-                ):
-                    for extra in elements[max_occurrences:]:
-                        root.remove(extra)
-                    self.logger.info(
-                        f"Removed identical duplicate element <{elem}> from {xml_file}."
-                    )
-                else:
-                    self.logger.warning(
-                        f"Multiple <{elem}> entries differ. Please resolve manually. There are {count} occurrences in {xml_file} but there should be no more than {max_occurrences}."
-                    )
-            if count < min_occurrence:
-                self.logger.warning(f"Please add the missing element: <{elem}>")
-        return False
+        """Verify element occurrence counts against the schema."""
+        return structural_checks.check_element_occurrences(
+            root, xml_file, self.check_only, self.logger
+        )
 
     def check_element_order(self, root: XmlElement, xml_file: str) -> bool:
-        """
-        Check if the elements in the XML file are in the expected order,
-        ensuring comments remain in front of their respective elements.
-
-        Args:
-            root: XML root element.
-            xml_file: Path to the XML file (used for logging).
-
-        Returns:
-            True if element order is correct.
-            False if order is incorrect or was corrected.
-
-        """
-        # Define the expected order of elements
-        element_order = [elem[0] for elem in ELEMENTS]
-
-        current_order = [elem for elem in root if elem.tag in element_order]
-        misplaced_elements = []
-        for i, elem in enumerate(current_order):
-            if i > 0 and element_order.index(elem.tag) < element_order.index(
-                current_order[i - 1].tag
-            ):
-                misplaced_elements.append(elem)
-        if misplaced_elements:
-            self.logger.error(f"Element order in {xml_file} is incorrect.")
-            self.logger.error(
-                f"Misplaced elements: {', '.join([elem.tag for elem in misplaced_elements])}"
-            )
-            if self.check_only:
-                return False
-
-        if self.check_only:
-            return True
-
-        if not misplaced_elements:
-            return True
-
-        # Helper function to determine the sort key
-        def sort_key(elem: XmlElement) -> int:
-            """Return sort key based on expected element ordering.
-
-            Args:
-                elem: XML element to order.
-
-            Returns:
-                Integer sort key (lower is earlier).
-
-            """
-            try:
-                return element_order.index(elem.tag)
-            except ValueError:
-                # Place unexpected elements at the end
-                return len(element_order)
-
-        # Extract elements and their preceding comments
-        elements_with_comments: list[tuple[XmlElement, list[XmlElement]]] = []
-        current_comments: list[XmlElement] = []
-
-        last_tail = ""
-        indentation = self._resolve_indentation(root)
-        for elem in root:
-            if elem.tag is ET.Comment:  # type: ignore[comparison-overlap]
-                self.logger.error(f"Found comment: {elem.text}")  # type: ignore[unreachable]
-                if last_tail and last_tail[-1] == NEW_LINE:
-                    # inline comment -> append to previous element
-                    elements_with_comments[-1][0].tail = elem.tail
-                    elem.tail = NEW_LINE + indentation
-                    elements_with_comments[-1][1].append(deepcopy(elem))
-                else:
-                    # Ensure only one NEW_LINE in elem.tail
-                    elem.tail = NEW_LINE + (
-                        elem.tail.replace(NEW_LINE, "") if elem.tail else ""
-                    )
-                    current_comments.append(deepcopy(elem))
-            else:
-                elements_with_comments.append((deepcopy(elem), current_comments))
-                current_comments = []
-            last_tail = elem.tail if elem.tail else ""
-
-        # Sort the elements based on the expected order
-        elements_with_comments.sort(key=lambda x: sort_key(x[0]))
-
-        # Clear the root and reinsert elements with their comments
-        for elem in root:
-            root.remove(elem)
-        for elem, comments in elements_with_comments:
-            for comment in comments:
-                root.append(comment)
-                self.logger.debug(f"Reinserted comment: {comment.text}")
-            root.append(elem)
-            self.logger.debug(f"Reinserted element: {elem.tag}")
-
-        return False
+        """Check (and optionally restore) the schema-defined element ordering."""
+        return structural_checks.check_element_order(
+            root, xml_file, self.check_only, self.logger
+        )
 
     def check_for_empty_lines(self, root: XmlElement, xml_file: str) -> bool:
-        """
-        Check for empty lines in the XML file.
-        Make sure there are no more than one empty line between elements.
-
-        Args:
-            root: XML root element.
-            xml_file: Path to the XML file (used for logging).
-
-        Returns:
-            True if whitespace between elements is acceptable.
-            False if empty line issues are found or corrected.
-
-        """
-
-        def remove_inner_newlines(s: str) -> str:
-            """Collapse multiple inner newlines to a single blank line.
-
-            Args:
-                s: Tail string to normalize.
-
-            Returns:
-                Updated tail string with collapsed newlines.
-
-            """
-            first_newline_pos = s.find(NEW_LINE)
-            last_newline_pos = s.rfind(NEW_LINE)
-
-            if first_newline_pos == -1 or first_newline_pos == last_newline_pos:
-                return s
-
-            start = s[: first_newline_pos + 1]
-            middle = s[first_newline_pos + 1 : last_newline_pos].replace(NEW_LINE, "")
-            end = s[last_newline_pos:]
-            return start + middle + end
-
-        found_empty_lines = False
-        for elm in root:
-            if elm.tail and elm.tail.count(NEW_LINE) > 2:
-                self.logger.info(
-                    f"Error: More than one empty line found in {xml_file}."
-                )
-                found_empty_lines = True
-                if self.check_only:
-                    return False
-            if elm.tail is None or elm.tail.count(NEW_LINE) == 0:
-                found_empty_lines = True
-                self.logger.info(
-                    f"Error: Two elements are on the same line in {xml_file}."
-                )
-                if self.check_only:
-                    return False
-
-        if self.check_only:
-            return True
-        if not found_empty_lines:
-            return True
-        # elements after last \n
-        indentation = self._resolve_indentation(root)
-        # correct the empty lines & missing newlines
-        for elm in root:
-            if elm.tail and elm.tail.count(NEW_LINE) > 2:
-                elm.tail = remove_inner_newlines(elm.tail)
-            elif elm.tail and elm.tail.count(NEW_LINE) == 0:
-                elm.tail += NEW_LINE
-            elif elm.tail is None:
-                elm.tail = NEW_LINE + indentation
-        return False
+        """Ensure at most one blank line separates sibling elements."""
+        return structural_checks.check_for_empty_lines(
+            root, xml_file, self.check_only, self.logger
+        )
 
     def check_indentation(
         self, root: XmlElement, level: int = 1, indentation: str = "  "
     ) -> bool:
-        """
-        Check if the indentation of the XML file is correct.
-        recursively checks the indentation of each element.
-
-        Args:
-            root: XML root element.
-            level: Current indentation level.
-            indentation: Indentation string per level.
-
-        Returns:
-            True if indentation is correct.
-            False if indentation is incorrect or corrected.
-
-        """
-        is_correct = True
-
-        def check_indentation_string(string: str | None, expected_indent: str) -> bool:
-            """Validate indentation string against expected indentation.
-
-            Args:
-                string: Indentation string to validate.
-                expected_indent: Expected indentation string.
-
-            Returns:
-                True if indentation matches and includes a newline, otherwise False.
-
-            """
-            if not string or not isinstance(string, str):
-                return False
-            parsed_indentation = string.replace(NEW_LINE, "")
-            return parsed_indentation == expected_indent and NEW_LINE in string
-
-        def fix_indentation(string: str | None, expected_indent: str) -> str:
-            """Fix the indentation of the string to match the expected_indent.
-
-            Args:
-                string: Existing indentation string.
-                expected_indent: Expected indentation string.
-
-            Returns:
-                Corrected indentation string.
-
-            """
-            indent = (
-                string.replace(" ", "") if string and NEW_LINE in string else NEW_LINE
-            )
-            return indent + expected_indent
-
-        def check_and_correct(
-            string: str | None, expected_indent: str, name: str
-        ) -> tuple[str | None, bool]:
-            """Check and optionally correct indentation.
-
-            Args:
-                string: Existing indentation string.
-                expected_indent: Expected indentation string.
-                name: Label used for diagnostics.
-
-            Returns:
-                Tuple of (updated_string, corrected_flag).
-
-            """
-            if not check_indentation_string(string, expected_indent):
-                # self.logger.error(
-                #    f"Incorrect indentation for element '{name}'. Expected: '{expected_indent}', Found: '{string.replace(NEW_LINE, '') if string else 'None'}'"
-                # )
-                if not self.check_only:
-                    string = fix_indentation(string, expected_indent)
-                return string, True
-            return string, False
-
-        root.text, corrected = check_and_correct(
-            root.text, indentation * level, f"{root.tag}-text"
+        """Recursively validate (and optionally fix) indentation."""
+        return structural_checks.check_indentation(
+            root, self.check_only, self.logger, level, indentation
         )
-        is_correct &= not corrected
-
-        for index, elem in enumerate(root):
-            is_last = index == len(root) - 1
-            expected_indent = (
-                indentation * (level - 1) if is_last else indentation * level
-            )
-            elem.tail, corrected = check_and_correct(
-                elem.tail,
-                expected_indent,
-                f"{elem.tag}-{elem.text[:15] if elem.text else 'None'}",
-            )
-            is_correct &= not corrected
-            if len(elem) > 0:  # has children
-                # check children recursively
-                if not self.check_indentation(elem, level + 1, indentation):
-                    is_correct = False
-            else:
-                # make sure there are no new lines in texts
-                if elem.text and NEW_LINE in elem.text:
-                    self.logger.error(
-                        f"Element '{elem.tag}' has new lines in its text: '{elem.text}'"
-                    )
-                    is_correct = False
-                    if not self.check_only:
-                        elem.text = elem.text.replace(NEW_LINE, " ").strip()
-        if not is_correct and self.check_only:
-            self.logger.error(
-                "Incorrect indentation found in package.xml. Please fix the indentations."
-            )
-        elif not is_correct:
-            self.logger.warning("Auto-corrected indentation in package.xml.")
-        return is_correct
 
     def check_for_non_existing_tags(self, root: XmlElement, xml_file: str) -> bool:
-        """Check for tags that are not part of the allowed package.xml schema.
-
-        Args:
-            root: XML root element.
-            xml_file: Path to the XML file (used for logging).
-
-        Returns:
-            True if no unknown tags are found, otherwise False.
-
-        """
-        non_existing_tags = []
-        valid_tags = [e[0] for e in ELEMENTS]
-        for elem in root:
-            if isinstance(elem.tag, str) and elem.tag not in valid_tags:
-                non_existing_tags.append(elem.tag)
-        if non_existing_tags:
-            self.logger.error(
-                f"Unknown tags found in {xml_file}: {', '.join(non_existing_tags)}"
-            )
-            return False
-        return True
+        """Reject tags that are not part of the package.xml schema."""
+        return structural_checks.check_for_non_existing_tags(
+            root, xml_file, self.logger
+        )
 
     def retrieve_all_dependencies(self, root: XmlElement) -> list[str]:
-        """Retrieve all dependency tag values from the XML tree.
-
-        Args:
-            root: XML root element.
-
-        Returns:
-            List of dependency names found in any <*_depend> element.
-
-        """
-        dependencies = []
-        for elem in root:
-            if isinstance(elem.tag, str) and "depend" in elem.tag and elem.text:
-                dependencies.append(elem.text.strip())
-        return dependencies
+        """Retrieve all dependency tag values from the XML tree."""
+        return dependency_queries.retrieve_all_dependencies(root)
 
     def retrieve_build_dependencies(self, root: XmlElement) -> list[str]:
-        """Retrieve build-related dependencies from the XML tree.
-
-        Args:
-            root: XML root element.
-
-        Returns:
-            List of build-related dependency names.
-
-        """
-        build_deps = [
-            "buildtool_depend",
-            "buildtool_export_depend",
-            "build_depend",
-            "build_export_depend",
-            "depend",
-        ]
-        build_dependencies = []
-        for elem in root:
-            if isinstance(elem.tag, str) and elem.tag in build_deps and elem.text:
-                build_dependencies.append(elem.text.strip())
-        return build_dependencies
+        """Retrieve build-related dependencies from the XML tree."""
+        return dependency_queries.retrieve_build_dependencies(root)
 
     def retrieve_test_dependencies(self, root: XmlElement) -> list[str]:
-        """Retrieve test dependencies from the XML tree.
-
-        Args:
-            root: XML root element.
-
-        Returns:
-            List of test dependency names.
-
-        """
-        test_dependencies = []
-        test_deps = ["test_depend", "depend"]
-        for elem in root:
-            if isinstance(elem.tag, str) and elem.tag in test_deps and elem.text:
-                test_dependencies.append(elem.text.strip())
-        return test_dependencies
+        """Retrieve test dependencies from the XML tree."""
+        return dependency_queries.retrieve_test_dependencies(root)
 
     def retrieve_exec_dependencies(self, root: XmlElement) -> list[str]:
-        """Retrieve execution dependencies from the XML tree.
-
-        Args:
-            root: XML root element.
-
-        Returns:
-            List of exec dependency names.
-
-        """
-        exec_dependencies = []
-        exec_deps = ["exec_depend", "depend"]
-        for elem in root:
-            if isinstance(elem.tag, str) and elem.tag in exec_deps and elem.text:
-                exec_dependencies.append(elem.text.strip())
-        return exec_dependencies
+        """Retrieve execution dependencies from the XML tree."""
+        return dependency_queries.retrieve_exec_dependencies(root)
 
     def get_package_name(self, root: XmlElement) -> str | None:
-        """Retrieve the package name from the XML tree.
-
-        Args:
-            root: XML root element.
-
-        Returns:
-            The package name if present, otherwise None.
-
-        """
-        name_elem = root.find("name")
-        if name_elem is not None and name_elem.text:
-            return name_elem.text.strip()
-        return None
+        """Retrieve the package name from the XML tree."""
+        return dependency_queries.get_package_name(root)
 
     def add_dependencies(
         self, root: XmlElement, dependencies: Iterable[str], dep_type: str
     ) -> None:
-        """Add dependency elements to the XML tree in sorted order.
-
-        Args:
-            root: XML root element.
-            dependencies: Iterable of dependency names to add.
-            dep_type: Dependency tag name to insert (e.g., "depend").
-
-        Returns:
-            None.
-
-        """
-        dep_types = [dep[0] for dep in ELEMENTS if "depend" in dep[0]]
-        elements = [dep[0] for dep in ELEMENTS]
-        if dep_type not in dep_types:
-            raise ValueError(f"Invalid dependency type: {dep_type}")
-        indentation = self._resolve_indentation(root)
-        insert_position: int = 0
-        first_of_group: int | None = 0
-        for dep in dependencies:
-            new_elem = ET.Element(dep_type)
-            new_elem.text = dep
-            new_elem.tail = NEW_LINE + indentation
-            # add element to root at correct position -> correct dep group and alphabetical order
-            # case 1: dependency group is empty
-            if not root.findall(dep_type):
-                previous_tag = elements[elements.index(dep_type) - 1]
-                while not root.findall(previous_tag):
-                    previous_tag = elements[elements.index(previous_tag) - 1]
-                # find last element with previous_tag
-                last_element_count = 0
-                for count, elm in enumerate(root):
-                    if isinstance(elm.tag, str) and elm.tag == previous_tag:
-                        last_element_count = count
-                insert_position = last_element_count + 1
-                first_of_group = insert_position
-            # case 2: dependency group is not empty
-            else:
-                # assume list is sorted -> insert at correct position
-                insert_position = 0
-                first_of_group = None
-                for i, elm in enumerate(root):
-                    if isinstance(elm.tag, str) and elm.tag == dep_type:
-                        if first_of_group is None:
-                            first_of_group = i
-                            insert_position = i
-                        if (elm.text or "") < (new_elem.text or ""):
-                            insert_position = i + 1
-            root.insert(insert_position, new_elem)
-            # adapt empty lines -> in case element prior ends with empty line move it to the new element
-            if (
-                insert_position > 0
-                and first_of_group is not None
-                and insert_position > first_of_group
-            ):
-                prev_elem = root[insert_position - 1]
-                if prev_elem.tail and prev_elem.tail.count(NEW_LINE) > 1:
-                    new_elem.tail = prev_elem.tail
-                    prev_elem.tail = NEW_LINE + indentation
-            if insert_position < len(root) - 1:
-                # if next tag is different than the new element, add empty line
-                next_element = root[insert_position + 1]
-                if next_element.tag != new_elem.tag:
-                    new_elem.tail = "\n\n" + indentation
+        """Add dependency elements to the XML tree in sorted order."""
+        mutations.add_dependencies(root, dependencies, dep_type)
 
     def add_build_type_export(self, root: XmlElement, build_type: str) -> None:
-        """
-        Add the build type export to the XML file.
-        If the build type export already exists, it will be updated.
-        If it does not exist, it will be created.
-        Other exports will not be changed(besides the build_type export).
-
-        Args:
-            root: XML root element.
-            build_type: Build type string to set (e.g., "ament_cmake").
-
-        Returns:
-            None.
-
-        """
-        indentation = self._resolve_indentation(root)
-        export = root.find("export")
-        if export is None:
-            export = ET.Element("export")
-            # get last element in root
-            if len(root) > 0:
-                last_element = root[-1]
-                if last_element.tail:
-                    last_element.tail = "\n\n" + indentation
-            export.tail = NEW_LINE
-            root.append(export)
-        build_type_elem = export.find("build_type")
-        if build_type_elem is None:
-            build_type_elem = ET.Element("build_type")
-            build_type_elem.tail = NEW_LINE + indentation
-            export.append(build_type_elem)
-        build_type_elem.text = build_type
-        export.text = NEW_LINE + 2 * indentation
+        """Add or update the build type export."""
+        mutations.add_build_type_export(root, build_type)
 
     def add_buildtool_depends(self, root: XmlElement, buildtool: list[str]) -> None:
-        """
-        Add the buildtool_depend to the XML file.
-        If the buildtool_depend already exists, it will be updated.
-        If it does not exist, it will be created.
-
-        Args:
-            root: XML root element.
-            buildtool: List of buildtool dependency names to insert.
-
-        Returns:
-            None.
-
-        """
-        indentation = self._resolve_indentation(root)
-        # 1. clear existing buildtool_depend elements
-        for elem in root.findall("buildtool_depend"):
-            root.remove(elem)
-        # 2. insertposition -> after license, url, or author element
-        insert_position = 0
-        for i, elem in enumerate(root):
-            if isinstance(elem.tag, str) and elem.tag == "license":
-                insert_position = i + 1
-            elif isinstance(elem.tag, str) and elem.tag == "url":
-                insert_position = i + 1
-            elif isinstance(elem.tag, str) and elem.tag == "author":
-                insert_position = i + 1
-        # 3. add buildtool_depend elements
-        for i, tool in enumerate(buildtool):
-            is_last = i == len(buildtool) - 1
-            new_elem = ET.Element("buildtool_depend")
-            new_elem.text = tool
-            new_elem.tail = "\n\n" if is_last else NEW_LINE
-            new_elem.tail += indentation
-            root.insert(insert_position, new_elem)
-            insert_position += 1
+        """Replace the set of buildtool_depend elements."""
+        mutations.add_buildtool_depends(root, buildtool)
 
     def add_member_of_group(self, root: XmlElement, group_name: str) -> None:
-        """Add a member_of_group element to the XML tree.
-
-        Args:
-            root: XML root element.
-            group_name: Group name to insert.
-
-        Returns:
-            None.
-
-        """
-        indentation = self._resolve_indentation(root)
-        member_of_group = ET.Element("member_of_group")
-        member_of_group.text = group_name
-        member_of_group.tail = "\n\n" + indentation
-        # insert position -> right before export or at the end
-        insert_position = len(root)
-        for i, elem in enumerate(root):
-            if isinstance(elem.tag, str) and elem.tag == "export":
-                insert_position = i
-                break
-        root.insert(insert_position, member_of_group)
-
-
-# if __name__ == "__main__":
-#     # Example usage
-#     pkg = "/home/aljoscha-schmidt/hector/src/hector_gamepad_manager/hector_gamepad_manager/package.xml"
-#     formatter = PackageXmlFormatter(
-#         check_only=False,
-#         verbose=True,
-#         check_with_xmllint=True,
-#     )
+        """Insert a member_of_group element before the export block."""
+        mutations.add_member_of_group(root, group_name)
