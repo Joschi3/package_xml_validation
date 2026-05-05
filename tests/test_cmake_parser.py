@@ -61,12 +61,12 @@ class TestCMakeParser(unittest.TestCase):
                     "Qt5",
                     "Eigen3",
                     "yaml-cpp",
-                    "Python3",
+                    "fastcdr",
                     "fmt",
                     "spdlog",
                 ],
                 "test": ["ament_cmake_gtest", "benchmark"],
-                "absent": ["OpenMP", "Threads", "ament_cmake"],
+                "absent": ["OpenMP", "Threads", "ament_cmake", "Python3"],
             },
         }
 

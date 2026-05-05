@@ -256,6 +256,13 @@ def retrieve_cmake_dependencies(
             inside = fp_match.group(1)
             expanded_tokens = inside.split()
 
+            # Optional lookup: QUIET without REQUIRED means the build does not
+            # fail if the package is missing, so it should not be enforced in
+            # package.xml.
+            upper_tokens = {tok.upper() for tok in expanded_tokens}
+            if "QUIET" in upper_tokens and "REQUIRED" not in upper_tokens:
+                continue
+
             # 1. Truncate at the first Stop Token (e.g., COMPONENTS)
             #    find_package(Pkg 1.0 REQUIRED COMPONENTS a b) -> [Pkg, 1.0, REQUIRED]
             cut_index = len(expanded_tokens)
