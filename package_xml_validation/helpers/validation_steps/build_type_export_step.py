@@ -33,23 +33,11 @@ class BuildTypeExportStep(ValidationStep):
         export = root.find("export")
         export_exists = export is not None
         build_type = export.find("build_type") if export is not None else None
-        build_type_correct = (
-            (
-                pkg_type == PackageType.CMAKE_PKG
-                and build_type is not None
-                and build_type.text == "ament_cmake"
-            )
-            or (
-                pkg_type == PackageType.PYTHON_PKG
-                and build_type is not None
-                and build_type.text == "ament_python"
-            )
-            or (
-                not pkg_type == PackageType.CMAKE_PKG
-                and not pkg_type == PackageType.PYTHON_PKG
-            )
-        )
-        if build_type_correct:
+        expected = _expected_build_type(pkg_type)
+
+        # No expected build_type means the package type doesn't require one;
+        # otherwise the existing build_type element must match.
+        if expected is None or (build_type is not None and build_type.text == expected):
             return result
 
         pkg_name = os.path.basename(os.path.dirname(xml_file))
@@ -70,13 +58,20 @@ class BuildTypeExportStep(ValidationStep):
             result.valid = False
             return result
 
-        self.formatter.add_build_type_export(
-            root,
-            "ament_cmake" if pkg_type == PackageType.CMAKE_PKG else "ament_python",
-        )
+        self.formatter.add_build_type_export(root, expected)
         result.warnings.append(
-            f"Auto-filling <export><build_type>{'ament_cmake' if pkg_type == PackageType.CMAKE_PKG else 'ament_python'}</build_type></export> in {pkg_name}/package.xml."
+            f"Auto-filling <export><build_type>{expected}</build_type></export> in {pkg_name}/package.xml."
         )
         result.changed = True
         result.valid = False
         return result
+
+
+def _expected_build_type(pkg_type: PackageType) -> str | None:
+    """Return the required ``<build_type>`` text for ``pkg_type``, or ``None``
+    when the package type doesn't require one."""
+    if pkg_type == PackageType.CMAKE_PKG:
+        return "ament_cmake"
+    if pkg_type == PackageType.PYTHON_PKG:
+        return "ament_python"
+    return None

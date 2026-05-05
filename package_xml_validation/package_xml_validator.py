@@ -121,34 +121,10 @@ class PackageXmlValidator:
         )
         self.encountered_unresolvable_error = False
 
-        # calculate num checks
-        self.num_checks = self._calculate_num_checks()
+        # num_checks and check_count are set per-file in check_and_format_files
+        # once the actual step list has been built.
+        self.num_checks = 0
         self.check_count = 1
-
-    def _calculate_num_checks(self) -> int:
-        """Calculate the total number of checks based on configuration.
-
-        Args:
-            None.
-
-        Returns:
-            Number of checks expected to run.
-
-        """
-        if self.missing_deps_only:
-            num_checks = 1  # launch dependency check always runs
-            if self.compare_with_cmake:
-                num_checks += 1
-            return num_checks
-
-        base_checks = 11
-        if self.ignore_formatting_errors:
-            base_checks -= 6  # Skip formatting-only checks
-        if self.check_rosdeps:
-            base_checks += 1
-        if self.compare_with_cmake:
-            base_checks += 1
-        return base_checks
 
     def log_check_result(self, check_name: str, result: bool) -> None:
         """Log the result of a check and advance the counter.
@@ -269,9 +245,9 @@ class PackageXmlValidator:
             for step in steps:
                 result = step.perform_check(root, xml_file)
                 root = result.root
+                # Invariant: any step that sets `changed=True` also sets
+                # `valid=False`, so AND-ing with `valid` is sufficient.
                 self.xml_valid &= result.valid
-                if result.changed:
-                    self.xml_valid = False
 
                 for warning in result.warnings:
                     self.logger.warning(warning)
@@ -285,7 +261,6 @@ class PackageXmlValidator:
 
             # Write back to file if not in check-only mode
             if not self.xml_valid and not self.check_only:
-                # ET.indent(root, space="  ")
                 tree.write(
                     xml_file, encoding="utf-8", xml_declaration=True, pretty_print=True
                 )

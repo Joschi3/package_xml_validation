@@ -19,57 +19,82 @@ def add_dependencies(
 ) -> None:
     """Insert ``<dep_type>`` entries into ``root`` in alphabetical order."""
     dep_types = [dep[0] for dep in ELEMENTS if "depend" in dep[0]]
-    elements = [dep[0] for dep in ELEMENTS]
     if dep_type not in dep_types:
         raise ValueError(f"Invalid dependency type: {dep_type}")
     indentation = resolve_indentation(root)
-    insert_position: int = 0
-    first_of_group: int | None = 0
     for dep in dependencies:
         new_elem = ET.Element(dep_type)
         new_elem.text = dep
         new_elem.tail = NEW_LINE + indentation
-        # add element to root at correct position -> correct dep group and alphabetical order
-        # case 1: dependency group is empty
-        if not root.findall(dep_type):
-            previous_tag = elements[elements.index(dep_type) - 1]
-            while not root.findall(previous_tag):
-                previous_tag = elements[elements.index(previous_tag) - 1]
-            # find last element with previous_tag
-            last_element_count = 0
-            for count, elm in enumerate(root):
-                if isinstance(elm.tag, str) and elm.tag == previous_tag:
-                    last_element_count = count
-            insert_position = last_element_count + 1
-            first_of_group = insert_position
-        # case 2: dependency group is not empty
-        else:
-            # assume list is sorted -> insert at correct position
-            insert_position = 0
-            first_of_group = None
-            for i, elm in enumerate(root):
-                if isinstance(elm.tag, str) and elm.tag == dep_type:
-                    if first_of_group is None:
-                        first_of_group = i
-                        insert_position = i
-                    if (elm.text or "") < (new_elem.text or ""):
-                        insert_position = i + 1
+        insert_position, first_of_group = _find_insert_position(
+            root, new_elem, dep_type
+        )
         root.insert(insert_position, new_elem)
-        # adapt empty lines -> in case element prior ends with empty line move it to the new element
-        if (
-            insert_position > 0
-            and first_of_group is not None
-            and insert_position > first_of_group
-        ):
-            prev_elem = root[insert_position - 1]
-            if prev_elem.tail and prev_elem.tail.count(NEW_LINE) > 1:
-                new_elem.tail = prev_elem.tail
-                prev_elem.tail = NEW_LINE + indentation
-        if insert_position < len(root) - 1:
-            # if next tag is different than the new element, add empty line
-            next_element = root[insert_position + 1]
-            if next_element.tag != new_elem.tag:
-                new_elem.tail = "\n\n" + indentation
+        _fix_surrounding_whitespace(
+            root, new_elem, insert_position, first_of_group, indentation
+        )
+
+
+def _find_insert_position(
+    root: XmlElement, new_elem: XmlElement, dep_type: str
+) -> tuple[int, int | None]:
+    """Return ``(insert_position, first_of_group)`` for ``new_elem``.
+
+    ``first_of_group`` is the index of the first existing sibling with the
+    same tag, or ``None`` when the group is empty (in which case the new
+    element is appended after the previous group and ``first_of_group``
+    equals ``insert_position``).
+    """
+    elements = [dep[0] for dep in ELEMENTS]
+    # Group is empty: place after the last element of the previous non-empty group.
+    if not root.findall(dep_type):
+        previous_tag = elements[elements.index(dep_type) - 1]
+        while not root.findall(previous_tag):
+            previous_tag = elements[elements.index(previous_tag) - 1]
+        last_element_count = 0
+        for count, elm in enumerate(root):
+            if isinstance(elm.tag, str) and elm.tag == previous_tag:
+                last_element_count = count
+        insert_position = last_element_count + 1
+        return insert_position, insert_position
+
+    # Group is not empty: insert at the alphabetically correct position.
+    insert_position = 0
+    first_of_group: int | None = None
+    for i, elm in enumerate(root):
+        if isinstance(elm.tag, str) and elm.tag == dep_type:
+            if first_of_group is None:
+                first_of_group = i
+                insert_position = i
+            if (elm.text or "") < (new_elem.text or ""):
+                insert_position = i + 1
+    return insert_position, first_of_group
+
+
+def _fix_surrounding_whitespace(
+    root: XmlElement,
+    new_elem: XmlElement,
+    insert_position: int,
+    first_of_group: int | None,
+    indentation: str,
+) -> None:
+    """Move blank lines between groups so ``new_elem`` sits within its group."""
+    # If the previous sibling ended with a blank line that belonged to the
+    # group boundary, move that blank line onto the new element.
+    if (
+        insert_position > 0
+        and first_of_group is not None
+        and insert_position > first_of_group
+    ):
+        prev_elem = root[insert_position - 1]
+        if prev_elem.tail and prev_elem.tail.count(NEW_LINE) > 1:
+            new_elem.tail = prev_elem.tail
+            prev_elem.tail = NEW_LINE + indentation
+    # If the next sibling is in a different group, ensure a blank line follows.
+    if insert_position < len(root) - 1:
+        next_element = root[insert_position + 1]
+        if next_element.tag != new_elem.tag:
+            new_elem.tail = "\n\n" + indentation
 
 
 def add_build_type_export(root: XmlElement, build_type: str) -> None:

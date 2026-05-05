@@ -23,6 +23,12 @@ class ValidationConfig:
 
 @dataclass
 class ValidationResult:
+    """Outcome of one validation step.
+
+    Invariant: if ``changed`` is True, ``valid`` must also be False — a step
+    that mutated the tree did so because something was wrong with it.
+    """
+
     root: XmlElement
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
