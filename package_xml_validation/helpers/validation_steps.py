@@ -1,11 +1,18 @@
+from __future__ import annotations
+
 import os
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 from .cmake_parsers import read_deps_from_cmake_file
 from .exception_parser import DependencyExceptions
 from .find_launch_dependencies import scan_files
 from .package_types import PackageType, get_package_type
+
+if TYPE_CHECKING:
+    from .package_types import XmlElement
+    from .pkg_xml_formatter import PackageXmlFormatter
+    from .rosdep_validator import RosdepValidator
 
 
 @dataclass(frozen=True)
@@ -22,7 +29,7 @@ class ValidationConfig:
 
 @dataclass
 class ValidationResult:
-    root: object
+    root: XmlElement
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     critical_errors: list[str] = field(default_factory=list)
@@ -33,7 +40,7 @@ class ValidationResult:
 class ValidationStep:
     name = "Validation step"
 
-    def __init__(self, config: ValidationConfig):
+    def __init__(self, config: ValidationConfig) -> None:
         """Initialize a validation step with configuration.
 
         Args:
@@ -45,7 +52,7 @@ class ValidationStep:
         """
         self.config = config
 
-    def perform_check(self, root, xml_file: str) -> ValidationResult:
+    def perform_check(self, root: XmlElement, xml_file: str) -> ValidationResult:
         """Perform the validation step for a package.xml file.
 
         Args:
@@ -62,7 +69,9 @@ class ValidationStep:
 class FormatterValidationStep(ValidationStep):
     name = "Formatter validation"
 
-    def __init__(self, config: ValidationConfig, formatter):
+    def __init__(
+        self, config: ValidationConfig, formatter: PackageXmlFormatter
+    ) -> None:
         """Initialize formatting validation step.
 
         Args:
@@ -76,7 +85,7 @@ class FormatterValidationStep(ValidationStep):
         super().__init__(config)
         self.formatter = formatter
 
-    def perform_check(self, root, xml_file: str) -> ValidationResult:
+    def perform_check(self, root: XmlElement, xml_file: str) -> ValidationResult:
         """Run formatting-related checks on a package.xml file.
 
         Args:
@@ -150,7 +159,9 @@ class FormatterValidationStep(ValidationStep):
 class BuildToolDependStep(ValidationStep):
     name = "Build tool dependency"
 
-    def __init__(self, config: ValidationConfig, formatter):
+    def __init__(
+        self, config: ValidationConfig, formatter: PackageXmlFormatter
+    ) -> None:
         """Initialize buildtool dependency validation step.
 
         Args:
@@ -164,7 +175,7 @@ class BuildToolDependStep(ValidationStep):
         super().__init__(config)
         self.formatter = formatter
 
-    def perform_check(self, root, xml_file: str) -> ValidationResult:
+    def perform_check(self, root: XmlElement, xml_file: str) -> ValidationResult:
         """Validate and optionally fix buildtool dependency tags.
 
         Args:
@@ -241,7 +252,9 @@ class BuildToolDependStep(ValidationStep):
 class MemberOfGroupStep(ValidationStep):
     name = "Member of group"
 
-    def __init__(self, config: ValidationConfig, formatter):
+    def __init__(
+        self, config: ValidationConfig, formatter: PackageXmlFormatter
+    ) -> None:
         """Initialize member_of_group validation step.
 
         Args:
@@ -255,7 +268,7 @@ class MemberOfGroupStep(ValidationStep):
         super().__init__(config)
         self.formatter = formatter
 
-    def perform_check(self, root, xml_file: str) -> ValidationResult:
+    def perform_check(self, root: XmlElement, xml_file: str) -> ValidationResult:
         """Validate and optionally fix member_of_group tag for msg packages.
 
         Args:
@@ -308,7 +321,9 @@ class MemberOfGroupStep(ValidationStep):
 class BuildTypeExportStep(ValidationStep):
     name = "Build type export"
 
-    def __init__(self, config: ValidationConfig, formatter):
+    def __init__(
+        self, config: ValidationConfig, formatter: PackageXmlFormatter
+    ) -> None:
         """Initialize build type export validation step.
 
         Args:
@@ -322,7 +337,7 @@ class BuildTypeExportStep(ValidationStep):
         super().__init__(config)
         self.formatter = formatter
 
-    def perform_check(self, root, xml_file: str) -> ValidationResult:
+    def perform_check(self, root: XmlElement, xml_file: str) -> ValidationResult:
         """Validate and optionally fix <export><build_type> for packages.
 
         Args:
@@ -340,7 +355,7 @@ class BuildTypeExportStep(ValidationStep):
         pkg_type, _ = get_package_type(xml_file)
         export = root.find("export")
         export_exists = export is not None
-        build_type = export.find("build_type") if export_exists else None
+        build_type = export.find("build_type") if export is not None else None
         build_type_correct = (
             (
                 pkg_type == PackageType.CMAKE_PKG
@@ -393,7 +408,12 @@ class BuildTypeExportStep(ValidationStep):
 class RosdepCheckStep(ValidationStep):
     name = "ROS dependency check"
 
-    def __init__(self, config: ValidationConfig, formatter, rosdep_validator):
+    def __init__(
+        self,
+        config: ValidationConfig,
+        formatter: PackageXmlFormatter,
+        rosdep_validator: RosdepValidator,
+    ) -> None:
         """Initialize ROS dependency validation step.
 
         Args:
@@ -409,7 +429,7 @@ class RosdepCheckStep(ValidationStep):
         self.formatter = formatter
         self.rosdep_validator = rosdep_validator
 
-    def perform_check(self, root, xml_file: str) -> ValidationResult:
+    def perform_check(self, root: XmlElement, xml_file: str) -> ValidationResult:
         """Validate rosdep keys in package.xml dependencies.
 
         Args:
@@ -446,8 +466,12 @@ class CMakeComparisonStep(ValidationStep):
     name = "CMake dependency comparison"
 
     def __init__(
-        self, config: ValidationConfig, formatter, rosdep_validator, exceptions=None
-    ):
+        self,
+        config: ValidationConfig,
+        formatter: PackageXmlFormatter,
+        rosdep_validator: RosdepValidator,
+        exceptions: DependencyExceptions | None = None,
+    ) -> None:
         """Initialize CMake comparison validation step.
 
         Args:
@@ -465,7 +489,7 @@ class CMakeComparisonStep(ValidationStep):
         self.rosdep_validator = rosdep_validator
         self.exceptions = exceptions or DependencyExceptions()
 
-    def perform_check(self, root, xml_file: str) -> ValidationResult:
+    def perform_check(self, root: XmlElement, xml_file: str) -> ValidationResult:
         """Compare CMakeLists.txt dependencies to package.xml entries.
 
         Args:
@@ -616,13 +640,13 @@ class LaunchDependencyStep(ValidationStep):
     def __init__(
         self,
         config: ValidationConfig,
-        formatter,
-        rosdep_validator,
-        package_name: str,
+        formatter: PackageXmlFormatter,
+        rosdep_validator: RosdepValidator | None,
+        package_name: str | None,
         exec_deps: list[str],
         test_deps: list[str],
-        exceptions=None,
-    ):
+        exceptions: DependencyExceptions | None = None,
+    ) -> None:
         """Initialize launch dependency validation step.
 
         Args:
@@ -646,7 +670,7 @@ class LaunchDependencyStep(ValidationStep):
         self.test_deps = test_deps
         self.exceptions = exceptions or DependencyExceptions()
 
-    def perform_check(self, root, xml_file: str) -> ValidationResult:
+    def perform_check(self, root: XmlElement, xml_file: str) -> ValidationResult:
         """Validate launch/test file dependencies against package.xml.
 
         Args:
@@ -722,7 +746,7 @@ class LaunchDependencyStep(ValidationStep):
                 result.valid = False
                 return
 
-            if self.config.check_rosdeps:
+            if self.config.check_rosdeps and self.rosdep_validator is not None:
                 invalid_deps = self.rosdep_validator.check_rosdeps_and_local_pkgs(
                     missing_deps
                 )

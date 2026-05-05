@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import logging
 import os
 import sys
+from typing import Any
 
 
 class ColoredFormatter(logging.Formatter):
@@ -24,7 +27,7 @@ class ColoredFormatter(logging.Formatter):
         logging.CRITICAL: RED,
     }
 
-    def __init__(self, *args, use_color: bool = True, **kwargs):
+    def __init__(self, *args: Any, use_color: bool = True, **kwargs: Any) -> None:
         """Initialize the formatter with optional ANSI coloring.
 
         Args:
@@ -39,7 +42,7 @@ class ColoredFormatter(logging.Formatter):
         super().__init__(*args, **kwargs)
         self.use_color = use_color
 
-    def format(self, record):
+    def format(self, record: logging.LogRecord) -> str:
         """Format a log record and optionally colorize the output.
 
         Args:
@@ -91,7 +94,9 @@ def get_logger(name: str = __name__, level: str | int = "normal") -> logging.Log
     logger.setLevel(logging.DEBUG)
 
     ch = logging.StreamHandler(sys.stdout)  # stdout is better for CI
-    ch.flush = sys.stdout.flush  # force flush after each log
+    # Force-flush after each log entry so CI output stays in order. mypy
+    # flags reassigning a method, but the runtime behavior is the point.
+    ch.flush = sys.stdout.flush  # type: ignore[method-assign]
 
     ch.setLevel(_resolve_level(level))
 

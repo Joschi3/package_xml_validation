@@ -1,9 +1,15 @@
 """Parse validator exception directives from XML comments in package.xml."""
 
+from __future__ import annotations
+
 import re
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import lxml.etree as ET
+
+if TYPE_CHECKING:
+    from .package_types import XmlElement
 
 # Regex pattern for parsing validator:ignore directives
 _IGNORE_DEPS_PATTERN = re.compile(r"validator:ignore\s+(.+)")
@@ -28,7 +34,7 @@ class DependencyExceptions:
         return dep_name in self.ignored_deps
 
 
-def parse_exceptions(root) -> DependencyExceptions:
+def parse_exceptions(root: XmlElement) -> DependencyExceptions:
     """Parse validator:ignore directives from XML comments in package.xml.
 
     Scans all direct children of the root element for comments matching

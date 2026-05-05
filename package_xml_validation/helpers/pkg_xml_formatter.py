@@ -1,11 +1,19 @@
-import lxml.etree as ET
-from copy import deepcopy
+from __future__ import annotations
 
+import logging
+from copy import deepcopy
+from typing import TYPE_CHECKING, Any
+from collections.abc import Iterable
+
+import lxml.etree as ET
 
 try:
     from .logger import get_logger
 except ImportError:
-    from helpers.logger import get_logger
+    from helpers.logger import get_logger  # type: ignore[no-redef]
+
+if TYPE_CHECKING:
+    from .package_types import XmlElement
 
 # tuple of (element_name, min_occurrences, max_occurrences)
 # min_occurrences is 1 if the element is required, 0 if it can be missing
@@ -49,11 +57,11 @@ NEW_LINE = "\n"
 class PackageXmlFormatter:
     def __init__(
         self,
-        check_only=False,
-        verbose=False,
-        check_with_xmllint=False,
-        logger=None,
-    ):
+        check_only: bool = False,
+        verbose: bool = False,
+        check_with_xmllint: bool = False,
+        logger: logging.Logger | None = None,
+    ) -> None:
         """Initialize formatter configuration and logger.
 
         Args:
@@ -75,7 +83,7 @@ class PackageXmlFormatter:
         )
         self.encountered_unresolvable_error = False
 
-    def _resolve_indentation(self, root, default="  ") -> str:
+    def _resolve_indentation(self, root: XmlElement, default: str = "  ") -> str:
         """Infer indentation from the first child tail, or return a default.
 
         Args:
@@ -95,7 +103,7 @@ class PackageXmlFormatter:
             return tail[tail.rfind(NEW_LINE) + 1 :]
         return tail
 
-    def prettyprint(self, element, **kwargs):
+    def prettyprint(self, element: XmlElement, **kwargs: Any) -> None:
         """Print a pretty-printed XML element to stdout.
 
         Args:
@@ -109,7 +117,7 @@ class PackageXmlFormatter:
         xml = ET.tostring(element, pretty_print=True, **kwargs)
         print(xml.decode(), end="")
 
-    def check_dependency_order(self, root, xml_file):
+    def check_dependency_order(self, root: XmlElement, xml_file: str) -> bool:
         """Check and optionally correct dependency ordering.
 
         Args:
@@ -123,14 +131,19 @@ class PackageXmlFormatter:
         """
 
         dependency_order = [elm[0] for elm in ELEMENTS]
-        dependencies_with_comments = {dep: [] for dep in dependency_order}
-        current_order = []
+        dependencies_with_comments: dict[
+            str, list[tuple[XmlElement, list[XmlElement]]]
+        ] = {dep: [] for dep in dependency_order}
+        current_order: list[str] = []
 
         # Collect dependencies and track their order
-        current_comments = []
+        current_comments: list[XmlElement] = []
         for elem in root:
-            if elem.tag is ET.Comment:
-                current_comments.append(elem)
+            # lxml-stubs types ``elem.tag`` as ``str``; at runtime comment
+            # nodes have ``tag is ET.Comment`` (a callable), so the identity
+            # check is intentional.
+            if elem.tag is ET.Comment:  # type: ignore[comparison-overlap]
+                current_comments.append(elem)  # type: ignore[unreachable]
             if isinstance(elem.tag, str) and elem.tag in dependency_order:
                 dependencies_with_comments[elem.tag].append((elem, current_comments))
                 current_comments = []
@@ -152,7 +165,7 @@ class PackageXmlFormatter:
         # Check alphabetical order within each group
         if current_order == correct_order:
             for dep_type, elem_with_commtents in dependencies_with_comments.items():
-                names = [e[0].text for e in elem_with_commtents]
+                names = [e[0].text or "" for e in elem_with_commtents]
                 if names != sorted(names):
                     self.logger.debug(
                         f"Dependency order in {xml_file} is incorrect: {dep_type} elements are not sorted."
@@ -173,10 +186,10 @@ class PackageXmlFormatter:
         indentation = self._resolve_indentation(root)
         # Remove old dependency elements from root
         for dep_type in dependency_order:
-            for elem in dependencies_with_comments[dep_type]:
-                for comment in elem[1]:
+            for dep_elem, dep_comments in dependencies_with_comments[dep_type]:
+                for comment in dep_comments:
                     root.remove(comment)
-                root.remove(elem[0])
+                root.remove(dep_elem)
         # filter out empty lists from dependency order
         dependency_order = [
             dep for dep in dependency_order if dependencies_with_comments[dep]
@@ -184,7 +197,7 @@ class PackageXmlFormatter:
         insert_index = 0
         for index, dep_type in enumerate(dependency_order):
             sorted_elems = sorted(
-                dependencies_with_comments[dep_type], key=lambda x: x[0].text
+                dependencies_with_comments[dep_type], key=lambda x: x[0].text or ""
             )
             for i, elem_with_comment in enumerate(sorted_elems):
                 if (
@@ -205,7 +218,7 @@ class PackageXmlFormatter:
         self.logger.info(f"Corrected dependency order in {xml_file}.")
         return False
 
-    def check_for_duplicates(self, root, xml_file):
+    def check_for_duplicates(self, root: XmlElement, xml_file: str) -> bool:
         """
         Check for duplicate elements in the XML file.
         -> meaning tag, text, attributes, and children are the same
@@ -220,7 +233,7 @@ class PackageXmlFormatter:
 
         """
 
-        def element_signature(elem) -> bytes:
+        def element_signature(elem: XmlElement) -> bytes:
             """Serialize an element to bytes for duplicate detection.
 
             Args:
@@ -232,11 +245,11 @@ class PackageXmlFormatter:
             """
             return ET.tostring(elem, with_tail=False)
 
-        seen = set()
-        duplicates = []
+        seen: set[bytes] = set()
+        duplicates: list[XmlElement] = []
         for elem in root:
-            if elem.tag is ET.Comment:
-                continue
+            if elem.tag is ET.Comment:  # type: ignore[comparison-overlap]
+                continue  # type: ignore[unreachable]
             combined = element_signature(elem)
             if combined in seen:
                 duplicates.append(elem)
@@ -261,7 +274,7 @@ class PackageXmlFormatter:
             root.remove(elem)
         return False
 
-    def check_element_occurrences(self, root, xml_file):
+    def check_element_occurrences(self, root: XmlElement, xml_file: str) -> bool:
         """
         Check the min/max occurrences of elements in the XML file.
         If self.check_only is True, only check for errors without correcting.
@@ -327,7 +340,7 @@ class PackageXmlFormatter:
                 self.logger.warning(f"Please add the missing element: <{elem}>")
         return False
 
-    def check_element_order(self, root, xml_file):
+    def check_element_order(self, root: XmlElement, xml_file: str) -> bool:
         """
         Check if the elements in the XML file are in the expected order,
         ensuring comments remain in front of their respective elements.
@@ -366,7 +379,7 @@ class PackageXmlFormatter:
             return True
 
         # Helper function to determine the sort key
-        def sort_key(elem):
+        def sort_key(elem: XmlElement) -> int:
             """Return sort key based on expected element ordering.
 
             Args:
@@ -383,14 +396,14 @@ class PackageXmlFormatter:
                 return len(element_order)
 
         # Extract elements and their preceding comments
-        elements_with_comments = []
-        current_comments = []
+        elements_with_comments: list[tuple[XmlElement, list[XmlElement]]] = []
+        current_comments: list[XmlElement] = []
 
         last_tail = ""
         indentation = self._resolve_indentation(root)
         for elem in root:
-            if elem.tag is ET.Comment:
-                self.logger.error(f"Found comment: {elem.text}")
+            if elem.tag is ET.Comment:  # type: ignore[comparison-overlap]
+                self.logger.error(f"Found comment: {elem.text}")  # type: ignore[unreachable]
                 if last_tail and last_tail[-1] == NEW_LINE:
                     # inline comment -> append to previous element
                     elements_with_comments[-1][0].tail = elem.tail
@@ -422,7 +435,7 @@ class PackageXmlFormatter:
 
         return False
 
-    def check_for_empty_lines(self, root, xml_file):
+    def check_for_empty_lines(self, root: XmlElement, xml_file: str) -> bool:
         """
         Check for empty lines in the XML file.
         Make sure there are no more than one empty line between elements.
@@ -437,7 +450,7 @@ class PackageXmlFormatter:
 
         """
 
-        def remove_inner_newlines(s):
+        def remove_inner_newlines(s: str) -> str:
             """Collapse multiple inner newlines to a single blank line.
 
             Args:
@@ -491,7 +504,9 @@ class PackageXmlFormatter:
                 elm.tail = NEW_LINE + indentation
         return False
 
-    def check_indentation(self, root, level=1, indentation="  "):
+    def check_indentation(
+        self, root: XmlElement, level: int = 1, indentation: str = "  "
+    ) -> bool:
         """
         Check if the indentation of the XML file is correct.
         recursively checks the indentation of each element.
@@ -508,7 +523,7 @@ class PackageXmlFormatter:
         """
         is_correct = True
 
-        def check_indentation_string(string, expected_indent) -> bool:
+        def check_indentation_string(string: str | None, expected_indent: str) -> bool:
             """Validate indentation string against expected indentation.
 
             Args:
@@ -524,7 +539,7 @@ class PackageXmlFormatter:
             parsed_indentation = string.replace(NEW_LINE, "")
             return parsed_indentation == expected_indent and NEW_LINE in string
 
-        def fix_indentation(string, expected_indent) -> str:
+        def fix_indentation(string: str | None, expected_indent: str) -> str:
             """Fix the indentation of the string to match the expected_indent.
 
             Args:
@@ -540,7 +555,9 @@ class PackageXmlFormatter:
             )
             return indent + expected_indent
 
-        def check_and_correct(string, expected_indent, name) -> tuple[str, bool]:
+        def check_and_correct(
+            string: str | None, expected_indent: str, name: str
+        ) -> tuple[str | None, bool]:
             """Check and optionally correct indentation.
 
             Args:
@@ -598,7 +615,7 @@ class PackageXmlFormatter:
             self.logger.warning("Auto-corrected indentation in package.xml.")
         return is_correct
 
-    def check_for_non_existing_tags(self, root, xml_file):
+    def check_for_non_existing_tags(self, root: XmlElement, xml_file: str) -> bool:
         """Check for tags that are not part of the allowed package.xml schema.
 
         Args:
@@ -621,7 +638,7 @@ class PackageXmlFormatter:
             return False
         return True
 
-    def retrieve_all_dependencies(self, root):
+    def retrieve_all_dependencies(self, root: XmlElement) -> list[str]:
         """Retrieve all dependency tag values from the XML tree.
 
         Args:
@@ -637,7 +654,7 @@ class PackageXmlFormatter:
                 dependencies.append(elem.text.strip())
         return dependencies
 
-    def retrieve_build_dependencies(self, root):
+    def retrieve_build_dependencies(self, root: XmlElement) -> list[str]:
         """Retrieve build-related dependencies from the XML tree.
 
         Args:
@@ -660,7 +677,7 @@ class PackageXmlFormatter:
                 build_dependencies.append(elem.text.strip())
         return build_dependencies
 
-    def retrieve_test_dependencies(self, root):
+    def retrieve_test_dependencies(self, root: XmlElement) -> list[str]:
         """Retrieve test dependencies from the XML tree.
 
         Args:
@@ -677,7 +694,7 @@ class PackageXmlFormatter:
                 test_dependencies.append(elem.text.strip())
         return test_dependencies
 
-    def retrieve_exec_dependencies(self, root):
+    def retrieve_exec_dependencies(self, root: XmlElement) -> list[str]:
         """Retrieve execution dependencies from the XML tree.
 
         Args:
@@ -694,7 +711,7 @@ class PackageXmlFormatter:
                 exec_dependencies.append(elem.text.strip())
         return exec_dependencies
 
-    def get_package_name(self, root) -> str | None:
+    def get_package_name(self, root: XmlElement) -> str | None:
         """Retrieve the package name from the XML tree.
 
         Args:
@@ -709,7 +726,9 @@ class PackageXmlFormatter:
             return name_elem.text.strip()
         return None
 
-    def add_dependencies(self, root, dependencies, dep_type):
+    def add_dependencies(
+        self, root: XmlElement, dependencies: Iterable[str], dep_type: str
+    ) -> None:
         """Add dependency elements to the XML tree in sorted order.
 
         Args:
@@ -726,7 +745,8 @@ class PackageXmlFormatter:
         if dep_type not in dep_types:
             raise ValueError(f"Invalid dependency type: {dep_type}")
         indentation = self._resolve_indentation(root)
-        insert_position, first_of_group = 0, 0
+        insert_position: int = 0
+        first_of_group: int | None = 0
         for dep in dependencies:
             new_elem = ET.Element(dep_type)
             new_elem.text = dep
@@ -734,13 +754,13 @@ class PackageXmlFormatter:
             # add element to root at correct position -> correct dep group and alphabetical order
             # case 1: dependency group is empty
             if not root.findall(dep_type):
-                previous_element = elements[elements.index(dep_type) - 1]
-                while not root.findall(previous_element):
-                    previous_element = elements[elements.index(previous_element) - 1]
-                # find last element with previous_element tag
+                previous_tag = elements[elements.index(dep_type) - 1]
+                while not root.findall(previous_tag):
+                    previous_tag = elements[elements.index(previous_tag) - 1]
+                # find last element with previous_tag
                 last_element_count = 0
                 for count, elm in enumerate(root):
-                    if isinstance(elm.tag, str) and elm.tag == previous_element:
+                    if isinstance(elm.tag, str) and elm.tag == previous_tag:
                         last_element_count = count
                 insert_position = last_element_count + 1
                 first_of_group = insert_position
@@ -754,7 +774,7 @@ class PackageXmlFormatter:
                         if first_of_group is None:
                             first_of_group = i
                             insert_position = i
-                        if elm.text < new_elem.text:
+                        if (elm.text or "") < (new_elem.text or ""):
                             insert_position = i + 1
             root.insert(insert_position, new_elem)
             # adapt empty lines -> in case element prior ends with empty line move it to the new element
@@ -763,17 +783,17 @@ class PackageXmlFormatter:
                 and first_of_group is not None
                 and insert_position > first_of_group
             ):
-                previous_element = root[insert_position - 1]
-                if previous_element.tail and previous_element.tail.count(NEW_LINE) > 1:
-                    new_elem.tail = previous_element.tail
-                    previous_element.tail = NEW_LINE + indentation
+                prev_elem = root[insert_position - 1]
+                if prev_elem.tail and prev_elem.tail.count(NEW_LINE) > 1:
+                    new_elem.tail = prev_elem.tail
+                    prev_elem.tail = NEW_LINE + indentation
             if insert_position < len(root) - 1:
                 # if next tag is different than the new element, add empty line
                 next_element = root[insert_position + 1]
                 if next_element.tag != new_elem.tag:
                     new_elem.tail = "\n\n" + indentation
 
-    def add_build_type_export(self, root, build_type: str):
+    def add_build_type_export(self, root: XmlElement, build_type: str) -> None:
         """
         Add the build type export to the XML file.
         If the build type export already exists, it will be updated.
@@ -807,7 +827,7 @@ class PackageXmlFormatter:
         build_type_elem.text = build_type
         export.text = NEW_LINE + 2 * indentation
 
-    def add_buildtool_depends(self, root, buildtool: list[str]):
+    def add_buildtool_depends(self, root: XmlElement, buildtool: list[str]) -> None:
         """
         Add the buildtool_depend to the XML file.
         If the buildtool_depend already exists, it will be updated.
@@ -844,7 +864,7 @@ class PackageXmlFormatter:
             root.insert(insert_position, new_elem)
             insert_position += 1
 
-    def add_member_of_group(self, root, group_name: str):
+    def add_member_of_group(self, root: XmlElement, group_name: str) -> None:
         """Add a member_of_group element to the XML tree.
 
         Args:

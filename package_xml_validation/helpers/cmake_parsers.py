@@ -221,7 +221,7 @@ def retrieve_cmake_dependencies(
         r"^\s*find_package\s*\(\s*([^)]+)\)\s*$", re.IGNORECASE
     )
 
-    def add_deps(dep_list: list[str], is_test: bool):
+    def add_deps(dep_list: list[str], is_test: bool) -> None:
         if is_test:
             test_deps.extend(dep_list)
         else:

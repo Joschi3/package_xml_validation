@@ -15,6 +15,7 @@ import argparse
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from collections.abc import Iterable
 import os
 
 
@@ -148,7 +149,7 @@ def pkg_iterator(src_dir: Path) -> dict[str, Path]:
     return pkgs
 
 
-def get_pkgs_in_wrs(path: Path) -> list[str]:
+def get_pkgs_in_wrs(path: str | Path) -> list[str]:
     """Return all package names in the workspace that contains *path*.
 
     Args:
@@ -199,7 +200,7 @@ def _is_ignored_dir(path: Path) -> bool:
     return False
 
 
-def find_package_xml_files(paths) -> list[str]:
+def find_package_xml_files(paths: Iterable[str | Path]) -> list[str]:
     """Find all package.xml files under the provided paths.
 
     Args:

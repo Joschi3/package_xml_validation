@@ -1,15 +1,14 @@
+from __future__ import annotations
+
 import re
 import yaml
 import difflib
 from importlib import resources
+from pathlib import Path
+from typing import Any
+from collections.abc import Iterable
 
-# ROS imports
-import rosdep2
-from rosdep2.sources_list import (
-    SourcesListLoader,
-    CachedDataSource,
-    get_sources_cache_dir,
-)
+from . import rosdep_wrapper
 
 # Try importing regex for fuzzy matching
 try:
@@ -23,7 +22,7 @@ try:
     from .workspace import get_pkgs_in_wrs
 except ImportError:
 
-    def get_pkgs_in_wrs(path):
+    def get_pkgs_in_wrs(path: str | Path) -> list[str]:
         """Fallback workspace package discovery when helpers cannot be imported.
 
         Args:
@@ -41,7 +40,7 @@ class RosdepValidator:
     Class to validate ROS dependencies using rosdep.
     """
 
-    def __init__(self, pkg_path=None):
+    def __init__(self, pkg_path: str | None = None) -> None:
         """Initialize rosdep lookup and optional workspace package list.
 
         Args:
@@ -51,8 +50,8 @@ class RosdepValidator:
             None.
 
         """
-        self.rosdep_installer_context = rosdep2.create_default_installer_context()
-        self.rosdep = rosdep2.RosdepLookup.create_from_rospkg()
+        self.rosdep_installer_context = rosdep_wrapper.create_installer_context()
+        self.rosdep = rosdep_wrapper.create_lookup_from_rospkg()
 
         (
             self.rosdep_os_name,
@@ -60,14 +59,16 @@ class RosdepValidator:
         ) = self.rosdep_installer_context.get_os_name_and_version()
 
         self.rosdep_view = self.rosdep.get_rosdep_view(
-            rosdep2.rospkg_loader.DEFAULT_VIEW_KEY
+            rosdep_wrapper.get_default_view_key()
         )
 
-        self.sources_loader = SourcesListLoader.create_default(
-            sources_cache_dir=get_sources_cache_dir(), verbose=False
+        self.sources_loader = rosdep_wrapper.create_default_sources_loader(
+            verbose=False
         )
 
-        self.local_pkgs = []
+        self._cached_data_source_cls = rosdep_wrapper.get_cached_data_source_cls()
+
+        self.local_pkgs: list[str] = []
         if pkg_path:
             self.local_pkgs = get_pkgs_in_wrs(pkg_path)
 
@@ -119,7 +120,7 @@ class RosdepValidator:
                 ),
             )
             return installer is not None
-        except (rosdep2.ResolutionError, KeyError):
+        except (rosdep_wrapper.ResolutionError, KeyError):
             return False
         except Exception:
             return False
@@ -153,7 +154,9 @@ class RosdepValidator:
             A list of up to five candidate rosdep keys, sorted by relevance.
 
         """
-        regexes = []
+        # ``regex`` and ``re`` produce distinct (but duck-compatible) Pattern
+        # types. Annotated as Any to let either populate the list.
+        regexes: list[Any] = []
         if HAS_REGEX_MODULE:
             # Fuzzy matching: allow 2 errors for long strings, 1 for short
             error_tolerance = 2 if len(dependency) >= 7 else 1
@@ -163,7 +166,7 @@ class RosdepValidator:
             # Fallback: standard regex
             regexes.append(re.compile(re.escape(dependency), re.IGNORECASE))
 
-        found_keys = []
+        found_keys: list[str] = []
 
         # Iterate over cached views
         for view_name in self.sources_loader.get_loadable_views():
@@ -173,7 +176,7 @@ class RosdepValidator:
                 continue
 
             # Skip remote sources
-            if not isinstance(view, CachedDataSource) or not hasattr(
+            if not isinstance(view, self._cached_data_source_cls) or not hasattr(
                 view, "rosdep_data"
             ):
                 continue
@@ -184,7 +187,7 @@ class RosdepValidator:
         unique_keys = list(set(found_keys))
 
         # --- IMPROVED SORTING LOGIC ---
-        def sort_key(candidate):
+        def sort_key(candidate: str) -> tuple[int, float]:
             cand_lower = candidate.lower()
             dep_lower = dependency.lower()
 
@@ -210,7 +213,7 @@ class RosdepValidator:
 
         return sorted(unique_keys, key=sort_key)[:5]
 
-    def _search_view_data(self, view, compiled_regexes) -> list[str]:
+    def _search_view_data(self, view: Any, compiled_regexes: list[Any]) -> list[str]:
         """Search a rosdep view for matching keys or payload values.
 
         Args:
@@ -232,7 +235,9 @@ class RosdepValidator:
                     matches.append(key)
         return matches
 
-    def _check_payload_match(self, os_payload, compiled_regexes) -> bool:
+    def _check_payload_match(
+        self, os_payload: Any, compiled_regexes: list[Any]
+    ) -> bool:
         """Check whether a payload contains any regex matches.
 
         Args:
@@ -261,7 +266,7 @@ class RosdepValidator:
                     return True
         return False
 
-    def check_rosdeps(self, dependencies) -> list[str]:
+    def check_rosdeps(self, dependencies: Iterable[str]) -> list[str]:
         """Return a list of rosdep keys that cannot be resolved.
 
         Args:
@@ -277,7 +282,7 @@ class RosdepValidator:
                 unresolvable.append(dep)
         return unresolvable
 
-    def check_rosdeps_and_local_pkgs(self, dependencies) -> list[str]:
+    def check_rosdeps_and_local_pkgs(self, dependencies: Iterable[str]) -> list[str]:
         """Return rosdep keys unresolved and not satisfied by local packages.
 
         Args:
