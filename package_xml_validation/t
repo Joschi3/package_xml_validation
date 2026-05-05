@@ -1,0 +1,12 @@
+dd ManifestSchemaStep for REP-149 invariants
+
+Validates the structural attributes REP-149 requires: <package
+format='3'> presence and value, <name> regex ^[a-z][a-z0-9_]*$,
+<version> regex ^\d+\.\d+\.\d+$, and non-empty email='…' on every
+<maintainer>. Read-only — none of these can be safely auto-filled.
+Skipped under --missing-deps-only and --ignore-formatting-errors.
+
+Slots before FormatterValidationStep so manifest-level errors surface
+before the formatter touches anything.
+
+Adds tests/test_manifest_schema_step.py (15 cases).

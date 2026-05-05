@@ -10,6 +10,7 @@ from .buildtool_step import BuildToolDependStep
 from .cmake_comparison_step import CMakeComparisonStep
 from .formatter_step import FormatterValidationStep
 from .launch_dependency_step import LaunchDependencyStep
+from .manifest_schema_step import ManifestSchemaStep
 from .member_of_group_step import MemberOfGroupStep
 from .rosdep_check_step import RosdepCheckStep
 
@@ -19,6 +20,7 @@ __all__ = [
     "CMakeComparisonStep",
     "FormatterValidationStep",
     "LaunchDependencyStep",
+    "ManifestSchemaStep",
     "MemberOfGroupStep",
     "RosdepCheckStep",
     "ValidationConfig",

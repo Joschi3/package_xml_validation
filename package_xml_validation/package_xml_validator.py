@@ -22,6 +22,7 @@ from .helpers.validation_steps import (
     CMakeComparisonStep,
     FormatterValidationStep,
     LaunchDependencyStep,
+    ManifestSchemaStep,
     MemberOfGroupStep,
     RosdepCheckStep,
     ValidationConfig,
@@ -159,7 +160,8 @@ class PackageXmlValidator:
             merged = exceptions.ignored_deps | self.global_ignored_deps
             exceptions = DependencyExceptions(ignored_deps=merged)
 
-        steps = [
+        steps: list[ValidationStep] = [
+            ManifestSchemaStep(self.validation_config),
             FormatterValidationStep(self.validation_config, self.formatter),
             LaunchDependencyStep(
                 self.validation_config,
