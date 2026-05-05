@@ -12,6 +12,7 @@ import argcomplete
 import lxml.etree as ET
 
 try:
+    from .helpers.cmake_parsers import _DEFAULT_CMAKE_KEYS_NO_ROSDEP
     from .helpers.logger import get_logger
     from .helpers.rosdep_validator import RosdepValidator
     from .helpers.pkg_xml_formatter import PackageXmlFormatter
@@ -28,6 +29,7 @@ try:
     )
     from .helpers.workspace import find_package_xml_files
 except ImportError:
+    from helpers.cmake_parsers import _DEFAULT_CMAKE_KEYS_NO_ROSDEP  # type: ignore[no-redef]
     from helpers.logger import get_logger  # type: ignore[no-redef]
     from helpers.rosdep_validator import RosdepValidator  # type: ignore[no-redef]
     from helpers.pkg_xml_formatter import PackageXmlFormatter  # type: ignore[no-redef]
@@ -60,6 +62,7 @@ class PackageXmlValidator:
         ignore_formatting_errors: bool = False,
         path: str | None = None,
         verbose: bool = False,
+        cmake_keys_no_rosdep: Iterable[str] | None = None,
     ) -> None:
         """Initialize the package.xml validator with feature flags.
 
@@ -73,6 +76,9 @@ class PackageXmlValidator:
             ignore_formatting_errors: Skip formatting-only checks.
             path: Path used for workspace discovery in rosdep validation.
             verbose: Enable verbose logging.
+            cmake_keys_no_rosdep: Additional CMake `find_package` names that do
+                not require a `package.xml` `<depend>` entry. Merged with the
+                built-in defaults; never replaces them.
 
         Returns:
             None.
@@ -100,6 +106,9 @@ class PackageXmlValidator:
             check_with_xmllint=False,
             verbose=verbose,
         )
+        effective_cmake_keys = _DEFAULT_CMAKE_KEYS_NO_ROSDEP | frozenset(
+            cmake_keys_no_rosdep or ()
+        )
         self.validation_config = ValidationConfig(
             check_only=self.check_only,
             auto_fill_missing_deps=self.auto_fill_missing_deps,
@@ -108,6 +117,7 @@ class PackageXmlValidator:
             strict_cmake_checking=self.strict_cmake_checking,
             missing_deps_only=self.missing_deps_only,
             ignore_formatting_errors=self.ignore_formatting_errors,
+            cmake_keys_no_rosdep=effective_cmake_keys,
         )
         self.encountered_unresolvable_error = False
 
@@ -247,9 +257,10 @@ class PackageXmlValidator:
                 parser = ET.XMLParser()
                 tree = ET.parse(xml_file, parser)
                 root = tree.getroot()
-            except Exception as e:
-                self.logger.error(f"Error processing {xml_file}: {e}")
+            except (ET.XMLSyntaxError, OSError) as e:
+                self.logger.error(f"Error parsing {xml_file}: {e}")
                 self.xml_valid = False
+                self.all_valid = False
                 continue
 
             package_name = self.formatter.get_package_name(root)
@@ -386,6 +397,18 @@ def main() -> None:
         help="Treat unresolved CMake dependencies as errors instead of warnings.",
     )
 
+    parser.add_argument(
+        "--ignore-cmake-key",
+        action="append",
+        default=[],
+        metavar="KEY",
+        help=(
+            "CMake find_package name that does not require a package.xml "
+            "<depend> entry. May be passed multiple times. Merged with the "
+            "built-in defaults (Threads, OpenMP, ament_cmake)."
+        ),
+    )
+
     argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
@@ -417,6 +440,7 @@ def main() -> None:
         missing_deps_only=args.missing_deps_only,
         ignore_formatting_errors=args.ignore_formatting_errors,
         path=args.file if args.file else args.src[0],
+        cmake_keys_no_rosdep=args.ignore_cmake_key,
     )
 
     if args.file:

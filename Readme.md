@@ -155,6 +155,7 @@ package-xml-validator . --compare-with-cmake --auto-fill-missing-deps
 | `--strict-cmake-checking` | Treat unresolved CMake dependencies as errors instead of warnings. |
 | `--skip-rosdep-key-validation` | Skip verifying if dependency names exist in the `rosdep` database. |
 | `--missing-deps-only` | Skips formatting checks; only looks for missing dependencies. |
+| `--ignore-cmake-key KEY` | Treat `find_package(KEY ...)` in `CMakeLists.txt` as not requiring a `package.xml` `<depend>` entry. Repeatable. Merged with the built-in defaults (`Threads`, `OpenMP`, `ament_cmake`). |
 
 ---
 

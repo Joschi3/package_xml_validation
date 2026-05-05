@@ -1,18 +1,24 @@
+from __future__ import annotations
+
+import sys
 from pathlib import Path
 import re
-from typing import Union
 
 # -----------------------------------------------------------------------------
 # Constants & Configuration
 # -----------------------------------------------------------------------------
 
-# Known CMake keys that do not need package xml <depend> entries
+# Known CMake keys that do not need package xml <depend> entries.
 # These are typically system libraries or build tools provided by the environment.
-CMAKE_KEYS_NO_ROSDEP = {
-    "Threads",
-    "OpenMP",
-    "ament_cmake",  # build_tool
-}
+# Users may extend this set via the validator's --ignore-cmake-key flag; the
+# defaults are always merged in, never replaced.
+_DEFAULT_CMAKE_KEYS_NO_ROSDEP: frozenset[str] = frozenset(
+    {
+        "Threads",
+        "OpenMP",
+        "ament_cmake",  # build_tool
+    }
+)
 
 # Tokens that mark the end of the package name definition in find_package().
 # Everything after these tokens (including the token itself) is part of the
@@ -191,7 +197,8 @@ def resolve_for_each(raw_lines: list[str]) -> list[str]:
 
 
 def retrieve_cmake_dependencies(
-    lines: Union[list[str], Path],
+    lines: list[str] | Path,
+    cmake_keys_no_rosdep: frozenset[str] | None = None,
 ) -> tuple[list[str], list[str]]:
     """Parse CMake lines to extract main and test dependencies.
 
@@ -200,12 +207,22 @@ def retrieve_cmake_dependencies(
 
     Args:
         lines: CMake lines or a Path to a CMake file.
+        cmake_keys_no_rosdep: Optional set of CMake `find_package` names that
+            should not be reported as dependencies. When ``None`` the built-in
+            defaults are used; when provided, the caller is responsible for
+            merging the defaults in.
 
     Returns:
         Tuple of (main_deps, test_deps) as lists of unique dependency names.
     """
     if isinstance(lines, Path):
         lines = read_cmake_file(lines)
+
+    keys_no_rosdep = (
+        cmake_keys_no_rosdep
+        if cmake_keys_no_rosdep is not None
+        else _DEFAULT_CMAKE_KEYS_NO_ROSDEP
+    )
 
     main_deps: list[str] = []
     test_deps: list[str] = []
@@ -282,13 +299,13 @@ def retrieve_cmake_dependencies(
     # 1. Remove duplicates
     # 2. Remove known ignored keys (like 'Threads')
 
-    unique_main = sorted({dep for dep in main_deps if dep not in CMAKE_KEYS_NO_ROSDEP})
-    unique_test = sorted({dep for dep in test_deps if dep not in CMAKE_KEYS_NO_ROSDEP})
+    unique_main = sorted({dep for dep in main_deps if dep not in keys_no_rosdep})
+    unique_test = sorted({dep for dep in test_deps if dep not in keys_no_rosdep})
 
     return unique_main, unique_test
 
 
-def read_cmake_file(file_path: Union[Path, str]) -> list[str]:
+def read_cmake_file(file_path: Path | str) -> list[str]:
     """Read and normalize CMake file lines for dependency parsing.
 
     Args:
@@ -301,14 +318,17 @@ def read_cmake_file(file_path: Union[Path, str]) -> list[str]:
         file_path = Path(file_path)
 
     if not file_path.exists():
-        print(f"File not found: {file_path}")
+        print(f"File not found: {file_path}", file=sys.stderr)
         return []
 
     try:
         with open(file_path, encoding="utf-8") as f:
             raw_lines = f.readlines()
     except UnicodeDecodeError:
-        print(f"Error: Could not decode {file_path}. Is it a valid text file?")
+        print(
+            f"Error: Could not decode {file_path}. Is it a valid text file?",
+            file=sys.stderr,
+        )
         return []
 
     lines = remove_comments(raw_lines)
@@ -319,19 +339,25 @@ def read_cmake_file(file_path: Union[Path, str]) -> list[str]:
 
 
 def read_deps_from_cmake_file(
-    file_path: Union[Path, str],
+    file_path: Path | str,
+    cmake_keys_no_rosdep: frozenset[str] | None = None,
 ) -> tuple[list[str], list[str]]:
     """Read a CMake file and return main and test dependencies.
 
     Args:
         file_path: Path to a CMakeLists.txt file.
+        cmake_keys_no_rosdep: Optional override for the set of CMake keys that
+            should not be reported as dependencies. See
+            :func:`retrieve_cmake_dependencies`.
 
     Returns:
         Tuple of (main_deps, test_deps).
     """
     try:
-        main_deps, test_deps = retrieve_cmake_dependencies(Path(file_path))
+        main_deps, test_deps = retrieve_cmake_dependencies(
+            Path(file_path), cmake_keys_no_rosdep
+        )
         return main_deps, test_deps
-    except Exception as e:
-        print(f"Error processing file {file_path}: {e}")
+    except (OSError, UnicodeDecodeError) as e:
+        print(f"Error processing file {file_path}: {e}", file=sys.stderr)
         return [], []

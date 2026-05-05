@@ -23,6 +23,7 @@ class ValidationConfig:
     strict_cmake_checking: bool
     missing_deps_only: bool
     ignore_formatting_errors: bool
+    cmake_keys_no_rosdep: frozenset[str] = frozenset()
 
 
 @dataclass
@@ -516,9 +517,9 @@ class CMakeComparisonStep(ValidationStep):
             return result
 
         pkg_name = os.path.basename(os.path.dirname(xml_file))
-        build_deps_cmake, test_deps_cmake = read_deps_from_cmake_file(cmake_file)
-        build_deps_cmake = [dep for dep in build_deps_cmake if dep != "ament_cmake"]
-        test_deps_cmake = [dep for dep in test_deps_cmake if dep != "ament_cmake"]
+        build_deps_cmake, test_deps_cmake = read_deps_from_cmake_file(
+            cmake_file, self.config.cmake_keys_no_rosdep or None
+        )
 
         build_deps = self.formatter.retrieve_build_dependencies(root)
         test_deps = self.formatter.retrieve_test_dependencies(root)
