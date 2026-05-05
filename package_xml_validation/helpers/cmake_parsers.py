@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-import sys
+import logging
 from pathlib import Path
 import re
+
+logger = logging.getLogger(__name__)
 
 # -----------------------------------------------------------------------------
 # Constants & Configuration
@@ -318,17 +320,14 @@ def read_cmake_file(file_path: Path | str) -> list[str]:
         file_path = Path(file_path)
 
     if not file_path.exists():
-        print(f"File not found: {file_path}", file=sys.stderr)
+        logger.error("File not found: %s", file_path)
         return []
 
     try:
         with open(file_path, encoding="utf-8") as f:
             raw_lines = f.readlines()
     except UnicodeDecodeError:
-        print(
-            f"Error: Could not decode {file_path}. Is it a valid text file?",
-            file=sys.stderr,
-        )
+        logger.error("Could not decode %s. Is it a valid text file?", file_path)
         return []
 
     lines = remove_comments(raw_lines)
@@ -359,5 +358,5 @@ def read_deps_from_cmake_file(
         )
         return main_deps, test_deps
     except (OSError, UnicodeDecodeError) as e:
-        print(f"Error processing file {file_path}: {e}", file=sys.stderr)
+        logger.error("Error processing file %s: %s", file_path, e)
         return [], []

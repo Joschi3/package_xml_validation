@@ -128,14 +128,10 @@ def add_buildtool_depends(root: XmlElement, buildtool: list[str]) -> None:
     # 1. clear existing buildtool_depend elements
     for elem in root.findall("buildtool_depend"):
         root.remove(elem)
-    # 2. insertposition -> after license, url, or author element
+    # 2. insert position -> after the last license/url/author element
     insert_position = 0
     for i, elem in enumerate(root):
-        if isinstance(elem.tag, str) and elem.tag == "license":
-            insert_position = i + 1
-        elif isinstance(elem.tag, str) and elem.tag == "url":
-            insert_position = i + 1
-        elif isinstance(elem.tag, str) and elem.tag == "author":
+        if isinstance(elem.tag, str) and elem.tag in {"license", "url", "author"}:
             insert_position = i + 1
     # 3. add buildtool_depend elements
     for i, tool in enumerate(buildtool):

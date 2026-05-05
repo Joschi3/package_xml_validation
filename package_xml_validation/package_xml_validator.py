@@ -103,7 +103,6 @@ class PackageXmlValidator:
             self.rosdep_validator = RosdepValidator(pkg_path=path)
         self.formatter = PackageXmlFormatter(
             check_only=self.check_only,
-            check_with_xmllint=False,
             verbose=verbose,
         )
         effective_cmake_keys = _DEFAULT_CMAKE_KEYS_NO_ROSDEP | frozenset(

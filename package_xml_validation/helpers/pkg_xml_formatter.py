@@ -36,7 +36,6 @@ class PackageXmlFormatter:
         self,
         check_only: bool = False,
         verbose: bool = False,
-        check_with_xmllint: bool = False,
         logger: logging.Logger | None = None,
     ) -> None:
         """Initialize formatter configuration and logger.
@@ -44,7 +43,6 @@ class PackageXmlFormatter:
         Args:
             check_only: If True, do not mutate XML when checks fail.
             verbose: If True, enable verbose logging.
-            check_with_xmllint: If True, enable xmllint checks (unused here).
             logger: Optional logger instance to use.
 
         Returns:
@@ -52,7 +50,6 @@ class PackageXmlFormatter:
 
         """
         self.check_only = check_only
-        self.check_with_xmllint = check_with_xmllint
         self.logger = (
             logger
             if logger
