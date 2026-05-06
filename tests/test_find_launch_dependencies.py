@@ -33,6 +33,19 @@ class TestFindLaunchDependencies(unittest.TestCase):
         ],
         "python_example_bad.launch.py": [],  # ["demo_nodes_cpp", "turtlesim"],
         "yaml_example_bad.launch.yml": [],  # ["demo_nodes_cpp", "turtlesim"],
+        "python_composable_nodes.launch.py": ["image_proc", "lifecycle_demo"],
+        "python_find_package_prefix.launch.py": [
+            "foo_pkg",
+            "bar_pkg",
+            "baz_pkg",
+            "qux_pkg",
+        ],
+        "xml_composable_container.launch.xml": [
+            "comp_a",
+            "cont_b",
+            "find_prefix_pkg",
+        ],
+        "better_launch_example.launch.py": ["bl_pkg_a", "bl_pkg_b"],
     }
 
     # Directory where example launch files live
@@ -72,6 +85,20 @@ class TestFindLaunchDependencies(unittest.TestCase):
         )
         found = scan_files(existing_file)
         self.assertEqual(len(found), 0)
+
+    def test_scan_directory_with_toml(self):
+        """better_launch .toml files under a launch/ dir contribute deps; .toml
+        outside a launch/ dir must not."""
+        pkg_dir = os.path.join(
+            os.path.dirname(__file__),
+            "examples",
+            "launch_examples",
+            "better_launch_toml",
+        )
+        found = set(scan_files(pkg_dir))
+        self.assertIn("toml_pkg_a", found)
+        self.assertNotIn("should_be_ignored", found)
+        self.assertNotIn("must_not_match", found)
 
 
 if __name__ == "__main__":

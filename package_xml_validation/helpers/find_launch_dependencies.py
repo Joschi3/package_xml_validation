@@ -23,21 +23,46 @@ REGEX_EXPR = [
     r"pkg\s*:\s*['\"]?([A-Za-z0-9_]+)['\"]?",
     # Hector launch component:  package: <pkg_name>
     r"package\s*:\s*['\"]?([A-Za-z0-9_]+)['\"]?",
-    # Python Node call: Node(..., package='<pkg_name>', ...)
-    r"Node\s*\(\s*[^)]*?package\s*=\s*['\"]([A-Za-z0-9_]+)['\"]",
+    # Python Node-family constructors: Node / LifecycleNode / ComposableNode /
+    # ComposableLifecycleNode (..., package='<pkg_name>', ...)
+    r"(?:^|[^\w])(?:Node|LifecycleNode|ComposableNode|ComposableLifecycleNode)\s*\(\s*[^)]*?\bpackage\s*=\s*['\"]([A-Za-z0-9_]+)['\"]",
     # XML node tag: <node pkg="foo" ...>
     r"<node[^>]*?\bpkg\s*=\s*['\"]?([A-Za-z0-9_]+)['\"]?",
+    # XML composable node: <composable_node pkg="foo" ...>
+    r"<composable_node[^>]*?\bpkg\s*=\s*['\"]?([A-Za-z0-9_]+)['\"]?",
+    # XML node container: <node_container pkg="foo" ...>
+    r"<node_container[^>]*?\bpkg\s*=\s*['\"]?([A-Za-z0-9_]+)['\"]?",
     # get_package_share_directory('foo')
     r"get_package_share_directory\(\s*['\"]([A-Za-z0-9_]+)['\"]\s*\)",
+    # get_package_share_path('foo')
+    r"get_package_share_path\(\s*['\"]([A-Za-z0-9_]+)['\"]\s*\)",
+    # get_package_prefix('foo')
+    r"get_package_prefix\(\s*['\"]([A-Za-z0-9_]+)['\"]\s*\)",
     # FindPackageShare('foo')
     r"FindPackageShare\(\s*['\"]([A-Za-z0-9_]+)['\"]\s*\)",
     # FindPackageShare(package='foo')
     r"FindPackageShare\(\s*package\s*=\s*['\"]([A-Za-z0-9_]+)['\"]\s*\)",
+    # FindPackagePrefix('foo') / FindPackagePrefix(package='foo')
+    r"FindPackagePrefix\(\s*(?:package\s*=\s*)?['\"]([A-Za-z0-9_]+)['\"]\s*\)",
     # $(find-pkg-share foo)
     r"\$\(\s*find-pkg-share\s+([A-Za-z0-9_]+)\s*\)",
+    # $(find-pkg-prefix foo)
+    r"\$\(\s*find-pkg-prefix\s+([A-Za-z0-9_]+)\s*\)",
+    # better_launch Python:  bl.node("pkg", ...)  /  bl.include("pkg", ...)
+    r"\bbl\.node\(\s*['\"]([A-Za-z0-9_]+)['\"]",
+    r"\bbl\.include\(\s*['\"]([A-Za-z0-9_]+)['\"]",
 ]
 
 COMPILED = [re.compile(rx) for rx in REGEX_EXPR]
+
+# TOML patterns are kept separate and only applied to .toml files under a
+# launch/ directory, to avoid false positives from arbitrary TOML configs.
+TOML_REGEX_EXPR = [
+    # better_launch TOML:  package = "pkg"
+    r"^\s*package\s*=\s*['\"]([A-Za-z0-9_]+)['\"]",
+]
+
+TOML_COMPILED = [re.compile(rx, re.MULTILINE) for rx in TOML_REGEX_EXPR]
 
 _TRIPLE_QUOTE_BLOCK = re.compile(r"(?s)(['\"]{3})(?:.*?)(\1)")
 _XML_COMMENT_BLOCK = re.compile(r"(?s)<!--.*?-->")
@@ -148,6 +173,19 @@ def _decomment_yaml(text: str) -> str:
     return _strip_hash_line_comments_outside_strings(text)
 
 
+def _decomment_toml(text: str) -> str:
+    """Remove TOML hash comments outside strings.
+
+    Args:
+        text: TOML source text.
+
+    Returns:
+        Text with comments removed.
+
+    """
+    return _strip_hash_line_comments_outside_strings(text)
+
+
 def _decomment_for_suffix(suffix: str, text: str) -> str:
     """Strip comments based on file suffix.
 
@@ -166,8 +204,24 @@ def _decomment_for_suffix(suffix: str, text: str) -> str:
         return _decomment_xml(text)
     if s.endswith(".yaml") or s.endswith(".yml"):
         return _decomment_yaml(text)
+    if s.endswith(".toml"):
+        return _decomment_toml(text)
     # default: no decommenting
     return text
+
+
+def _is_under_launch_dir(path: str) -> bool:
+    """Return True if any path component (excluding the basename) is named 'launch'.
+
+    Args:
+        path: File path to inspect.
+
+    Returns:
+        Whether the file lives under a 'launch' directory at any depth.
+
+    """
+    parts = os.path.normpath(path).split(os.sep)
+    return "launch" in parts[:-1]
 
 
 def scan_file(path: str, found: set[str], verbose: bool = False) -> None:
@@ -187,7 +241,19 @@ def scan_file(path: str, found: set[str], verbose: bool = False) -> None:
 
     text = _decomment_for_suffix(path, text)
 
-    for i, rx in enumerate(COMPILED):
+    is_toml = path.lower().endswith(".toml")
+    if is_toml:
+        # Only honour TOML matches if the file is scoped under a launch/ dir,
+        # to avoid false positives from arbitrary project TOML configs.
+        if not _is_under_launch_dir(path):
+            return
+        patterns = TOML_COMPILED
+        sources = TOML_REGEX_EXPR
+    else:
+        patterns = COMPILED
+        sources = REGEX_EXPR
+
+    for i, rx in enumerate(patterns):
         for m in rx.finditer(text):
             pkg = m.group(1)
             found.add(pkg)
@@ -196,7 +262,7 @@ def scan_file(path: str, found: set[str], verbose: bool = False) -> None:
                     "Found package '%s' in %s with regex %s",
                     pkg,
                     os.path.basename(path),
-                    REGEX_EXPR[i],
+                    sources[i],
                 )
 
 
@@ -223,6 +289,9 @@ def scan_files(launch_dir: str, verbose: bool = False) -> list[str]:
 
     for root, _, files in os.walk(launch_dir):
         for fn in files:
+            full = os.path.join(root, fn)
             if fn.endswith((".py", ".xml", ".yaml", ".launch", ".yml")):
-                scan_file(os.path.join(root, fn), pkgs, verbose)
+                scan_file(full, pkgs, verbose)
+            elif fn.endswith(".toml") and _is_under_launch_dir(full):
+                scan_file(full, pkgs, verbose)
     return sorted(pkgs)

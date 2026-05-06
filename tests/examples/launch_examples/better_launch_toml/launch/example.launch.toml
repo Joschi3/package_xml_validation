@@ -1,0 +1,4 @@
+[some_node]
+package = "toml_pkg_a"
+filename = "thing.launch.py"
+# package = "should_be_ignored"
