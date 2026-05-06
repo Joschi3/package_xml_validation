@@ -56,12 +56,17 @@ class TestRosdepConditionFiltering(unittest.TestCase):
 </package>
 """
 
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory(prefix="rosdep_cond_")
+        self.addCleanup(tmp.cleanup)
+        self.fake_xml = os.path.join(tmp.name, "demo", "package.xml")
+
     def _run(self, config, env):
         root = ET.fromstring(self.XML.encode("utf-8"))
         validator = _FakeRosdepValidator(unresolvable=["humble_only_pkg"])
         step = RosdepCheckStep(config, _FakeFormatter(), validator)
         with mock.patch.dict(os.environ, env, clear=True):
-            return step.perform_check(root, "/tmp/demo/package.xml")
+            return step.perform_check(root, self.fake_xml)
 
     def test_inactive_condition_filtered_out(self):
         result = self._run(_config(), {"ROS_DISTRO": "jazzy"})

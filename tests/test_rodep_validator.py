@@ -1,3 +1,5 @@
+import os
+import tempfile
 import unittest
 from unittest.mock import MagicMock, patch, mock_open
 
@@ -18,8 +20,10 @@ class TestRosdepValidator(unittest.TestCase):
             "ubuntu",
             "jammy",
         )
-        self.mock_installer_context.get_sources_cache_dir.return_value = (
-            "/tmp/rosdep_cache"
+        # Mock return value for rosdep's sources cache; never opened by the
+        # tests but Sonar (S5443) flags hardcoded /tmp paths even in mocks.
+        self.mock_installer_context.get_sources_cache_dir.return_value = os.path.join(
+            tempfile.gettempdir(), "rosdep_cache"
         )
         self.mock_installer_context.get_os_installer_keys.return_value = ["apt"]
         self.mock_installer_context.get_default_os_installer_key.return_value = "apt"

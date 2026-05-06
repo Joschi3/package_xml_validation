@@ -59,15 +59,18 @@ def _msg_pkg_dir() -> Path:
 class TestRootTagCheck(unittest.TestCase):
     """ManifestSchemaStep must reject non-<package> roots."""
 
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory(prefix="root_tag_")
+        self.addCleanup(tmp.cleanup)
+        self.fake_xml = os.path.join(tmp.name, "demo", "package.xml")
+
     def test_wrong_root_tag_errors(self):
         xml = """<?xml version="1.0"?>
 <wrong_root format="3">
   <name>demo</name>
 </wrong_root>
 """
-        result = ManifestSchemaStep(_config()).perform_check(
-            _parse(xml), "/tmp/demo/package.xml"
-        )
+        result = ManifestSchemaStep(_config()).perform_check(_parse(xml), self.fake_xml)
         self.assertFalse(result.valid)
         self.assertTrue(any("<wrong_root>" in e for e in result.errors))
 
@@ -79,9 +82,7 @@ class TestRootTagCheck(unittest.TestCase):
   <maintainer email="a@example.com">A</maintainer>
 </package>
 """
-        result = ManifestSchemaStep(_config()).perform_check(
-            _parse(xml), "/tmp/demo/package.xml"
-        )
+        result = ManifestSchemaStep(_config()).perform_check(_parse(xml), self.fake_xml)
         # No root-tag error; other rules independent.
         self.assertFalse(any("REP-149 requires <package>" in e for e in result.errors))
 

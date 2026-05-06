@@ -1,5 +1,7 @@
 """Tests for REP-149 <depend> exclusivity enforcement."""
 
+import os
+import tempfile
 import unittest
 
 import lxml.etree as ET
@@ -29,6 +31,11 @@ def _parse(xml: str):
 
 
 class TestDependencyExclusivityStep(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory(prefix="dep_exclusivity_")
+        self.addCleanup(tmp.cleanup)
+        self.fake_xml = os.path.join(tmp.name, "demo", "package.xml")
+
     def test_no_overlap_passes(self):
         xml = """<?xml version="1.0"?>
 <package format="3">
@@ -39,7 +46,7 @@ class TestDependencyExclusivityStep(unittest.TestCase):
 </package>
 """
         step = DependencyExclusivityStep(_config())
-        result = step.perform_check(_parse(xml), "/tmp/demo/package.xml")
+        result = step.perform_check(_parse(xml), self.fake_xml)
         self.assertTrue(result.valid)
         self.assertEqual(result.errors, [])
 
@@ -52,7 +59,7 @@ class TestDependencyExclusivityStep(unittest.TestCase):
 </package>
 """
         step = DependencyExclusivityStep(_config())
-        result = step.perform_check(_parse(xml), "/tmp/demo/package.xml")
+        result = step.perform_check(_parse(xml), self.fake_xml)
         self.assertFalse(result.valid)
         self.assertTrue(any("build_depend" in e and "foo" in e for e in result.errors))
         self.assertFalse(result.changed)
@@ -66,7 +73,7 @@ class TestDependencyExclusivityStep(unittest.TestCase):
 </package>
 """
         step = DependencyExclusivityStep(_config())
-        result = step.perform_check(_parse(xml), "/tmp/demo/package.xml")
+        result = step.perform_check(_parse(xml), self.fake_xml)
         self.assertFalse(result.valid)
         self.assertTrue(
             any("build_export_depend" in e and "foo" in e for e in result.errors)
@@ -81,7 +88,7 @@ class TestDependencyExclusivityStep(unittest.TestCase):
 </package>
 """
         step = DependencyExclusivityStep(_config())
-        result = step.perform_check(_parse(xml), "/tmp/demo/package.xml")
+        result = step.perform_check(_parse(xml), self.fake_xml)
         self.assertFalse(result.valid)
         self.assertTrue(any("exec_depend" in e and "foo" in e for e in result.errors))
 
@@ -95,7 +102,7 @@ class TestDependencyExclusivityStep(unittest.TestCase):
 </package>
 """
         step = DependencyExclusivityStep(_config())
-        result = step.perform_check(_parse(xml), "/tmp/demo/package.xml")
+        result = step.perform_check(_parse(xml), self.fake_xml)
         self.assertTrue(result.valid)
         self.assertEqual(result.errors, [])
 
@@ -109,7 +116,7 @@ class TestDependencyExclusivityStep(unittest.TestCase):
 </package>
 """
         step = DependencyExclusivityStep(_config())
-        result = step.perform_check(_parse(xml), "/tmp/demo/package.xml")
+        result = step.perform_check(_parse(xml), self.fake_xml)
         self.assertTrue(result.valid)
 
     def test_auto_fix_collapses_unconditional_overlap(self):
@@ -125,7 +132,7 @@ class TestDependencyExclusivityStep(unittest.TestCase):
         step = DependencyExclusivityStep(
             _config(check_only=False, auto_fill_missing_deps=True)
         )
-        result = step.perform_check(root, "/tmp/demo/package.xml")
+        result = step.perform_check(root, self.fake_xml)
         self.assertTrue(result.changed)
         self.assertFalse(result.valid)
         # Granular tags removed; <depend>foo</depend> remains.
@@ -147,7 +154,7 @@ class TestDependencyExclusivityStep(unittest.TestCase):
         step = DependencyExclusivityStep(
             _config(check_only=False, auto_fill_missing_deps=True)
         )
-        result = step.perform_check(root, "/tmp/demo/package.xml")
+        result = step.perform_check(root, self.fake_xml)
         self.assertFalse(result.valid)
         self.assertFalse(result.changed)
         self.assertEqual(len(root.findall("build_depend")), 1)
@@ -166,7 +173,7 @@ class TestDependencyExclusivityStep(unittest.TestCase):
         step = DependencyExclusivityStep(
             _config(check_only=False, auto_fill_missing_deps=True)
         )
-        result = step.perform_check(root, "/tmp/demo/package.xml")
+        result = step.perform_check(root, self.fake_xml)
         self.assertTrue(result.changed)
         self.assertEqual(len(root.findall("build_depend")), 0)
 
@@ -179,7 +186,7 @@ class TestDependencyExclusivityStep(unittest.TestCase):
 </package>
 """
         step = DependencyExclusivityStep(_config(missing_deps_only=True))
-        result = step.perform_check(_parse(xml), "/tmp/demo/package.xml")
+        result = step.perform_check(_parse(xml), self.fake_xml)
         self.assertTrue(result.valid)
         self.assertEqual(result.errors, [])
 
