@@ -177,7 +177,7 @@ class TestPackageXmlValidator(unittest.TestCase):
                             in ("pkg_no_buildtool_depend", "pkg_false_buildtool_depend")
                             and type != FormatterType.FULL
                         )
-                        if not pkg == "pkg_correct" and not is_soft_finding:
+                        if pkg != "pkg_correct" and not is_soft_finding:
                             self.assertFalse(
                                 valid,
                                 f"XML file {xml_file} is expected to be invalid but was valid. (using formatter: {type.value})",

@@ -13,15 +13,15 @@ from package_xml_validation.helpers.validation_steps import (
 
 
 def _config(**overrides):
-    base = dict(
-        check_only=True,
-        auto_fill_missing_deps=False,
-        check_rosdeps=False,
-        compare_with_cmake=False,
-        strict_cmake_checking=False,
-        missing_deps_only=False,
-        ignore_formatting_errors=False,
-    )
+    base = {
+        "check_only": True,
+        "auto_fill_missing_deps": False,
+        "check_rosdeps": False,
+        "compare_with_cmake": False,
+        "strict_cmake_checking": False,
+        "missing_deps_only": False,
+        "ignore_formatting_errors": False,
+    }
     base.update(overrides)
     return ValidationConfig(**base)
 
