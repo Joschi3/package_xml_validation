@@ -122,5 +122,43 @@ class TestSiblingSeparationMessages(unittest.TestCase):
         self.assertIn("more than one blank line", joined)
 
 
+class TestResolveIndentation(unittest.TestCase):
+    """``resolve_indentation`` exposes three fallback branches that
+    callers rely on when a tree is malformed or freshly constructed."""
+
+    def test_returns_default_when_root_is_empty(self):
+        from package_xml_validation.helpers.formatter.indentation import (
+            resolve_indentation,
+        )
+
+        root = ET.fromstring(b'<package format="3"/>')
+        self.assertEqual(resolve_indentation(root), "  ")
+        self.assertEqual(resolve_indentation(root, default="\t"), "\t")
+
+    def test_returns_default_when_first_child_tail_is_none(self):
+        from package_xml_validation.helpers.formatter.indentation import (
+            resolve_indentation,
+        )
+
+        # Build a tree where the first child has tail=None explicitly.
+        root = ET.Element("package")
+        child = ET.SubElement(root, "name")
+        child.text = "demo"
+        # lxml's default tail for a SubElement is None.
+        self.assertIsNone(child.tail)
+        self.assertEqual(resolve_indentation(root), "  ")
+
+    def test_returns_full_tail_when_no_newline(self):
+        from package_xml_validation.helpers.formatter.indentation import (
+            resolve_indentation,
+        )
+
+        root = ET.Element("package")
+        child = ET.SubElement(root, "name")
+        child.text = "demo"
+        child.tail = "   "  # whitespace-only, no newline
+        self.assertEqual(resolve_indentation(root), "   ")
+
+
 if __name__ == "__main__":
     unittest.main()
