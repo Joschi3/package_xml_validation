@@ -239,6 +239,11 @@ class TestRosdepValidator(unittest.TestCase):
         # Both candidates appear in the (deduped) result set.
         self.assertEqual(sorted(r.lower() for r in results), ["boost", "boost"])
 
+    @unittest.skipUnless(
+        SUT.HAS_REGEX_MODULE,
+        "fuzzy-vs-substring tier ordering only applies when the optional "
+        "`regex` package is installed; the `re` fallback is substring-only",
+    )
     def test_search_candidates_orders_contains_before_fuzzy(self):
         """Tier 1 (substring) must beat tier 3 (fuzzy similarity) even
         when the fuzzy candidate has a higher difflib ratio overall."""
