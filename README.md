@@ -130,7 +130,7 @@ The on-disk file now matches the **After** snippet above. The exit code is non-z
 ### Dependency Integrity
 
 * **Launch File Scanning:** Scans `.py`, `.yaml`, and `.xml` launch files. If a package is used in a launch file but missing from `package.xml`, it adds it as an `<exec_depend>` or `<test_depend>`. Can be disabled with `--skip-launch-dep-check` when launch scanning produces false positives or is not desired for a given package.
-* **CMake Synchronization:** Compares `package.xml` against `CMakeLists.txt` to ensure build dependencies match, adding missing entries as `<depend>` or `<test_depend>`. Calls of the form `find_package(<pkg> QUIET)` (with `QUIET` and no `REQUIRED`) are treated as optional and skipped; all other forms — `find_package(<pkg>)`, `find_package(<pkg> REQUIRED)`, and `find_package(<pkg> REQUIRED QUIET)` — are enforced in `package.xml`.
+* **CMake Synchronization:** Compares `package.xml` against `CMakeLists.txt` to ensure build dependencies match, adding missing entries as `<depend>` or `<test_depend>`. Calls of the form `find_package(<pkg> QUIET)` are treated as optional and skipped. all other forms such as `find_package(<pkg>)`, `find_package(<pkg> REQUIRED)`, and `find_package(<pkg> REQUIRED QUIET)` are enforced in `package.xml`.
 * **Rosdep Validation:** Verifies that your dependency names exist as valid keys in the rosdep database.
 
 ### Build Configuration
