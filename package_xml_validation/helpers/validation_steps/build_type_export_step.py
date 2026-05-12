@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
+from ..condition_eval import evaluate_condition
+from ..logger import get_logger
 from ..package_types import PackageType, get_package_type
 from ._base import ValidationConfig, ValidationResult, ValidationStep
 
@@ -34,6 +36,7 @@ class BuildTypeExportStep(ValidationStep):
         """Initialize build type export validation step."""
         super().__init__(config)
         self.formatter = formatter
+        self._logger = get_logger(__name__)
 
     def perform_check(self, root: XmlElement, xml_file: str) -> ValidationResult:
         """Validate and optionally fix <export><build_type> for packages."""
@@ -44,7 +47,14 @@ class BuildTypeExportStep(ValidationStep):
         pkg_type, _ = get_package_type(xml_file)
         export = root.find("export")
         export_exists = export is not None
-        build_type = export.find("build_type") if export is not None else None
+        # REP-149: a <build_type> with a condition that evaluates to False
+        # doesn't apply, so we should treat it as absent for matching. When
+        # multiple are active, REP-149 specifies that the last one wins.
+        build_type = (
+            self._find_active_build_type(export, result, xml_file)
+            if export is not None
+            else None
+        )
         expected = _expected_build_type(pkg_type)
 
         # No expected build_type means the package type doesn't require one;
@@ -77,6 +87,37 @@ class BuildTypeExportStep(ValidationStep):
         result.changed = True
         result.valid = False
         return result
+
+    def _find_active_build_type(
+        self, export: XmlElement, result: ValidationResult, xml_file: str
+    ) -> XmlElement | None:
+        """Return the active ``<build_type>``, applying REP-149's last-wins rule.
+
+        REP-149: *"Only one build type should be active after conditions are
+        evaluated. If multiple are active then the last build type is to be
+        used."* When more than one is active we honour the spec but also
+        emit a warning — multiple unconditional ``<build_type>`` entries
+        almost always indicate a config mistake.
+
+        With ``evaluate_conditions=False`` every ``<build_type>`` is
+        considered active and the last one wins (matches REP-149 fallback).
+        """
+        actives: list[XmlElement] = [
+            bt
+            for bt in export.findall("build_type")
+            if not self.config.evaluate_conditions
+            or evaluate_condition(bt.get("condition"), logger=self._logger)
+        ]
+        if not actives:
+            return None
+        if len(actives) > 1:
+            pkg_name = os.path.basename(os.path.dirname(xml_file))
+            tags = ", ".join(bt.text or "" for bt in actives)
+            result.warnings.append(
+                f"{pkg_name}/package.xml has multiple active <build_type> "
+                f"entries ({tags}); REP-149 says the last one wins."
+            )
+        return actives[-1]
 
 
 def _expected_build_type(pkg_type: PackageType) -> str | None:

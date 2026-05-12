@@ -20,10 +20,13 @@ from .helpers.validation_steps import (
     BuildToolDependStep,
     BuildTypeExportStep,
     CMakeComparisonStep,
+    DependencyExclusivityStep,
     FormatterValidationStep,
     LaunchDependencyStep,
+    ManifestSchemaStep,
     MemberOfGroupStep,
     RosdepCheckStep,
+    RosidlInterfaceRuntimeStep,
     ValidationConfig,
     ValidationStep,
 )
@@ -48,6 +51,7 @@ class PackageXmlValidator:
         cmake_keys_no_rosdep: Iterable[str] | None = None,
         ignored_deps: Iterable[str] | None = None,
         skip_launch_dep_check: bool = False,
+        evaluate_conditions: bool = True,
     ) -> None:
         """Initialize the package.xml validator with feature flags.
 
@@ -66,6 +70,11 @@ class PackageXmlValidator:
                 built-in defaults; never replaces them.
             ignored_deps: Global set of dependency names to ignore in validation.
             skip_launch_dep_check: Skip launch and test file dependency checks.
+            evaluate_conditions: Honour REP-149 ``condition="…"`` attributes on
+                dependency tags. When True (default), entries whose condition
+                evaluates to False against ``os.environ`` are skipped during
+                rosdep / CMake comparison. Disable with ``--ignore-conditions``
+                to evaluate every entry regardless.
 
         Returns:
             None.
@@ -83,7 +92,8 @@ class PackageXmlValidator:
         self.compare_with_cmake = compare_with_cmake
         if self.compare_with_cmake and not self.check_rosdeps:
             self.logger.warning(
-                "Comparing with CMake but not checking ROS dependencies is not supported."
+                "Comparing with CMake but not checking ROS dependencies is not supported.",
+                extra={"flush_left": True},
             )
             self.compare_with_cmake = False
         self.strict_cmake_checking = strict_cmake_checking
@@ -108,6 +118,7 @@ class PackageXmlValidator:
             ignore_formatting_errors=self.ignore_formatting_errors,
             cmake_keys_no_rosdep=effective_cmake_keys,
             skip_launch_dep_check=skip_launch_dep_check,
+            evaluate_conditions=evaluate_conditions,
         )
 
         # num_checks and check_count are set per-file in check_and_format_files
@@ -150,24 +161,20 @@ class PackageXmlValidator:
             List of ValidationStep instances to run.
 
         """
-        exec_deps = self.formatter.retrieve_exec_dependencies(root)
-        test_deps = self.formatter.retrieve_test_dependencies(root)
-
         # Parse per-package exceptions from XML comments and merge with global
         exceptions = parse_exceptions(root)
         if self.global_ignored_deps:
             merged = exceptions.ignored_deps | self.global_ignored_deps
             exceptions = DependencyExceptions(ignored_deps=merged)
 
-        steps = [
+        steps: list[ValidationStep] = [
+            ManifestSchemaStep(self.validation_config),
             FormatterValidationStep(self.validation_config, self.formatter),
             LaunchDependencyStep(
                 self.validation_config,
                 self.formatter,
                 self.rosdep_validator if self.check_rosdeps else None,
                 package_name,
-                exec_deps,
-                test_deps,
                 exceptions,
             ),
         ]
@@ -175,9 +182,11 @@ class PackageXmlValidator:
         if not self.missing_deps_only:
             steps.extend(
                 [
+                    DependencyExclusivityStep(self.validation_config),
                     BuildToolDependStep(self.validation_config, self.formatter),
                     MemberOfGroupStep(self.validation_config, self.formatter),
                     BuildTypeExportStep(self.validation_config, self.formatter),
+                    RosidlInterfaceRuntimeStep(self.validation_config, self.formatter),
                 ]
             )
 
@@ -220,7 +229,7 @@ class PackageXmlValidator:
         for xml_file in package_xml_files:
             self.xml_valid = True
             pkg_name = os.path.basename(os.path.dirname(xml_file))
-            self.logger.info(f"Processing {pkg_name}...")
+            self.logger.info(f"Processing {pkg_name}...", extra={"flush_left": True})
             self.logger.debug(f"Checking {xml_file}...")
 
             if not os.path.exists(xml_file):
@@ -281,21 +290,27 @@ class PackageXmlValidator:
         # Final result messages
         if not self.all_valid and self.check_only:
             self.logger.warning(
-                "❌ Some `package.xml` files have issues. Please review the messages above. 🛠️"
+                "❌ Some `package.xml` files have issues. Please review the messages above. 🛠️",
+                extra={"flush_left": True},
             )
             return False
         elif not self.all_valid:
             if encountered_unresolvable_error:
                 self.logger.warning(
-                    "⚠️ Some `package.xml` files have unresolvable errors. Please check the logs for details. 🔍"
+                    "⚠️ Some `package.xml` files have unresolvable errors. Please check the logs for details. 🔍",
+                    extra={"flush_left": True},
                 )
                 return False
             else:
-                self.logger.info("✅ Corrected `package.xml` files successfully. 🎉")
+                self.logger.info(
+                    "✅ Corrected `package.xml` files successfully. 🎉",
+                    extra={"flush_left": True},
+                )
                 return False
         else:
             self.logger.info(
-                "🎉 All `package.xml` files are valid and nicely formatted. 🚀"
+                "🎉 All `package.xml` files are valid and nicely formatted. 🚀",
+                extra={"flush_left": True},
             )
             return True
 
@@ -312,7 +327,8 @@ class PackageXmlValidator:
         package_xml_files = find_package_xml_files(src)
         if not package_xml_files:
             self.logger.info(
-                "No package.xml files found in the provided paths. Nothing to check."
+                "No package.xml files found in the provided paths. Nothing to check.",
+                extra={"flush_left": True},
             )
             return True
         return self.check_and_format_files(package_xml_files)
@@ -407,6 +423,17 @@ def main() -> None:
         help="Skip checking for missing dependencies in launch and test files.",
     )
 
+    parser.add_argument(
+        "--ignore-conditions",
+        action="store_true",
+        help=(
+            'Disable evaluation of REP-149 condition="…" attributes. By default '
+            "dependencies whose condition evaluates to False against the current "
+            "environment are skipped during rosdep / CMake comparison; with this "
+            "flag every entry is evaluated regardless of its condition."
+        ),
+    )
+
     argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
@@ -447,6 +474,7 @@ def main() -> None:
         cmake_keys_no_rosdep=args.ignore_cmake_key,
         ignored_deps=global_ignored,
         skip_launch_dep_check=args.skip_launch_dep_check,
+        evaluate_conditions=not args.ignore_conditions,
     )
 
     if args.file:

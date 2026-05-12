@@ -377,17 +377,27 @@ def check_for_empty_lines(
     check_only: bool,
     logger: logging.Logger,
 ) -> bool:
-    """Ensure at most one blank line separates sibling elements."""
+    """Enforce sibling separation: exactly one newline, at most one blank line.
+
+    Both "siblings on the same line" (no newline between them) and "more
+    than one blank line between siblings" violate this single rule.
+    """
     found_empty_lines = False
     for elm in root:
         if elm.tail and elm.tail.count(NEW_LINE) > 2:
-            logger.info(f"Error: More than one empty line found in {xml_file}.")
+            logger.info(
+                f"Sibling separation error in {xml_file}: more than one "
+                "blank line between siblings."
+            )
             found_empty_lines = True
             if check_only:
                 return False
         if elm.tail is None or elm.tail.count(NEW_LINE) == 0:
             found_empty_lines = True
-            logger.info(f"Error: Two elements are on the same line in {xml_file}.")
+            logger.info(
+                f"Sibling separation error in {xml_file}: two siblings on "
+                "the same line."
+            )
             if check_only:
                 return False
 
@@ -428,6 +438,11 @@ def check_indentation(
             elem.tail, expected_indent, check_only
         )
         is_correct &= not corrected
+        # Comment nodes' .text is the comment body and may legitimately span
+        # multiple lines (e.g. block-commented-out XML); they aren't schema
+        # elements, so the "newlines in text" rule doesn't apply.
+        if elem.tag is ET.Comment:  # type: ignore[comparison-overlap]
+            continue  # type: ignore[unreachable]
         if len(elem) > 0:
             if not check_indentation(elem, check_only, logger, level + 1, indentation):
                 is_correct = False

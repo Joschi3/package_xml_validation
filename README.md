@@ -7,7 +7,9 @@
 
 **Automate `package.xml` consistency in your ROS 2 projects.**
 
-This tool checks your package manifests for required tags, schema-defined ordering, and missing dependencies discovered in `CMakeLists.txt` and launch files, then automatically formats the XML to standard conventions. It does **not** perform full XSD validation — for that, run `xmllint --schema package_format3.xsd` separately. **Designed primarily as a [pre-commit](https://pre-commit.com/) hook.**
+This tool checks your package manifests for required tags, schema-defined ordering, [REP-149](https://www.ros.org/reps/rep-0149.html) invariants, and missing dependencies discovered in `CMakeLists.txt` and launch files, then automatically formats the XML to standard conventions. **Designed primarily as a [pre-commit](https://pre-commit.com/) hook.**
+
+Requires Python ≥ 3.9 and an initialized `rosdep` install (any ROS 2 distro). Tested on Ubuntu 22.04 / 24.04.
 
 ---
 
@@ -19,12 +21,11 @@ The recommended way to use this tool is to integrate it into your `pre-commit` w
 
 ```yaml
 repos:
-  - repo: git@github.com:Joschi3/package_xml_validation.git
+  - repo: https://github.com/Joschi3/package_xml_validation.git
     rev: v1.4.2  # Use the latest tag
     hooks:
       - id: format-package-xml
         name: Format package.xml
-
 ```
 
 ### 2. Install the Hook
@@ -34,7 +35,6 @@ If you haven't already installed pre-commit hooks in your repository:
 ```bash
 pip install pre-commit
 pre-commit install
-
 ```
 
 Now, `package.xml` files will be checked and formatted automatically on every `git commit`.
@@ -61,7 +61,6 @@ This tool enforces the standard ROS 2 element order:
   <depend>std_msgs</depend>
   <depend>rclcpp</depend>
 </package>
-
 ```
 
 **After (Standardized, Sorted & Fixed):**
@@ -88,52 +87,56 @@ This tool enforces the standard ROS 2 element order:
     <build_type>ament_cmake</build_type>
   </export>
 </package>
-
 ```
+
+---
+
+## 🖥️ Sample Output
+
+Running the validator on the **Before** manifest above with `--auto-fill-missing-deps` produces:
+
+```text
+Processing my_package...
+	Element order in my_package/package.xml is incorrect.
+	Misplaced elements: version, maintainer, buildtool_depend
+	Corrected dependency order in my_package/package.xml.
+	Check element order corrected in my_package/package.xml.
+	Check dependency order corrected in my_package/package.xml.
+	Auto-filling <export><build_type>ament_cmake</build_type></export> in my_package/package.xml.
+✅ Corrected `package.xml` files successfully. 🎉
+```
+
+The on-disk file now matches the **After** snippet above. The exit code is non-zero because the file was modified — `pre-commit` treats that as "please re-stage and re-commit."
 
 ---
 
 ## ✨ Features
 
-### 1. XML Formatting & Standards
+### XML Formatting & Standards
 
-* **Required Tags:** Enforces the presence of required tags (`name`, `version`, `description`, `maintainer`, `license`) and rejects unknown top-level child tags. Does not perform full XSD validation (e.g. `format` attribute values, attribute requirements like `<maintainer email="…">`, or contents of `<export>`); pair with `xmllint --schema` if you need that.
+* **Required Tags:** Enforces the presence of required tags (`name`, `version`, `description`, `maintainer`, `license`) and rejects unknown top-level child tags. Accepts every REP-149 dependency tag including the anti-dependency `<conflict>` and `<replace>` tags.
 * **Strict Ordering:** Reorders elements to match the official ROS 2 standard ([package_format3.xsd](http://download.ros.org/schema/package_format3.xsd)).
 * **Intelligent Sorting:** Groups dependencies (e.g., `build_depend`, `exec_depend`) and sorts them alphabetically.
 * **Non-Destructive:** Preserves your existing comments and indentation.
 
-### 2. Dependency Integrity
+### [REP-149](https://www.ros.org/reps/rep-0149.html) Conformance
+
+* **Manifest Invariants:** Validates that the root element is `<package>`, that `<package format="3">` is present, `<name>` syntax matches `^[a-z][a-z0-9_]*$`, `<version>` syntax matches `MAJOR.MINOR.PATCH`, and every `<maintainer>` has a non-empty `email="…"` attribute. These can't be safely auto-filled, so they're report-only.
+* **Conditional Dependencies:** Honours REP-149 `condition="…"` attributes on dependency tags. Entries whose condition evaluates to `False` against `os.environ` are skipped during rosdep checks, CMake comparison, launch-file scanning, build-type matching, and `<member_of_group>` checks — matching what colcon does at build time. Disable with `--ignore-conditions` if your validation environment differs from build time.
+* **`<depend>` Exclusivity:** REP-149 forbids declaring the same key in both `<depend>` and any of `<build_depend>`/`<build_export_depend>`/`<exec_depend>`. The validator reports overlaps; with `--auto-fill-missing-deps` it collapses redundant granular tags into the canonical `<depend>` form.
+* **Multiple `<build_type>`:** When more than one `<build_type>` is active after condition evaluation, the validator picks the last one (REP-149 last-wins rule) and warns — multiple actives almost always indicate a config mistake.
+* **Interface Packages:** Message/service/action packages are required to declare `<exec_depend>rosidl_default_runtime</exec_depend>` (or the unified `<depend>` equivalent), per the rolling "Custom interfaces" tutorial. Auto-filled when `--auto-fill-missing-deps` is on.
+
+### Dependency Integrity
 
 * **Launch File Scanning:** Scans `.py`, `.yaml`, and `.xml` launch files. If a package is used in a launch file but missing from `package.xml`, it adds it as an `<exec_depend>` or `<test_depend>`. Can be disabled with `--skip-launch-dep-check` when launch scanning produces false positives or is not desired for a given package.
-* **CMake Synchronization:** Compares `package.xml` against `CMakeLists.txt` to ensure build dependencies match, adding missing entries as `<depend>` or `<test_depend>`. Calls of the form `find_package(<pkg> QUIET)` (with `QUIET` and no `REQUIRED`) are treated as optional and skipped; all other forms — `find_package(<pkg>)`, `find_package(<pkg> REQUIRED)`, and `find_package(<pkg> REQUIRED QUIET)` — are enforced in `package.xml`.
+* **CMake Synchronization:** Compares `package.xml` against `CMakeLists.txt` to ensure build dependencies match, adding missing entries as `<depend>` or `<test_depend>`. Calls of the form `find_package(<pkg> QUIET)` are treated as optional and skipped. all other forms such as `find_package(<pkg>)`, `find_package(<pkg> REQUIRED)`, and `find_package(<pkg> REQUIRED QUIET)` are enforced in `package.xml`.
 * **Rosdep Validation:** Verifies that your dependency names exist as valid keys in the rosdep database.
 
-### 3. Build Configuration
+### Build Configuration
 
 * **Export Validation:** Ensures the correct `<build_type>` (e.g., `ament_cmake`) is exported.
 * **Test Dependencies:** Parses `test/` folders to ensure testing libraries are declared as `<test_depend>`.
-
----
-
-## 🧭 Architecture
-
-The validator is structured as a small pipeline. For each `package.xml`,
-`PackageXmlValidator` parses the file once, runs a list of validation steps
-against the in-memory tree, and writes back only if a step actually mutated.
-
-| Module | Responsibility |
-| --- | --- |
-| `package_xml_validator.py` | CLI entry point and per-file orchestration (parse → run steps → optionally write). |
-| `helpers/validation_steps/` | One `*Step` class per validation rule. Each docstring states the rule, inputs, and when (if ever) it mutates the tree. |
-| `helpers/formatter/` | Pure structural checks (`structural_checks.py`), tree mutators (`mutations.py`), indentation/pretty-print helpers, and shared schema constants. `PackageXmlFormatter` is a thin facade. |
-| `helpers/cmake_parsers.py` | Lightweight regex-based CMake parser used by `CMakeComparisonStep`. |
-| `helpers/find_launch_dependencies.py` | Extracts package names referenced from launch files for `LaunchDependencyStep`. |
-| `helpers/rosdep_validator.py`, `rosdep_wrapper.py` | Resolve rosdep keys + workspace packages; the wrapper is the single boundary against the untyped `rosdep2`. |
-| `helpers/workspace.py` | ROS workspace layout discovery (locate the `<ws>/src` for a given path). |
-
-To add a new validation rule, create a new file under `helpers/validation_steps/`
-exporting a subclass of `ValidationStep`, then register it in
-`PackageXmlValidator._build_steps`.
 
 ---
 
@@ -147,24 +150,20 @@ If you need to run the validator manually or in a CI environment without pre-com
 pip install package-xml-validator
 # OR install from source
 pip install .
-
 ```
 
 ### Usage Examples
-
 
 **Check only (Don't modify files)**
 
 ```bash
 package-xml-validator . --check-only
-
 ```
 
 **Auto-fill missing dependencies from CMake**
 
 ```bash
 package-xml-validator . --compare-with-cmake --auto-fill-missing-deps
-
 ```
 
 ### CLI Options
@@ -180,6 +179,7 @@ package-xml-validator . --compare-with-cmake --auto-fill-missing-deps
 | `--ignore-cmake-key KEY` | Treat `find_package(KEY ...)` in `CMakeLists.txt` as not requiring a `package.xml` `<depend>` entry. Repeatable. Merged with the built-in defaults (`Threads`, `OpenMP`, `ament_cmake`). |
 | `--ignore-deps dep1,dep2` | Comma-separated list of dependency names to globally ignore in validation. |
 | `--skip-launch-dep-check` | Skip checking for missing dependencies in launch and test files. |
+| `--ignore-conditions` | Disable evaluation of REP-149 `condition="…"` attributes; every entry is then evaluated regardless of its condition. |
 
 ---
 
@@ -218,14 +218,44 @@ package-xml-validator . --compare-with-cmake --ignore-deps rviz2,joint_state_pub
 
 ## 🧪 CI Integration
 
-To run this in GitHub Actions or GitLab CI (outside of pre-commit), use the check-only mode.
+The simplest CI integration is to run your existing `pre-commit` config in GitHub Actions:
 
-```bash
-package-xml-validator --check-only --compare-with-cmake .
-
+```yaml
+# .github/workflows/lint.yml
+on: [push, pull_request]
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: pre-commit/action@v3.0.1
 ```
 
-*Note: If `rosdep` is not initialized in your CI environment, add `--skip-rosdep-key-validation` to avoid errors.*
+If `rosdep` is not initialized in your CI image, add `--skip-rosdep-key-validation` to the hook's `args` in `.pre-commit-config.yaml`.
+
+---
+
+## 🧭 Architecture
+
+The validator is structured as a small pipeline. For each `package.xml`,
+`PackageXmlValidator` parses the file once, runs a list of validation steps
+against the in-memory tree, and writes back only if a step actually mutated.
+
+| Module | Responsibility |
+| --- | --- |
+| `package_xml_validator.py` | CLI entry point and per-file orchestration (parse → run steps → optionally write). |
+| `helpers/validation_steps/` | One `*Step` class per validation rule. Each docstring states the rule, inputs, and when (if ever) it mutates the tree. |
+| `helpers/formatter/` | Pure structural checks (`structural_checks.py`), tree mutators (`mutations.py`), indentation/pretty-print helpers, and shared schema constants. `PackageXmlFormatter` is a thin facade. |
+| `helpers/cmake_parsers.py` | Lightweight regex-based CMake parser used by `CMakeComparisonStep`. |
+| `helpers/find_launch_dependencies.py` | Extracts package names referenced from launch files for `LaunchDependencyStep`. |
+| `helpers/rosdep_validator.py`, `rosdep_wrapper.py` | Resolve rosdep keys + workspace packages; the wrapper is the single boundary against the untyped `rosdep2`. |
+| `helpers/workspace.py` | ROS workspace layout discovery (locate the `<ws>/src` for a given path). |
+
+To add a new validation rule, create a new file under `helpers/validation_steps/`
+exporting a subclass of `ValidationStep`, then register it in
+`PackageXmlValidator._build_steps`.
 
 ---
 

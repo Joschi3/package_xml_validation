@@ -306,5 +306,96 @@ class TestWorkspaceHelpers(unittest.TestCase):
                 SUT.main()
 
 
+class TestBuildOutputFiltering(unittest.TestCase):
+    """Regression: walker must skip installed copies under build-output trees.
+
+    Reproduces the bug where ``cmake-build-debug/share/<pkg>/package.xml``
+    (CLion default) was scanned alongside the source manifest, causing
+    duplicate "Processing X..." log lines and spurious "neither
+    CMakeLists.txt nor setup.py present" warnings from BuildToolDependStep.
+    """
+
+    BUILD_OUTPUT_DIRS = (
+        "build",
+        "install",
+        "log",
+        "cmake-build-debug",
+        "cmake-build-release",
+    )
+
+    def setUp(self):
+        self.t = TempTree()
+        self.ws = self.t.ws("ws_build_output")
+        self.src_pkg = self.t.pkg(self.ws / "src", "demo", name_in_xml="demo")
+        self.t.touch(self.src_pkg / "CMakeLists.txt", "project(demo)\n")
+
+    def tearDown(self):
+        self.t.close()
+
+    def _add_installed_copy(self, build_dir_name: str, where: Path) -> Path:
+        """Drop a fake installed package.xml under ``where/<build_dir_name>/share/demo``."""
+        installed = where / build_dir_name / "share" / "demo"
+        installed.mkdir(parents=True, exist_ok=True)
+        xml = installed / "package.xml"
+        xml.write_text("<package><name>demo</name></package>")
+        return xml
+
+    def test_find_package_xml_files_skips_workspace_level_build_outputs(self):
+        """A `build/`, `install/`, `log/`, or `cmake-build-*` *next to* `src/`
+        is the colcon convention; nothing under it is a real source manifest."""
+        for name in self.BUILD_OUTPUT_DIRS:
+            with self.subTest(build_dir=name):
+                installed = self._add_installed_copy(name, self.ws)
+                results = _as_str_set(SUT.find_package_xml_files([self.ws]))
+                self.assertIn(str(self.src_pkg / "package.xml"), results)
+                self.assertNotIn(str(installed), results)
+
+    def test_find_package_xml_files_skips_in_package_build_outputs(self):
+        """CLion's default ``cmake-build-debug`` lives *inside* the package,
+        not at workspace level. Make sure that's filtered too."""
+        for name in self.BUILD_OUTPUT_DIRS:
+            with self.subTest(build_dir=name):
+                installed = self._add_installed_copy(name, self.src_pkg)
+                results = _as_str_set(SUT.find_package_xml_files([self.ws]))
+                self.assertIn(str(self.src_pkg / "package.xml"), results)
+                self.assertNotIn(str(installed), results)
+
+    def test_find_package_xml_files_no_duplicate_processing(self):
+        """The original bug: scanning a workspace with both a source pkg
+        and its installed copy must yield exactly one entry per package."""
+        self._add_installed_copy("cmake-build-debug", self.src_pkg)
+        self._add_installed_copy("install", self.ws)
+        results = _as_str_set(SUT.find_package_xml_files([self.ws]))
+        # Source manifest only, no installed copies.
+        self.assertEqual(results, {str(self.src_pkg / "package.xml")})
+
+    def test_pkg_iterator_skips_build_outputs(self):
+        """Same exclusion applies when listing packages by name."""
+        self._add_installed_copy("cmake-build-debug", self.src_pkg)
+        self._add_installed_copy("install", self.ws)
+        pkgs = SUT.pkg_iterator(self.ws / "src")
+        # 'demo' is found exactly once (from the source dir), not duplicated
+        # by the installed copy under the package's cmake-build-debug.
+        self.assertEqual(set(pkgs.keys()), {"demo"})
+        self.assertEqual(pkgs["demo"], self.src_pkg)
+
+    def test_find_package_dir_skips_build_outputs_when_searching_downward(self):
+        """``find_package_dir`` does a downward rglob; must skip build trees."""
+        empty_ws = self.t.ws("ws_only_build")
+        # Only an installed copy exists — no real source package anywhere.
+        self._add_installed_copy("build", empty_ws)
+        with self.assertRaises(ValueError):
+            SUT.find_package_dir(empty_ws)
+
+    def test_legitimate_build_named_subdir_inside_pkg_is_not_skipped(self):
+        """Sanity: a package literally named e.g. ``my_build_helpers`` must
+        not be filtered. We match exact directory names, not substrings."""
+        legit = self.t.pkg(
+            self.ws / "src", "my_build_helpers", name_in_xml="my_build_helpers"
+        )
+        results = _as_str_set(SUT.find_package_xml_files([self.ws]))
+        self.assertIn(str(legit / "package.xml"), results)
+
+
 if __name__ == "__main__":
     unittest.main()

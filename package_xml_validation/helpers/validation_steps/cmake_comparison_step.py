@@ -6,7 +6,13 @@ import os
 from typing import TYPE_CHECKING
 
 from ..cmake_parsers import read_deps_from_cmake_file
+from ..condition_eval import evaluate_condition
 from ..exception_parser import DependencyExceptions
+from ..formatter.dependency_queries import (
+    retrieve_build_dependencies_with_conditions,
+    retrieve_test_dependencies_with_conditions,
+)
+from ..logger import get_logger
 from ..package_types import PackageType, get_package_type
 from ._base import ValidationConfig, ValidationResult, ValidationStep
 
@@ -45,6 +51,7 @@ class CMakeComparisonStep(ValidationStep):
         self.formatter = formatter
         self.rosdep_validator = rosdep_validator
         self.exceptions = exceptions or DependencyExceptions()
+        self._logger = get_logger(__name__)
 
     def perform_check(self, root: XmlElement, xml_file: str) -> ValidationResult:
         """Compare CMakeLists.txt dependencies to package.xml entries."""
@@ -73,8 +80,20 @@ class CMakeComparisonStep(ValidationStep):
             cmake_file, self.config.cmake_keys_no_rosdep or None
         )
 
-        build_deps = self.formatter.retrieve_build_dependencies(root)
-        test_deps = self.formatter.retrieve_test_dependencies(root)
+        if self.config.evaluate_conditions:
+            build_deps = [
+                text
+                for text, cond in retrieve_build_dependencies_with_conditions(root)
+                if evaluate_condition(cond, logger=self._logger)
+            ]
+            test_deps = [
+                text
+                for text, cond in retrieve_test_dependencies_with_conditions(root)
+                if evaluate_condition(cond, logger=self._logger)
+            ]
+        else:
+            build_deps = self.formatter.retrieve_build_dependencies(root)
+            test_deps = self.formatter.retrieve_test_dependencies(root)
 
         self._compare_group(
             result,

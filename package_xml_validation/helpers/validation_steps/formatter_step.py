@@ -74,7 +74,7 @@ class FormatterValidationStep(ValidationStep):
 
         checks: list[tuple[str, Callable[..., bool], tuple]] = [
             (
-                "Check for empty lines",
+                "Check sibling separation",
                 self.formatter.check_for_empty_lines,
                 (root, xml_file),
             ),

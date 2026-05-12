@@ -5,6 +5,11 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
+from ..condition_eval import evaluate_condition
+from ..formatter.dependency_queries import (
+    retrieve_all_dependencies_with_conditions,
+)
+from ..logger import get_logger
 from ._base import ValidationConfig, ValidationResult, ValidationStep
 
 if TYPE_CHECKING:
@@ -20,6 +25,12 @@ class RosdepCheckStep(ValidationStep):
     resolves either as a rosdep key for the current platform or as a
     local workspace package. Anything else is reported as a critical
     error.
+
+    Honours REP-149 ``condition="…"`` attributes: dependencies whose
+    condition evaluates to ``False`` against ``os.environ`` are skipped,
+    matching what colcon/rosdep do at build time. Set
+    ``evaluate_conditions=False`` (CLI: ``--ignore-conditions``) to fall
+    back to evaluating every entry regardless of its condition.
 
     Read-only — never mutates the tree. Skipped when ``check_rosdeps=False``
     or ``missing_deps_only=True``.
@@ -37,6 +48,7 @@ class RosdepCheckStep(ValidationStep):
         super().__init__(config)
         self.formatter = formatter
         self.rosdep_validator = rosdep_validator
+        self._logger = get_logger(__name__)
 
     def perform_check(self, root: XmlElement, xml_file: str) -> ValidationResult:
         """Validate rosdep keys in package.xml dependencies."""
@@ -44,7 +56,14 @@ class RosdepCheckStep(ValidationStep):
         if not self.config.check_rosdeps or self.config.missing_deps_only:
             return result
 
-        rosdeps = self.formatter.retrieve_all_dependencies(root)
+        if self.config.evaluate_conditions:
+            rosdeps = [
+                text
+                for text, cond in retrieve_all_dependencies_with_conditions(root)
+                if evaluate_condition(cond, logger=self._logger)
+            ]
+        else:
+            rosdeps = self.formatter.retrieve_all_dependencies(root)
         if not rosdeps:
             return result
 

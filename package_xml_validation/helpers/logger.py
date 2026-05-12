@@ -45,6 +45,13 @@ class ColoredFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         """Format a log record and optionally colorize the output.
 
+        Per-file findings (errors, warnings, "corrected …" notes) all
+        relate to a specific package.xml and are indented one tab so
+        they read as a block under the ``Processing pkg_name...``
+        header. A handful of structural messages — that header itself
+        plus the final summary lines — opt out of the indent by passing
+        ``extra={"flush_left": True}``.
+
         Args:
             record: Log record to format.
 
@@ -53,7 +60,8 @@ class ColoredFormatter(logging.Formatter):
 
         """
         formatted = super().format(record)
-        indent = "\t" if record.levelno == logging.ERROR else ""
+        flush_left = getattr(record, "flush_left", False)
+        indent = "" if flush_left else "\t"
         if not self.use_color:
             return f"{indent}{formatted}"
         log_color = self.LOG_COLORS.get(record.levelno, self.RESET)

@@ -48,15 +48,10 @@ def find_package_dir(path: Path) -> Path:
     if (p / "package.xml").is_file():
         return p
 
-    # 2. search downward
-    pkg_xml_paths = list(p.rglob("package.xml"))
-    # make sure no 'build' or 'install' folders are included
-    pkg_xml_paths = [
-        xml
-        for xml in pkg_xml_paths
-        if "build" not in xml.parts and "install" not in xml.parts
-    ]
-    for xml in pkg_xml_paths:
+    # 2. search downward, skipping build-output trees (colcon and CLion).
+    for xml in p.rglob("package.xml"):
+        if _is_in_build_output(xml):
+            continue
         return xml.parent  # first match wins
 
     # 3. search upward
@@ -142,6 +137,9 @@ def pkg_iterator(src_dir: Path) -> dict[str, Path]:
     """
     pkgs: dict[str, Path] = {}
     for xml in src_dir.rglob("package.xml"):
+        # Skip installed copies in build/install/log/cmake-build-* trees.
+        if _is_in_build_output(xml):
+            continue
         # Respect COLCON_IGNORE: ignore a path if any ancestor contains the file
         if any(
             (parent / "COLCON_IGNORE").exists() or (parent / "colcon_ignore").exists()
@@ -181,6 +179,20 @@ def get_pkgs_in_wrs(path: str | Path) -> list[str]:
             return []
     pkgs = pkg_iterator(src_dir)
     return sorted(pkgs)
+
+
+# Build-output directory names that should never contribute to the validator's
+# package list. The `build/`, `install/`, and `log/` triple is colcon's
+# default; `cmake-build-*` covers CLion's default scheme. Any package.xml
+# found under one of these is an installed copy, not a source manifest.
+_BUILD_OUTPUT_DIR_NAMES = frozenset(
+    {"build", "install", "log", "cmake-build-debug", "cmake-build-release"}
+)
+
+
+def _is_in_build_output(xml: Path) -> bool:
+    """Return True iff ``xml`` lives under a known build-output directory."""
+    return any(part in _BUILD_OUTPUT_DIR_NAMES for part in xml.parts)
 
 
 def _is_ignored_dir(path: Path) -> bool:
@@ -230,9 +242,10 @@ def find_package_xml_files(paths: Iterable[str | Path]) -> list[str]:
                     files.add(xml)
 
         elif p.is_dir():
-            # Collect all package.xml files under p, but drop those under ignored trees
+            # Collect all package.xml files under p, but drop those under
+            # build-output trees and ignored trees.
             for xml in p.rglob("package.xml"):
-                if "build" in xml.parts or "install" in xml.parts:
+                if _is_in_build_output(xml):
                     continue
                 if not _is_ignored_dir(xml.parent):
                     files.add(xml.resolve())

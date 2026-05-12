@@ -21,6 +21,8 @@ ELEMENTS: list[tuple[str, int, int | None]] = [
     ("test_depend", 0, None),
     ("group_depend", 0, None),
     ("member_of_group", 0, None),
+    ("conflict", 0, None),
+    ("replace", 0, None),
     ("export", 0, 1),
 ]
 
@@ -33,6 +35,8 @@ NEW_LINE_BEFORE: list[str] = [
     "test_depend",
     "group_depend",
     "member_of_group",
+    "conflict",
+    "replace",
     "export",
 ]
 
