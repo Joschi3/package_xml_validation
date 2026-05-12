@@ -92,7 +92,8 @@ class PackageXmlValidator:
         self.compare_with_cmake = compare_with_cmake
         if self.compare_with_cmake and not self.check_rosdeps:
             self.logger.warning(
-                "Comparing with CMake but not checking ROS dependencies is not supported."
+                "Comparing with CMake but not checking ROS dependencies is not supported.",
+                extra={"flush_left": True},
             )
             self.compare_with_cmake = False
         self.strict_cmake_checking = strict_cmake_checking
@@ -228,7 +229,7 @@ class PackageXmlValidator:
         for xml_file in package_xml_files:
             self.xml_valid = True
             pkg_name = os.path.basename(os.path.dirname(xml_file))
-            self.logger.info(f"Processing {pkg_name}...")
+            self.logger.info(f"Processing {pkg_name}...", extra={"flush_left": True})
             self.logger.debug(f"Checking {xml_file}...")
 
             if not os.path.exists(xml_file):
@@ -289,21 +290,27 @@ class PackageXmlValidator:
         # Final result messages
         if not self.all_valid and self.check_only:
             self.logger.warning(
-                "❌ Some `package.xml` files have issues. Please review the messages above. 🛠️"
+                "❌ Some `package.xml` files have issues. Please review the messages above. 🛠️",
+                extra={"flush_left": True},
             )
             return False
         elif not self.all_valid:
             if encountered_unresolvable_error:
                 self.logger.warning(
-                    "⚠️ Some `package.xml` files have unresolvable errors. Please check the logs for details. 🔍"
+                    "⚠️ Some `package.xml` files have unresolvable errors. Please check the logs for details. 🔍",
+                    extra={"flush_left": True},
                 )
                 return False
             else:
-                self.logger.info("✅ Corrected `package.xml` files successfully. 🎉")
+                self.logger.info(
+                    "✅ Corrected `package.xml` files successfully. 🎉",
+                    extra={"flush_left": True},
+                )
                 return False
         else:
             self.logger.info(
-                "🎉 All `package.xml` files are valid and nicely formatted. 🚀"
+                "🎉 All `package.xml` files are valid and nicely formatted. 🚀",
+                extra={"flush_left": True},
             )
             return True
 
@@ -320,7 +327,8 @@ class PackageXmlValidator:
         package_xml_files = find_package_xml_files(src)
         if not package_xml_files:
             self.logger.info(
-                "No package.xml files found in the provided paths. Nothing to check."
+                "No package.xml files found in the provided paths. Nothing to check.",
+                extra={"flush_left": True},
             )
             return True
         return self.check_and_format_files(package_xml_files)
