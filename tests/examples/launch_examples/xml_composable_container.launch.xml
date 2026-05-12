@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+  <!-- <composable_node pkg="ignored" plugin="x"/> -->
+  <node_container pkg="cont_b" exec="component_container" name="my_container" namespace="">
+    <composable_node pkg="comp_a" plugin="comp_a::DoThing" name="thing"/>
+  </node_container>
+  <include file="$(find-pkg-prefix find_prefix_pkg)/share/find_prefix_pkg/launch/child.launch.xml"/>
+</launch>

@@ -1,0 +1,2 @@
+[some_section]
+package = "must_not_match"
