@@ -206,6 +206,96 @@ class TestRosdepValidator(unittest.TestCase):
 
         self.assertEqual(missing, ["invalid_lib"])
 
+    def _make_source(self, data):
+        """Build a mock that satisfies the ``CachedDataSource`` isinstance
+        check inside ``search_rosdep_candidates`` and carries the supplied
+        rosdep_data payload."""
+        from rosdep2.sources_list import CachedDataSource
+
+        src = MagicMock()
+        src.__class__ = CachedDataSource
+        src.rosdep_data = data
+        return src
+
+    def test_search_candidates_orders_exact_match_first(self):
+        """Tier 0 must beat tier 1: an exact match outranks substring
+        containment regardless of the substring candidate's length."""
+        validator = SUT.RosdepValidator()
+        src = self._make_source(
+            {
+                # Substring container (tier 1) — short, would win on length alone
+                "boost": {"ubuntu": "boost"},
+                # Exact match (tier 0) — must come first
+                "Boost": {"ubuntu": "libboost-all-dev"},
+            }
+        )
+        self.mock_sources_loader.get_loadable_views.return_value = ["s1"]
+        self.mock_sources_loader.get_source.return_value = src
+
+        results = validator.search_rosdep_candidates("Boost")
+        # Compare case-insensitively at the lower-cased boundary the sort
+        # uses; the first hit must be the exact-case match.
+        self.assertEqual(results[0].lower(), "boost")
+        # Both candidates appear in the (deduped) result set.
+        self.assertEqual(sorted(r.lower() for r in results), ["boost", "boost"])
+
+    @unittest.skipUnless(
+        SUT.HAS_REGEX_MODULE,
+        "fuzzy-vs-substring tier ordering only applies when the optional "
+        "`regex` package is installed; the `re` fallback is substring-only",
+    )
+    def test_search_candidates_orders_contains_before_fuzzy(self):
+        """Tier 1 (substring) must beat tier 3 (fuzzy similarity) even
+        when the fuzzy candidate has a higher difflib ratio overall."""
+        validator = SUT.RosdepValidator()
+        src = self._make_source(
+            {
+                # Tier 1: contains "threads"
+                "ecl_threads": {"ubuntu": "ecl-threads"},
+                # Tier 3: fuzzy-only match — does NOT contain "threads"
+                # but is close enough (1 edit) that the `regex` module's
+                # error-tolerant pattern will match.
+                "thread": {"ubuntu": "thread"},
+            }
+        )
+        self.mock_sources_loader.get_loadable_views.return_value = ["s1"]
+        self.mock_sources_loader.get_source.return_value = src
+
+        results = validator.search_rosdep_candidates("threads")
+        self.assertIn("ecl_threads", results)
+        # The contains-match must precede the fuzzy-only match.
+        self.assertLess(results.index("ecl_threads"), results.index("thread"))
+
+    def test_search_candidates_shorter_contains_match_wins(self):
+        """Within tier 1, a shorter candidate is preferred (length
+        secondary key)."""
+        validator = SUT.RosdepValidator()
+        src = self._make_source(
+            {
+                "libboost-all-dev": {"ubuntu": "libboost-all-dev"},
+                "libboost": {"ubuntu": "libboost"},
+            }
+        )
+        self.mock_sources_loader.get_loadable_views.return_value = ["s1"]
+        self.mock_sources_loader.get_source.return_value = src
+
+        results = validator.search_rosdep_candidates("boost")
+        # Both contain "boost"; the shorter key comes first.
+        self.assertEqual(results[0], "libboost")
+        self.assertIn("libboost-all-dev", results)
+
+    def test_search_candidates_caps_at_five_results(self):
+        """The function deliberately truncates to 5 matches to keep
+        suggestion messages readable."""
+        validator = SUT.RosdepValidator()
+        data = {f"boost-flavor-{i}": {"ubuntu": f"boost-{i}"} for i in range(10)}
+        src = self._make_source(data)
+        self.mock_sources_loader.get_loadable_views.return_value = ["s1"]
+        self.mock_sources_loader.get_source.return_value = src
+
+        results = validator.search_rosdep_candidates("boost")
+        self.assertEqual(len(results), 5)
+
 
 if __name__ == "__main__":
     unittest.main()

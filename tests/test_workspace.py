@@ -185,6 +185,23 @@ class TestWorkspaceHelpers(unittest.TestCase):
         names = SUT.get_pkgs_in_wrs(self.flat_a / "script.py")
         self.assertEqual(names, ["flat_a", "flat_b"])
 
+    def test_get_pkgs_in_wrs_returns_empty_when_no_pkg_dir_resolvable(self):
+        """Hits the ``pkg_dir is None`` fallback branch: an existing
+        directory with no ``package.xml`` anywhere (up or down) makes
+        ``find_package_dir`` raise, leaving the fallback with nothing to
+        fall back on; the function must return ``[]`` and log a warning.
+        """
+        empty_dir = self.t.root / "empty_no_pkgs"
+        empty_dir.mkdir(parents=True, exist_ok=True)
+
+        with self.assertLogs(SUT.logger, level="WARNING") as captured:
+            names = SUT.get_pkgs_in_wrs(empty_dir)
+
+        self.assertEqual(names, [])
+        self.assertTrue(
+            any("Unable to extract local pkgs" in record for record in captured.output)
+        )
+
     def test_get_pkgs_in_wrs_nonexistent_path_obj_raises_valueerror(self):
         bogus = self.t.root / "does" / "not" / "exist"
         with self.assertRaises(ValueError):

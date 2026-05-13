@@ -1,7 +1,11 @@
 import os
 import unittest
 
-from package_xml_validation.helpers.cmake_parsers import read_deps_from_cmake_file
+from package_xml_validation.helpers.cmake_parsers import (
+    read_deps_from_cmake_file,
+    resolve_for_each,
+    retrieve_cmake_dependencies,
+)
 
 # This test suite validates the CMake parser against known CMakeLists.txt examples.
 # The examples are stored in the 'data/cmake_examples' directory.
@@ -88,6 +92,88 @@ class TestCMakeParser(unittest.TestCase):
                 for dep in expected.get("absent", []):
                     self.assertNotIn(dep, main_deps)
                     self.assertNotIn(dep, test_deps)
+
+
+class TestFindPackageQuietRule(unittest.TestCase):
+    """``find_package(... QUIET)`` without ``REQUIRED`` is optional — the
+    build does not fail if the package is missing, so the parser must
+    not report it as a dep. Adding ``REQUIRED`` flips the behaviour."""
+
+    def test_quiet_without_required_is_skipped(self):
+        lines = ["find_package(OptionalPkg QUIET)"]
+        main_deps, test_deps = retrieve_cmake_dependencies(lines)
+        self.assertEqual(main_deps, [])
+        self.assertEqual(test_deps, [])
+
+    def test_quiet_with_required_is_kept(self):
+        lines = ["find_package(MustHavePkg QUIET REQUIRED)"]
+        main_deps, _ = retrieve_cmake_dependencies(lines)
+        self.assertEqual(main_deps, ["MustHavePkg"])
+
+    def test_required_without_quiet_is_kept(self):
+        lines = ["find_package(NeededPkg REQUIRED)"]
+        main_deps, _ = retrieve_cmake_dependencies(lines)
+        self.assertEqual(main_deps, ["NeededPkg"])
+
+
+class TestResolveForEach(unittest.TestCase):
+    """``resolve_for_each`` expands ``foreach(... IN LISTS/ITEMS ...)``
+    blocks so dependencies declared inside loops are still discovered.
+    These are pure-input/pure-output transformations on CMake lines."""
+
+    def test_foreach_in_lists_expands_set_variable(self):
+        input_lines = [
+            "set(LIBS a b c)",
+            "foreach(L IN LISTS LIBS)",
+            "find_package(${L} REQUIRED)",
+            "endforeach()",
+        ]
+        expanded = resolve_for_each(input_lines)
+        # Loop-body lines are replicated once per value, with the loop
+        # variable substituted in place of ``${L}``.
+        self.assertIn("find_package(a REQUIRED)", expanded)
+        self.assertIn("find_package(b REQUIRED)", expanded)
+        self.assertIn("find_package(c REQUIRED)", expanded)
+
+    def test_foreach_expansion_round_trips_through_retrieve(self):
+        """End-to-end: foreach-driven find_package calls become deps."""
+        lines = [
+            "set(LIBS Alpha Beta)",
+            "foreach(L IN LISTS LIBS)",
+            "find_package(${L} REQUIRED)",
+            "endforeach()",
+        ]
+        # The retrieve step does not call resolve_for_each on its own;
+        # callers chain them via read_cmake_file. So we run it explicitly.
+        expanded = resolve_for_each(lines)
+        main_deps, _ = retrieve_cmake_dependencies(expanded)
+        self.assertCountEqual(main_deps, ["Alpha", "Beta"])
+
+    def test_foreach_in_items_uses_inline_values(self):
+        """``IN ITEMS`` accepts a bare identifier; the regex requires it
+        to look like a variable name, so this exercises the
+        ``variables.get(..., [])`` fallback when the name isn't a
+        previously ``set()`` variable."""
+        input_lines = [
+            "foreach(P IN ITEMS unknown_var)",
+            "find_package(${P} REQUIRED)",
+            "endforeach()",
+        ]
+        expanded = resolve_for_each(input_lines)
+        # With no matching set(), the loop body is emitted unchanged
+        # (the empty value list produces zero replications, leaving only
+        # any non-template lines). This pins the don't-crash behaviour.
+        self.assertNotIn("find_package(unknown_var REQUIRED)", expanded)
+
+    def test_lines_outside_foreach_are_passed_through_verbatim(self):
+        input_lines = [
+            "find_package(rclcpp REQUIRED)",
+            "set(IGNORED x)",
+            "find_package(std_msgs REQUIRED)",
+        ]
+        expanded = resolve_for_each(input_lines)
+        self.assertIn("find_package(rclcpp REQUIRED)", expanded)
+        self.assertIn("find_package(std_msgs REQUIRED)", expanded)
 
 
 if __name__ == "__main__":

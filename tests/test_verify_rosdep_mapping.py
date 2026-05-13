@@ -15,10 +15,20 @@ def _install_fake_rosdep(
     *,
     raise_on_init=False,
     rule_for_platform=("apt", {}),
+    raise_resolution_error_on_lookup=False,
 ):
     fake_rosdep2 = ModuleType("rosdep2")
     fake_rospkg_loader = ModuleType("rosdep2.rospkg_loader")
     fake_rospkg_loader.DEFAULT_VIEW_KEY = "default"
+
+    # The production code reads ``rosdep_wrapper.ResolutionError``, which
+    # lazily resolves to ``rosdep2.ResolutionError`` via ``__getattr__``.
+    # The fake module must therefore expose its own class so the
+    # ``except`` block in ``verify_rosdep_mapping`` matches.
+    class FakeResolutionError(Exception):
+        pass
+
+    fake_rosdep2.ResolutionError = FakeResolutionError
 
     class DummyInstallerContext:
         def get_os_name_and_version(self):
@@ -26,6 +36,8 @@ def _install_fake_rosdep(
 
     class DummyDep:
         def get_rule_for_platform(self, os_name, os_version, installers, default):
+            if raise_resolution_error_on_lookup:
+                raise FakeResolutionError("simulated lookup failure")
             return rule_for_platform
 
     class DummyView:
@@ -149,6 +161,45 @@ class TestVerifyRosdepMapping(unittest.TestCase):
 
         with self.assertRaises(SystemExit) as excinfo:
             module.verify_mappings()
+        self.assertEqual(excinfo.exception.code, 1)
+
+    def test_verify_fails_when_yaml_load_raises(self):
+        """``yaml.YAMLError`` during the load step must surface as
+        ``SystemExit(1)`` with a stderr message — covers the
+        ``except (OSError, yaml.YAMLError)`` branch."""
+        repo_root = Path(__file__).resolve().parents[1]
+        os.chdir(repo_root)
+
+        _install_fake_rosdep([])
+        module = _reload_verify_module()
+
+        with patch.object(
+            module.yaml,
+            "safe_load",
+            side_effect=yaml.YAMLError("simulated parse failure"),
+        ):
+            with self.assertRaises(SystemExit) as excinfo:
+                module.verify_mappings()
+        self.assertEqual(excinfo.exception.code, 1)
+
+    def test_verify_reports_resolution_error_per_key(self):
+        """A ``ResolutionError`` from ``get_rule_for_platform`` for a
+        present key must be reported as ``Error looking up`` and cause
+        the run to fail — covers the per-key try/except at
+        ``verify_rosdep_mapping.py:79-85``."""
+        repo_root = Path(__file__).resolve().parents[1]
+        os.chdir(repo_root)
+
+        _install_fake_rosdep(["valid_key"], raise_resolution_error_on_lookup=True)
+        module = _reload_verify_module()
+
+        with patch.object(
+            module.yaml,
+            "safe_load",
+            return_value={"SomeCmakeKey": "valid_key"},
+        ):
+            with self.assertRaises(SystemExit) as excinfo:
+                module.verify_mappings()
         self.assertEqual(excinfo.exception.code, 1)
 
 

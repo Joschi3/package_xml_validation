@@ -100,6 +100,23 @@ class TestFindLaunchDependencies(unittest.TestCase):
         self.assertNotIn("should_be_ignored", found)
         self.assertNotIn("must_not_match", found)
 
+    def test_scan_file_toml_outside_launch_dir_is_skipped(self):
+        """Direct ``scan_file`` call on a TOML file living outside a
+        ``launch/`` directory must not contribute any packages, even when
+        the contents would otherwise match the TOML regex."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="toml_outside_launch_") as tmp:
+            config_dir = os.path.join(tmp, "config")
+            os.makedirs(config_dir)
+            toml_path = os.path.join(config_dir, "stuff.toml")
+            with open(toml_path, "w", encoding="utf-8") as f:
+                f.write('package = "should_not_be_found"\n')
+
+            found: set[str] = set()
+            scan_file(toml_path, found)
+            self.assertEqual(found, set())
+
 
 if __name__ == "__main__":
     unittest.main()
