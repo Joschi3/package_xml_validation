@@ -5,64 +5,122 @@ find_launch_dependencies.py
 Recursively search a ROS 2 package's launch/ folder and extract
 all referenced ROS 2 package names via a small set of regexes.
 
-Now ignores matches that occur inside comments:
+Ignores matches that occur inside comments:
 - Python: # line comments, and triple-quoted blocks
 - XML/.launch: <!-- ... --> comments
 - YAML: # line comments
+
+Each pattern also declares which file formats it applies to, because a pattern is a piece of
+syntax and the same characters mean different things in different languages. `pkg:` is a
+mapping key in YAML and a type annotation in Python: applied to Python source it reported the
+annotation `pkg: str` as a package named `str`, and the string literal
+`"pkg:robot.launch.yaml"` as a package named `robot`.
 """
 
 import logging
 import os
 import re
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 
-REGEX_EXPR = [
+# Which file formats a pattern is allowed to match. A pattern is a piece of *syntax*, and the
+# same characters mean different things in different languages: `pkg:` is a mapping key in YAML
+# and a type annotation in Python, so a pattern written for one produces nonsense in the other.
+# TOML already had this treatment; every pattern gets it now.
+FORMAT_YAML = "yaml"
+FORMAT_XML = "xml"
+FORMAT_PY = "py"
+FORMAT_TOML = "toml"
+
+#: Formats a pattern applies to when its syntax is unambiguous everywhere - `$(find-pkg-share x)`
+#: means the same thing wherever it appears, including inside a Python string handed to a
+#: frontend launch file.
+ANY_FORMAT = frozenset({FORMAT_YAML, FORMAT_XML, FORMAT_PY, FORMAT_TOML})
+
+#: `(regex, formats)`. The formats are the point: see the note above.
+PATTERNS = [
     # YAML-style:  pkg: <pkg_name>
-    r"pkg\s*:\s*['\"]?([A-Za-z0-9_]+)['\"]?",
+    #
+    # Anchored to the start of a line, allowing the leading `- ` of a sequence item. Without
+    # the anchor any key *ending* in `pkg` matches - `mypkg: foo` yielded a package named
+    # `foo`. Not applied to Python, where `pkg: str` is a type annotation and used to yield a
+    # package named `str`, nor to a string literal that happens to contain `pkg:`.
+    (r"(?m)^[\s\-]*pkg\s*:\s*['\"]?([A-Za-z0-9_]+)['\"]?", {FORMAT_YAML, FORMAT_XML}),
     # Hector launch component:  package: <pkg_name>
-    r"package\s*:\s*['\"]?([A-Za-z0-9_]+)['\"]?",
+    (
+        r"(?m)^[\s\-]*package\s*:\s*['\"]?([A-Za-z0-9_]+)['\"]?",
+        {FORMAT_YAML, FORMAT_XML},
+    ),
     # Python Node-family constructors: Node / LifecycleNode / ComposableNode /
     # ComposableLifecycleNode (..., package='<pkg_name>', ...)
-    r"(?:^|[^\w])(?:Node|LifecycleNode|ComposableNode|ComposableLifecycleNode)\s*\(\s*[^)]*?\bpackage\s*=\s*['\"]([A-Za-z0-9_]+)['\"]",
+    (
+        r"(?:^|[^\w])(?:Node|LifecycleNode|ComposableNode|ComposableLifecycleNode)\s*\(\s*[^)]*?\bpackage\s*=\s*['\"]([A-Za-z0-9_]+)['\"]",
+        {FORMAT_PY},
+    ),
     # XML node tag: <node pkg="foo" ...>
-    r"<node[^>]*?\bpkg\s*=\s*['\"]?([A-Za-z0-9_]+)['\"]?",
+    (r"<node[^>]*?\bpkg\s*=\s*['\"]?([A-Za-z0-9_]+)['\"]?", {FORMAT_XML}),
     # XML composable node: <composable_node pkg="foo" ...>
-    r"<composable_node[^>]*?\bpkg\s*=\s*['\"]?([A-Za-z0-9_]+)['\"]?",
+    (r"<composable_node[^>]*?\bpkg\s*=\s*['\"]?([A-Za-z0-9_]+)['\"]?", {FORMAT_XML}),
     # XML node container: <node_container pkg="foo" ...>
-    r"<node_container[^>]*?\bpkg\s*=\s*['\"]?([A-Za-z0-9_]+)['\"]?",
+    (r"<node_container[^>]*?\bpkg\s*=\s*['\"]?([A-Za-z0-9_]+)['\"]?", {FORMAT_XML}),
     # get_package_share_directory('foo')
-    r"get_package_share_directory\(\s*['\"]([A-Za-z0-9_]+)['\"]\s*\)",
+    (r"get_package_share_directory\(\s*['\"]([A-Za-z0-9_]+)['\"]\s*\)", {FORMAT_PY}),
     # get_package_share_path('foo')
-    r"get_package_share_path\(\s*['\"]([A-Za-z0-9_]+)['\"]\s*\)",
+    (r"get_package_share_path\(\s*['\"]([A-Za-z0-9_]+)['\"]\s*\)", {FORMAT_PY}),
     # get_package_prefix('foo')
-    r"get_package_prefix\(\s*['\"]([A-Za-z0-9_]+)['\"]\s*\)",
+    (r"get_package_prefix\(\s*['\"]([A-Za-z0-9_]+)['\"]\s*\)", {FORMAT_PY}),
     # FindPackageShare('foo')
-    r"FindPackageShare\(\s*['\"]([A-Za-z0-9_]+)['\"]\s*\)",
+    (r"FindPackageShare\(\s*['\"]([A-Za-z0-9_]+)['\"]\s*\)", {FORMAT_PY}),
     # FindPackageShare(package='foo')
-    r"FindPackageShare\(\s*package\s*=\s*['\"]([A-Za-z0-9_]+)['\"]\s*\)",
+    (r"FindPackageShare\(\s*package\s*=\s*['\"]([A-Za-z0-9_]+)['\"]\s*\)", {FORMAT_PY}),
     # FindPackagePrefix('foo') / FindPackagePrefix(package='foo')
-    r"FindPackagePrefix\(\s*(?:package\s*=\s*)?['\"]([A-Za-z0-9_]+)['\"]\s*\)",
+    (
+        r"FindPackagePrefix\(\s*(?:package\s*=\s*)?['\"]([A-Za-z0-9_]+)['\"]\s*\)",
+        {FORMAT_PY},
+    ),
     # $(find-pkg-share foo)
-    r"\$\(\s*find-pkg-share\s+([A-Za-z0-9_]+)\s*\)",
+    (r"\$\(\s*find-pkg-share\s+([A-Za-z0-9_]+)\s*\)", ANY_FORMAT),
     # $(find-pkg-prefix foo)
-    r"\$\(\s*find-pkg-prefix\s+([A-Za-z0-9_]+)\s*\)",
+    (r"\$\(\s*find-pkg-prefix\s+([A-Za-z0-9_]+)\s*\)", ANY_FORMAT),
     # better_launch Python:  bl.node("pkg", ...)  /  bl.include("pkg", ...)
-    r"\bbl\.node\(\s*['\"]([A-Za-z0-9_]+)['\"]",
-    r"\bbl\.include\(\s*['\"]([A-Za-z0-9_]+)['\"]",
-]
-
-COMPILED = [re.compile(rx) for rx in REGEX_EXPR]
-
-# TOML patterns are kept separate and only applied to .toml files under a
-# launch/ directory, to avoid false positives from arbitrary TOML configs.
-TOML_REGEX_EXPR = [
+    (r"\bbl\.node\(\s*['\"]([A-Za-z0-9_]+)['\"]", {FORMAT_PY}),
+    (r"\bbl\.include\(\s*['\"]([A-Za-z0-9_]+)['\"]", {FORMAT_PY}),
     # better_launch TOML:  package = "pkg"
-    r"^\s*package\s*=\s*['\"]([A-Za-z0-9_]+)['\"]",
+    (r"(?m)^\s*package\s*=\s*['\"]([A-Za-z0-9_]+)['\"]", {FORMAT_TOML}),
 ]
 
-TOML_COMPILED = [re.compile(rx, re.MULTILINE) for rx in TOML_REGEX_EXPR]
+COMPILED_PATTERNS = [(re.compile(rx), formats) for rx, formats in PATTERNS]
+
+#: Kept for anything importing the old names. `COMPILED` no longer decides what is applied to
+#: a file - :py:func:`_patterns_for` does, by format.
+REGEX_EXPR = [rx for rx, _ in PATTERNS]
+COMPILED = [rx for rx, _ in COMPILED_PATTERNS]
+TOML_REGEX_EXPR = [rx for rx, formats in PATTERNS if formats == {FORMAT_TOML}]
+TOML_COMPILED = [re.compile(rx) for rx in TOML_REGEX_EXPR]
+
+
+def _format_of(path: str) -> Optional[str]:
+    """Which syntax a file is written in, or None if we do not scan it."""
+    s = path.lower()
+    if s.endswith(".py"):
+        return FORMAT_PY
+    if s.endswith(".xml") or s.endswith(".launch"):
+        return FORMAT_XML
+    if s.endswith((".yaml", ".yml")):
+        return FORMAT_YAML
+    if s.endswith(".toml"):
+        return FORMAT_TOML
+    return None
+
+
+def _patterns_for(fmt: str) -> list[tuple["re.Pattern[str]", int]]:
+    """The compiled patterns that mean anything in `fmt`."""
+    return [
+        (rx, i) for i, (rx, formats) in enumerate(COMPILED_PATTERNS) if fmt in formats
+    ]
+
 
 _TRIPLE_QUOTE_BLOCK = re.compile(r"(?s)(['\"]{3})(?:.*?)(\1)")
 _XML_COMMENT_BLOCK = re.compile(r"(?s)<!--.*?-->")
@@ -236,24 +294,22 @@ def scan_file(path: str, found: set[str], verbose: bool = False) -> None:
         None.
 
     """
+    fmt = _format_of(path)
+    if fmt is None:
+        return
+
+    # A TOML file is only a launch file when it is under a launch/ directory - `package = "x"`
+    # is far too common a line in ordinary project TOML to read as a dependency anywhere else.
+    # The other formats identify themselves by their own syntax and need no such scoping.
+    if fmt == FORMAT_TOML and not _is_under_launch_dir(path):
+        return
+
     with open(path, encoding="utf-8") as f:
         text = f.read()
 
     text = _decomment_for_suffix(path, text)
 
-    is_toml = path.lower().endswith(".toml")
-    if is_toml:
-        # Only honour TOML matches if the file is scoped under a launch/ dir,
-        # to avoid false positives from arbitrary project TOML configs.
-        if not _is_under_launch_dir(path):
-            return
-        patterns = TOML_COMPILED
-        sources = TOML_REGEX_EXPR
-    else:
-        patterns = COMPILED
-        sources = REGEX_EXPR
-
-    for i, rx in enumerate(patterns):
+    for rx, index in _patterns_for(fmt):
         for m in rx.finditer(text):
             pkg = m.group(1)
             found.add(pkg)
@@ -262,7 +318,7 @@ def scan_file(path: str, found: set[str], verbose: bool = False) -> None:
                     "Found package '%s' in %s with regex %s",
                     pkg,
                     os.path.basename(path),
-                    sources[i],
+                    REGEX_EXPR[index],
                 )
 
 

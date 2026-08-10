@@ -46,6 +46,18 @@ class TestFindLaunchDependencies(unittest.TestCase):
             "find_prefix_pkg",
         ],
         "better_launch_example.launch.py": ["bl_pkg_a", "bl_pkg_b"],
+        # A pattern is a piece of syntax, and `pkg:` means different things in different
+        # languages. In Python it is a type annotation or part of a string, never a mapping
+        # key - reading it as one reported packages named `str` and `robot`.
+        "python_annotation_and_literal.py": [],
+        # Any key *ending* in `pkg` used to match, because nothing anchored the pattern.
+        "yaml_keys_ending_in_pkg.launch.yml": ["real_package", "quoted_package"],
+        # ... and the anchor has to allow the `- ` of a sequence item, or every hector
+        # component definition would stop being scanned.
+        "yaml_sequence_item_package.yaml": [
+            "sequence_item_package",
+            "another_sequence_package",
+        ],
     }
 
     # Directory where example launch files live
@@ -120,3 +132,70 @@ class TestFindLaunchDependencies(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPatternsAreScopedToTheirFormat(unittest.TestCase):
+    """A pattern only applies to the languages it is syntax for.
+
+    The three cases below were all live false positives. They are asserted directly, rather
+    than only through the example files, because the mechanism is the point: a Python file
+    must not be searched for YAML mapping keys, whatever it happens to contain.
+    """
+
+    BASE_DIR = os.path.join(os.path.dirname(__file__), "examples", "launch_examples")
+
+    def scan(self, filename):
+        found = set()
+        scan_file(os.path.join(self.BASE_DIR, filename), found)
+        return found
+
+    def test_a_python_type_annotation_is_not_a_package(self):
+        """`def resolve(pkg: str, ...)` reported a package named `str`."""
+        self.assertNotIn("str", self.scan("python_annotation_and_literal.py"))
+
+    def test_a_string_containing_pkg_is_not_a_package(self):
+        """`"pkg:robot.launch.yaml"` in a unit test reported a package named `robot`, and the
+        hook then demanded a <test_depend> on it."""
+        self.assertNotIn("robot", self.scan("python_annotation_and_literal.py"))
+
+    def test_a_key_merely_ending_in_pkg_is_not_a_reference(self):
+        """`mypkg: foo` matched, because nothing anchored the pattern to the start of a key."""
+        found = self.scan("yaml_keys_ending_in_pkg.launch.yml")
+        self.assertNotIn("not_a_package", found)
+        self.assertNotIn("also_not_a_package", found)
+
+    def test_the_real_references_beside_them_still_match(self):
+        """The point of the fix is precision, not silence."""
+        found = self.scan("yaml_keys_ending_in_pkg.launch.yml")
+        self.assertIn("real_package", found)
+        self.assertIn("quoted_package", found)
+
+    def test_a_sequence_item_key_still_matches(self):
+        """`- package: x` is how every hector component definition names its package, so the
+        anchor has to allow the leading dash."""
+        found = self.scan("yaml_sequence_item_package.yaml")
+        self.assertEqual({"sequence_item_package", "another_sequence_package"}, found)
+
+    def test_the_toml_form_stays_out_of_yaml_and_python(self):
+        """`package = "x"` is a TOML form. It is also an ordinary assignment in Python, which
+        is why it was scoped in the first place - that scoping is now the general rule.
+
+        Selected by the pattern's own declared formats rather than by asking which patterns
+        apply to TOML: the latter also returns the format-agnostic ones like
+        `$(find-pkg-share x)`, which are meant to apply everywhere.
+        """
+        from package_xml_validation.helpers.find_launch_dependencies import (
+            FORMAT_TOML,
+            PATTERNS,
+        )
+
+        toml_only = [rx for rx, formats in PATTERNS if formats == {FORMAT_TOML}]
+
+        self.assertTrue(toml_only, "no TOML-specific pattern left to check")
+        for rx in toml_only:
+            self.assertIn("package", rx)
+            found = set()
+            scan_file(
+                os.path.join(self.BASE_DIR, "python_annotation_and_literal.py"), found
+            )
+            self.assertEqual(set(), found)

@@ -1,0 +1,10 @@
+launch:
+  - node:
+      pkg: real_package
+      name: a_node
+  - node:
+      mypkg: not_a_package
+      subpkg: also_not_a_package
+      name: another_node
+  - node:
+      pkg: "quoted_package"
