@@ -11,32 +11,28 @@ Ignores matches that occur inside comments:
 - YAML: # line comments
 
 Each pattern also declares which file formats it applies to, because a pattern is a piece of
-syntax and the same characters mean different things in different languages. `pkg:` is a
-mapping key in YAML and a type annotation in Python: applied to Python source it reported the
-annotation `pkg: str` as a package named `str`, and the string literal
-`"pkg:robot.launch.yaml"` as a package named `robot`.
+syntax and the same characters mean different things in different languages.
 """
 
+import ast
+import glob
 import logging
 import os
 import re
-from typing import Optional
+from typing import Callable, NamedTuple, Optional
 
 logger = logging.getLogger(__name__)
 
 
-# Which file formats a pattern is allowed to match. A pattern is a piece of *syntax*, and the
-# same characters mean different things in different languages: `pkg:` is a mapping key in YAML
-# and a type annotation in Python, so a pattern written for one produces nonsense in the other.
-# TOML already had this treatment; every pattern gets it now.
+# Which file formats a pattern is allowed to match.
 FORMAT_YAML = "yaml"
 FORMAT_XML = "xml"
 FORMAT_PY = "py"
 FORMAT_TOML = "toml"
 
-#: Formats a pattern applies to when its syntax is unambiguous everywhere - `$(find-pkg-share x)`
-#: means the same thing wherever it appears, including inside a Python string handed to a
-#: frontend launch file.
+
+#: For patterns whose syntax means the same thing in every format, such as
+#: `$(find-pkg-share x)`.
 ANY_FORMAT = frozenset({FORMAT_YAML, FORMAT_XML, FORMAT_PY, FORMAT_TOML})
 
 #: `(regex, formats)`. The formats are the point: see the note above.
@@ -51,7 +47,7 @@ PATTERNS = [
     # Hector launch component:  package: <pkg_name>
     (
         r"(?m)^[\s\-]*package\s*:\s*['\"]?([A-Za-z0-9_]+)['\"]?",
-        {FORMAT_YAML, FORMAT_XML},
+        {FORMAT_YAML},
     ),
     # Python Node-family constructors: Node / LifecycleNode / ComposableNode /
     # ComposableLifecycleNode (..., package='<pkg_name>', ...)
@@ -126,6 +122,16 @@ _TRIPLE_QUOTE_BLOCK = re.compile(r"(?s)(['\"]{3})(?:.*?)(\1)")
 _XML_COMMENT_BLOCK = re.compile(r"(?s)<!--.*?-->")
 
 
+def _blank_out(pattern: "re.Pattern[str]", text: str) -> str:
+    """Remove a block but keep the lines it spanned.
+
+    Deleting a multi-line comment outright shifts every line after it, which is invisible
+    while matches are only collected as names and wrong the moment one is reported with a line
+    number. The newlines are kept so a match's position still means what it says.
+    """
+    return pattern.sub(lambda m: "\n" * m.group(0).count("\n"), text)
+
+
 def _strip_hash_line_comments_outside_strings(text: str) -> str:
     """
     Remove '#' to end-of-line comments that occur OUTSIDE of single/double quoted strings.
@@ -198,8 +204,8 @@ def _decomment_python(text: str) -> str:
         Text with comments removed.
 
     """
-    # 1) drop triple-quoted blocks entirely
-    text = _TRIPLE_QUOTE_BLOCK.sub("", text)
+    # 1) drop triple-quoted blocks, keeping the lines they spanned
+    text = _blank_out(_TRIPLE_QUOTE_BLOCK, text)
     # 2) drop '#' comments outside of quoted strings
     text = _strip_hash_line_comments_outside_strings(text)
     return text
@@ -215,7 +221,7 @@ def _decomment_xml(text: str) -> str:
         Text with XML comments removed.
 
     """
-    return _XML_COMMENT_BLOCK.sub("", text)
+    return _blank_out(_XML_COMMENT_BLOCK, text)
 
 
 def _decomment_yaml(text: str) -> str:
@@ -300,7 +306,6 @@ def scan_file(path: str, found: set[str], verbose: bool = False) -> None:
 
     # A TOML file is only a launch file when it is under a launch/ directory - `package = "x"`
     # is far too common a line in ordinary project TOML to read as a dependency anywhere else.
-    # The other formats identify themselves by their own syntax and need no such scoping.
     if fmt == FORMAT_TOML and not _is_under_launch_dir(path):
         return
 
@@ -351,3 +356,549 @@ def scan_files(launch_dir: str, verbose: bool = False) -> list[str]:
             elif fn.endswith(".toml") and _is_under_launch_dir(full):
                 scan_file(full, pkgs, verbose)
     return sorted(pkgs)
+
+
+# ── Following a launch tree from a seed ──────────────────────────────────────────────────
+#
+# `scan_files` covers every launch file a package ships, which is the manifest question.
+# Seeding from one launch file asks instead what a particular system launches: it descends
+# into other packages' launch files, and ignores files the seed does not reach.
+#
+# The walk follows include *edges* only. A package named by `pkg:` on a node is a leaf - there
+# is no launch file behind it, and scanning everything that package ships would report launch
+# files nobody runs.
+
+
+class Reference(NamedTuple):
+    """One package name, and where it was written."""
+
+    package: str
+    file: str
+    line: int
+
+
+class Edge(NamedTuple):
+    """An include: one launch file naming another, and whether we could find it."""
+
+    package: str
+    launch_file: str
+    file: str
+    line: int
+    resolved: Optional[str]
+
+
+class Walk(NamedTuple):
+    """What following a seed found.
+
+    A launch tree is only partly made of includes, so parts of it are outside this scan:
+
+    * a node that reads a config and starts processes of its own is opaque;
+    * `if:` / `unless:` branches are collected as a union, not as the set one run would take;
+    * anything assembled at runtime (`$(eval ...)`, `$(command ...)`) is left unresolved.
+    """
+
+    references: list[Reference]
+    """Every package named anywhere in the tree, with provenance. May repeat a package."""
+
+    edges: list[Edge]
+    """Every include encountered, resolved or not."""
+
+    visited: list[str]
+    """The launch files actually read, seed first."""
+
+    @property
+    def packages(self) -> list[str]:
+        return sorted({one.package for one in self.references})
+
+    @property
+    def unresolved(self) -> list[Edge]:
+        """Includes this could not follow - a package that is not installed, a file that is
+        not where it should be, or a name built from a substitution.
+
+        Empty means nothing this scan can see was left unfollowed, which is not the same as
+        the tree being fully explored. See the class docstring.
+        """
+        return [one for one in self.edges if one.resolved is None]
+
+
+#: `$(find-pkg-share x)/some/path` - the path is kept so an include can be resolved from it.
+#: The package part is not restricted to an identifier, because a launch file may build it
+#: from a substitution: `$(find-pkg-share $(var robot)_sim)/launch/spawn.launch.py`. Such a
+#: name is reported unresolved rather than skipped. One level of nesting covers every form
+#: seen in practice.
+_SHARE_PATH = re.compile(
+    r"\$\(\s*find-pkg-share\s+((?:[^()\s]|\([^()]*\))+)\s*\)/([A-Za-z0-9_./\-]+)"
+)
+
+#: A package name we could look up, as opposed to one assembled at launch time.
+_LITERAL_PACKAGE = re.compile(r"^[A-Za-z0-9_]+$")
+
+#: A launch-manager component: `package:` and then `launch_file:` in the same block.
+_COMPONENT_LAUNCH = re.compile(
+    r"(?m)^[\s\-]*package\s*:\s*['\"]?([A-Za-z0-9_]+)['\"]?"
+    r"(?:.*\n){0,6}?[\s\-]*launch_file\s*:\s*['\"]?([A-Za-z0-9_.\-]+)['\"]?"
+)
+
+_LAUNCH_SUFFIXES = (".launch.py", ".launch.xml", ".launch.yaml", ".launch.yml")
+
+
+def _find_in_share(share: str, relative: str) -> Optional[str]:
+    """The launch file inside a package's share directory, or None.
+
+    The written path first, then the same basename anywhere under the package. The fallback
+    exists for launch-manager components, which name a launch file by bare filename and let
+    the manager find it: `nav2.yaml` says `nav2.launch.yaml`, the file is at
+    `launch/navigation/nav2.launch.yaml`.
+
+    First match in sorted order when a basename occurs twice.
+    """
+    direct = os.path.join(share, relative)
+    if os.path.isfile(direct):
+        return direct
+
+    matches = sorted(
+        glob.glob(os.path.join(share, "**", os.path.basename(relative)), recursive=True)
+    )
+    return matches[0] if matches else None
+
+
+def _line_of(text: str, position: int) -> int:
+    return text.count("\n", 0, position) + 1
+
+
+def _looks_like_a_launch_file(path: str) -> bool:
+    """A path under `launch/`, or named `*.launch.*`.
+
+    Neither test alone is enough: a launch directory also holds files that are not launch
+    files, and `$(find-pkg-share x)/config/params.yaml` has an extension we scan.
+    """
+    lowered = path.lower()
+    return lowered.endswith(_LAUNCH_SUFFIXES) or "/launch/" in f"/{lowered}"
+
+
+def default_share_lookup(package: str) -> Optional[str]:
+    """Where a package's share directory is, read from AMENT_PREFIX_PATH.
+
+    Not `ament_index_python`, so the library works without ROS on the path. Pass your own
+    lookup to `scan_from` to resolve against something else.
+    """
+    for prefix in os.environ.get("AMENT_PREFIX_PATH", "").split(os.pathsep):
+        if not prefix:
+            continue
+        share = os.path.join(prefix, "share", package)
+        if os.path.isdir(share):
+            return share
+    return None
+
+
+def scan_file_detailed(path: str, scope: Optional[dict] = None) -> list[Reference]:
+    """Every package `path` names, each with the line it was named on.
+
+    The same matches `scan_file` collects, keeping their provenance.
+
+    `scope` expands `$(var x)` first, so a package whose name is assembled from an argument is
+    reported under the name it will actually have. Substitutions never span lines, so the line
+    numbers survive the expansion.
+    """
+    fmt = _format_of(path)
+    if fmt is None:
+        return []
+
+    if fmt == FORMAT_TOML and not _is_under_launch_dir(path):
+        return []
+
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except OSError:
+        return []
+
+    text = _decomment_for_suffix(path, text)
+    if scope:
+        text = expand_vars(text, scope)
+
+    found: list[Reference] = []
+    for rx, _ in _patterns_for(fmt):
+        for m in rx.finditer(text):
+            found.append(Reference(m.group(1), path, _line_of(text, m.start())))
+
+    return found
+
+
+def _edges_in(path: str, scope: Optional[dict] = None) -> list[Edge]:
+    """The includes `path` makes, before any attempt to resolve them.
+
+    Three kinds: a frontend `$(find-pkg-share ...)` substitution, a launch-manager component
+    naming a package and a file, and a Python `IncludeLaunchDescription`.
+    """
+    fmt = _format_of(path)
+    if fmt is None:
+        return []
+
+    edges: list[Edge] = []
+
+    if fmt == FORMAT_PY:
+        edges.extend(_python_edges(path))
+
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except OSError:
+        return edges
+
+    text = _decomment_for_suffix(path, text)
+    if scope:
+        text = expand_vars(text, scope)
+
+    for m in _SHARE_PATH.finditer(text):
+        package, relative = m.group(1), m.group(2)
+        if _looks_like_a_launch_file(relative):
+            # A computed name is kept as written; `_walk` leaves it unresolved.
+            edges.append(Edge(package, relative, path, _line_of(text, m.start()), None))
+
+    for m in _COMPONENT_LAUNCH.finditer(text):
+        package, launch_file = m.group(1), m.group(2)
+        edges.append(
+            Edge(
+                package,
+                os.path.join("launch", launch_file),
+                path,
+                _line_of(text, m.start()),
+                None,
+            )
+        )
+
+    return edges
+
+
+# ── Resolving what a launch file leaves to be filled in later ────────────────────────────
+
+#: `$(var name)`. Other substitution types - `$(env x)`, `$(eval ...)`, `$(command ...)` -
+#: depend on the environment or on running code and are left unexpanded.
+_VAR = re.compile(r"\$\(\s*var\s+([A-Za-z0-9_]+)\s*\)")
+
+
+def declared_args(path: str) -> dict:
+    """The `{name: default}` a YAML frontend launch file declares.
+
+    Only defaults that are written down. An argument with no default is one the caller has to
+    supply, and guessing one would resolve an include to a file this system never loads.
+    """
+    if _format_of(path) != FORMAT_YAML:
+        return {}
+
+    try:
+        import yaml
+
+        with open(path, encoding="utf-8") as f:
+            document = yaml.safe_load(f) or {}
+    except Exception:
+        # Unparsable: nothing to expand from, so names stay as written and end up unresolved.
+        return {}
+
+    if not isinstance(document, dict):
+        return {}
+
+    found = {}
+    for entry in document.get("launch") or []:
+        if not isinstance(entry, dict):
+            continue
+        arg = entry.get("arg")
+        if isinstance(arg, dict) and "name" in arg and "default" in arg:
+            found[str(arg["name"])] = str(arg["default"])
+
+    return found
+
+
+def expand_vars(text: str, scope: dict, rounds: int = 10) -> str:
+    """Replace `$(var x)` from `scope`, repeatedly, leaving unknown names as written.
+
+    Repeatedly because a default may cite another argument (`robot_name: "$(var robot)"`).
+    Bounded rather than run to a fixpoint, so mutually defined arguments cannot hang a scan.
+    """
+    for _ in range(rounds):
+        expanded = _VAR.sub(lambda m: scope.get(m.group(1), m.group(0)), text)
+        if expanded == text:
+            return expanded
+        text = expanded
+
+    return text
+
+
+def _scope_for(path: str, args: Optional[dict]) -> dict:
+    """What `$(var x)` means in this file: its own declared defaults, then the caller's values.
+
+    The caller's win, so a caller that knows what it is about to launch with follows the tree
+    that will come up rather than the one the defaults describe.
+    """
+    scope = declared_args(path)
+    if args:
+        scope.update({str(k): str(v) for k, v in args.items()})
+
+    # A default may name another argument, so the table has to be expanded against itself.
+    return {name: expand_vars(value, scope) for name, value in scope.items()}
+
+
+# ── Includes written in Python ───────────────────────────────────────────────────────────
+
+#: Calls that name a package's share directory. Everything else is reported as an include
+#: this scan could not follow - see `_python_edges`.
+_SHARE_CALLS = (
+    "FindPackageShare",
+    "get_package_share_directory",
+    "get_package_share_path",
+)
+
+
+def _string_of(node: ast.AST) -> Optional[str]:
+    return (
+        node.value
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        else None
+    )
+
+
+def _path_expression(node: ast.AST, bound: dict) -> "Optional[tuple[str, list[str]]]":
+    """`(package, path segments)` for an expression that names a file inside a package.
+
+    Handles the three ways one is written, and their combinations:
+
+        get_package_share_directory("x")            -> ("x", [])
+        os.path.join(<expr>, "launch", "a.py")      -> the expr's package, its parts + these
+        PathJoinSubstitution([<expr>, "launch"])    -> the same
+
+    `bound` carries names already resolved, so a chain of assignments works.
+
+    Returns None as soon as anything is not a literal or a known name. Control flow is not
+    followed: a name assigned twice resolves to the last assignment seen, so the result is
+    only used to find more launch files to read, never to claim one runs.
+    """
+    if isinstance(node, ast.Name):
+        return bound.get(node.id)
+
+    if not isinstance(node, ast.Call):
+        return None
+
+    if getattr(node.func, "id", "") in _SHARE_CALLS:
+        named = _string_of(node.args[0]) if node.args else None
+        return (named, []) if named else None
+
+    items: "list[ast.AST]" = []
+    if getattr(node.func, "attr", "") == "join":
+        items = list(node.args)
+    elif getattr(node.func, "id", "") == "PathJoinSubstitution":
+        if node.args and isinstance(node.args[0], (ast.List, ast.Tuple)):
+            items = list(node.args[0].elts)
+
+    if not items:
+        return None
+
+    package: Optional[str] = None
+    parts: list[str] = []
+
+    for item in items:
+        literal = _string_of(item)
+        if literal is not None:
+            parts.append(literal)
+            continue
+
+        resolved = _path_expression(item, bound)
+        if resolved is None:
+            return None
+        if package is not None:
+            # Two package roots in one path is not something to guess at.
+            return None
+        package, parts = resolved[0], list(resolved[1]) + parts
+
+    return (package, parts) if package else None
+
+
+def _share_bindings(tree: ast.Module, rounds: int = 3) -> dict:
+    """Every name bound to a location inside a package, anywhere in the file.
+
+    Anywhere rather than at module level, since the idiom is as often a local inside
+    `generate_launch_description`. Repeated because one binding may be built from another and
+    `ast.walk` does not visit them in dependency order.
+    """
+    bound: dict = {}
+
+    for _ in range(rounds):
+        before = len(bound)
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+                continue
+            target = node.targets[0]
+            if not isinstance(target, ast.Name):
+                continue
+
+            resolved = _path_expression(node.value, bound)
+            if resolved is not None:
+                bound[target.id] = resolved
+
+        if len(bound) == before:
+            break
+
+    return bound
+
+
+def _python_edges(path: str) -> "list[Edge]":
+    """Every `IncludeLaunchDescription` in a Python launch file.
+
+    Resolved where the package and path are literals. Everything else is still reported, with
+    its line, as an include this scan could not read.
+    """
+    try:
+        with open(path, encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+    except (OSError, SyntaxError):
+        return []
+
+    edges: list[Edge] = []
+    bound = _share_bindings(tree)
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if getattr(node.func, "id", "") != "IncludeLaunchDescription":
+            continue
+
+        package: Optional[str] = None
+        parts: list[str] = []
+        for inner in ast.walk(node):
+            resolved = (
+                _path_expression(inner, bound) if isinstance(inner, ast.Call) else None
+            )
+            if resolved is not None and resolved[1]:
+                package, parts = resolved
+                break
+
+        if package and parts:
+            edges.append(Edge(package, os.path.join(*parts), path, node.lineno, None))
+        else:
+            edges.append(
+                Edge(
+                    "",
+                    "an IncludeLaunchDescription this scan could not read",
+                    path,
+                    node.lineno,
+                    None,
+                )
+            )
+
+    return edges
+
+
+def scan_directory(
+    directory: str,
+    share_lookup: Callable[[str], Optional[str]] = default_share_lookup,
+    args: Optional[dict] = None,
+    max_depth: int = 12,
+) -> Walk:
+    """Every launch file in `directory`, followed - one walk, not one per file.
+
+    The recursive counterpart to :py:func:`scan_files`: that reads what a package ships, this
+    also reads what those files pull in. Sibling launch files tend to include the same things,
+    so a single shared walk reads each of them once.
+
+    Args:
+        directory: Scanned recursively for launch files to use as seeds.
+        share_lookup: `package -> share directory or None`.
+        args: Values for `$(var x)`, as in :py:func:`scan_from`.
+        max_depth: How far to follow includes below each seed.
+
+    Returns:
+        A :py:class:`Walk` over all of them.
+
+    """
+    seeds = []
+
+    for root, _, files in os.walk(directory):
+        for name in sorted(files):
+            full = os.path.join(root, name)
+            if _format_of(full) is None:
+                continue
+            if _format_of(full) == FORMAT_TOML and not _is_under_launch_dir(full):
+                continue
+            seeds.append(full)
+
+    return _walk(seeds, share_lookup, args, max_depth)
+
+
+def scan_from(
+    seed: str,
+    share_lookup: Callable[[str], Optional[str]] = default_share_lookup,
+    args: Optional[dict] = None,
+    max_depth: int = 12,
+) -> Walk:
+    """Follow a launch file's includes, collecting every package the tree names.
+
+    Args:
+        seed: The launch file to start from.
+        share_lookup: `package -> share directory or None`. Defaults to AMENT_PREFIX_PATH.
+        args: Values for `$(var x)`, overriding any default the file declares. Pass what the
+            system will be launched with to follow the tree that will come up; omit them to
+            follow the one the defaults describe. Applied at any depth.
+        max_depth: How far to follow includes. A guard against runaway recursion.
+
+    Returns:
+        A :py:class:`Walk`. Includes that could not be resolved are in `unresolved` rather
+        than being guessed at or dropped, so a caller reporting coverage knows how much of
+        the tree went unread.
+
+    """
+    return _walk([seed], share_lookup, args, max_depth)
+
+
+def _walk(
+    seeds: "list[str]",
+    share_lookup: Callable[[str], Optional[str]],
+    args: Optional[dict],
+    max_depth: int,
+) -> Walk:
+    """The walk itself, over one seed or many.
+
+    The visited set spans every seed, so a file two seeds both reach is read - and reported -
+    once.
+    """
+    references: list[Reference] = []
+    edges: list[Edge] = []
+    visited: list[str] = []
+    seen: set[str] = set()
+
+    queue = [(os.path.abspath(one), 0) for one in seeds]
+
+    while queue:
+        current, depth = queue.pop(0)
+
+        if current in seen or depth > max_depth:
+            continue
+        seen.add(current)
+
+        if not os.path.isfile(current):
+            continue
+
+        visited.append(current)
+
+        # Each file expands with its own declared defaults under the caller's values, so a
+        # child that declares an argument the parent never mentions still resolves.
+        scope = _scope_for(current, args)
+
+        references.extend(scan_file_detailed(current, scope))
+
+        for edge in _edges_in(current, scope):
+            if not _LITERAL_PACKAGE.match(edge.package):
+                # Built from a substitution, so there is nothing to look up.
+                edges.append(edge)
+                continue
+
+            share = share_lookup(edge.package)
+            target = _find_in_share(share, edge.launch_file) if share else None
+
+            if target is not None and os.path.isfile(target):
+                edges.append(edge._replace(resolved=target))
+                queue.append((target, depth + 1))
+            else:
+                edges.append(edge)
+
+    return Walk(references=references, edges=edges, visited=visited)

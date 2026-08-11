@@ -9,3 +9,14 @@
     language: python
     pass_filenames: false
     args: [--compare-with-cmake, --auto-fill-missing-deps]
+
+# Report-only, and needs a built and sourced workspace (it resolves through AMENT_PREFIX_PATH,
+# and skips with a message without one). Warns by default so it can be added to a repository
+# that already has findings; pass --error once they are dealt with.
+-   id: check-launch-tree
+    name: Check launch tree references
+    description: Follow every include from this package's launch files and report references that do not resolve in this workspace.
+    entry: check-launch-tree
+    language: python
+    pass_filenames: false
+    files: '(launch|launch_manager_components|launch_manager_configs)/.*\.(py|xml|ya?ml)$'
