@@ -26,6 +26,9 @@ repos:
     hooks:
       - id: format-package-xml
         name: Format package.xml
+      # Optional. Warns only; add args: [--error] to make findings fatal.
+      - id: check-launch-tree
+        name: Check launch tree references
 ```
 
 ### 2. Install the Hook
@@ -132,6 +135,12 @@ The on-disk file now matches the **After** snippet above. The exit code is non-z
 * **Launch File Scanning:** Scans `.py`, `.yaml`, and `.xml` launch files. If a package is used in a launch file but missing from `package.xml`, it adds it as an `<exec_depend>` or `<test_depend>`. Can be disabled with `--skip-launch-dep-check` when launch scanning produces false positives or is not desired for a given package.
 * **CMake Synchronization:** Compares `package.xml` against `CMakeLists.txt` to ensure build dependencies match, adding missing entries as `<depend>` or `<test_depend>`. Calls of the form `find_package(<pkg> QUIET)` are treated as optional and skipped. all other forms such as `find_package(<pkg>)`, `find_package(<pkg> REQUIRED)`, and `find_package(<pkg> REQUIRED QUIET)` are enforced in `package.xml`.
 * **Rosdep Validation:** Verifies that your dependency names exist as valid keys in the rosdep database.
+
+### Launch Tree Integrity
+
+The separate `check-launch-tree` hook follows every include out of a package's launch files, across package boundaries, and reports references that do not resolve: a package that is not installed, and an include whose package is present but whose launch file is not. Includes it cannot follow — a name built from `$(eval …)`, or an argument with no value — are listed as unchecked rather than assumed fine.
+
+Report-only, since neither finding is fixable by editing a manifest. It resolves packages through `AMENT_PREFIX_PATH`, so it needs a built and sourced workspace and skips with a message without one. Pass `--arg NAME=VALUE` to follow the tree a particular set of launch arguments produces, and `--error` to exit non-zero on findings.
 
 ### Build Configuration
 
@@ -246,6 +255,7 @@ against the in-memory tree, and writes back only if a step actually mutated.
 | Module | Responsibility |
 | --- | --- |
 | `package_xml_validator.py` | CLI entry point and per-file orchestration (parse → run steps → optionally write). |
+| `check_launch_tree.py` | Second entry point: follows the launch tree across packages and reports references that do not resolve. |
 | `helpers/validation_steps/` | One `*Step` class per validation rule. Each docstring states the rule, inputs, and when (if ever) it mutates the tree. |
 | `helpers/formatter/` | Pure structural checks (`structural_checks.py`), tree mutators (`mutations.py`), indentation/pretty-print helpers, and shared schema constants. `PackageXmlFormatter` is a thin facade. |
 | `helpers/cmake_parsers.py` | Lightweight regex-based CMake parser used by `CMakeComparisonStep`. |
