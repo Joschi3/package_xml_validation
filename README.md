@@ -138,7 +138,7 @@ The on-disk file now matches the **After** snippet above. The exit code is non-z
 
 ### Launch Tree Integrity
 
-The separate `check-launch-tree` hook follows every include out of a package's launch files, across package boundaries, and reports references that do not resolve: a package that is not installed, and an include whose package is present but whose launch file is not. Includes it cannot follow — a name built from `$(eval …)`, or an argument with no value — are listed as unchecked rather than assumed fine.
+The separate `check-launch-tree` hook follows every include out of a package's launch files, across package boundaries, and reports references that do not resolve: a package that is not installed, and an include whose package is present but whose launch file is not. Includes it cannot follow, e.g. a name built from `$(eval …)`, or an argument with no value, are listed as unchecked rather than assumed fine.
 
 Report-only, since neither finding is fixable by editing a manifest. It resolves packages through `AMENT_PREFIX_PATH`, so it needs a built and sourced workspace and skips with a message without one. Pass `--arg NAME=VALUE` to follow the tree a particular set of launch arguments produces, and `--error` to exit non-zero on findings.
 
