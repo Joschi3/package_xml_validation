@@ -5,7 +5,12 @@ import tempfile
 import unittest
 from unittest import mock
 
-from package_xml_validation.check_launch_tree import check, main, workspace_is_available
+from package_xml_validation.check_launch_tree import (
+    check,
+    main,
+    package_dirs_under,
+    workspace_is_available,
+)
 
 
 class LaunchTreeTestCase(unittest.TestCase):
@@ -28,12 +33,18 @@ class LaunchTreeTestCase(unittest.TestCase):
             f.write(text)
         return path
 
-    def package(self, name, relative, text):
-        path = os.path.join(self.root, name, relative)
+    def package(self, name, relative, text, under=""):
+        """A source package: a `package.xml` plus one file, at `<root>/<under>/<name>`."""
+        directory = os.path.join(self.root, under, name)
+        path = os.path.join(directory, relative)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             f.write(text)
-        return os.path.join(self.root, name)
+        with open(os.path.join(directory, "package.xml"), "w", encoding="utf-8") as f:
+            f.write(
+                f'<package format="3"><name>{os.path.basename(name)}</name></package>'
+            )
+        return directory
 
 
 class TestWhatItFinds(LaunchTreeTestCase):
@@ -107,6 +118,41 @@ class TestWhatItFinds(LaunchTreeTestCase):
 
         self.assertEqual([], missing)
         self.assertEqual([], dead)
+
+
+class TestFindingThePackagesToCheck(LaunchTreeTestCase):
+    """The hook is handed a repository root, not a package directory."""
+
+    def test_a_repository_root_finds_the_packages_below_it(self):
+        """`check` works one package at a time, so nothing under `src/` was ever read and the
+        hook passed silently on every multi-package repository."""
+        self.package(
+            "app",
+            "launch/app.launch.yaml",
+            "launch:\n  - node:\n      pkg: absent_driver\n",
+            under="src",
+        )
+
+        found = package_dirs_under([self.root])
+
+        self.assertEqual([os.path.join(self.root, "src", "app")], found)
+
+    def test_it_fails_on_a_finding_below_the_root(self):
+        self.package(
+            "app",
+            "launch/app.launch.yaml",
+            "launch:\n  - node:\n      pkg: absent_driver\n",
+            under="src",
+        )
+
+        with mock.patch("sys.argv", ["check-launch-tree", "--error", self.root]):
+            with self.assertRaises(SystemExit) as exit:
+                main()
+        self.assertEqual(1, exit.exception.code)
+
+    def test_a_directory_with_no_packages_says_so(self):
+        with mock.patch("sys.argv", ["check-launch-tree", "--error", self.root]):
+            main()  # must not raise SystemExit
 
 
 class TestItNeedsAWorkspaceAndSaysSo(LaunchTreeTestCase):

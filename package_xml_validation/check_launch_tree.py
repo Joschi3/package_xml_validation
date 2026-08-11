@@ -18,9 +18,14 @@ import argparse
 import os
 import sys
 
-from .helpers.find_launch_dependencies import Walk, scan_directory
+from .helpers.find_launch_dependencies import (
+    Walk,
+    default_share_lookup,
+    scan_directory,
+)
+from .helpers.workspace import find_package_xml_files
 
-__all__ = ["check", "main"]
+__all__ = ["check", "main", "package_dirs_under"]
 
 
 #: Directories worth seeding from: `launch`, plus the two that hold launch-manager component
@@ -36,13 +41,25 @@ def workspace_is_available() -> bool:
 
 
 def _installed(package: str) -> bool:
-    from .helpers.find_launch_dependencies import default_share_lookup
-
     return default_share_lookup(package) is not None
 
 
+def package_dirs_under(paths: "list[str]") -> "list[str]":
+    """The directories holding a `package.xml`, at any depth below `paths`.
+
+    `check` works on one package at a time, but the hook is given a repository root. Reusing
+    the validator's discovery means both entry points agree on what a package is, and on which
+    directories (`COLCON_IGNORE` and friends) are skipped.
+    """
+    return sorted({os.path.dirname(one) for one in find_package_xml_files(paths)})
+
+
 def check(package_dir: str, args: Optional[dict] = None) -> "tuple[Walk, list, list]":
-    """Follow this package's launch tree. Returns `(walk, missing packages, dead includes)`."""
+    """Follow one package's launch tree.
+
+    `package_dir` is a single package directory, not a repository root - see
+    :py:func:`package_dirs_under`. Returns `(walk, missing packages, dead includes)`.
+    """
     seeds = [
         os.path.join(package_dir, name)
         for name in DEFAULT_SEED_DIRS
@@ -128,7 +145,10 @@ def main() -> None:
         description="Check that everything a package's launch tree references exists here."
     )
     parser.add_argument(
-        "src", nargs="*", default=["."], help="Package directories to check."
+        "src",
+        nargs="*",
+        default=["."],
+        help="Files or directories to search for packages. Defaults to the current directory.",
     )
     parser.add_argument(
         "--error",
@@ -160,8 +180,13 @@ def main() -> None:
         if name:
             args[name] = value
 
+    package_dirs = package_dirs_under(parsed.src)
+    if not package_dirs:
+        print("check-launch-tree: no packages found. Nothing to check.")
+        return
+
     findings = 0
-    for package_dir in parsed.src or ["."]:
+    for package_dir in package_dirs:
         walk, missing, dead = check(package_dir, args or None)
         _report(package_dir, walk, missing, dead)
         findings += len(missing) + len(dead)
