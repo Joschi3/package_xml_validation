@@ -21,6 +21,8 @@ import os
 import re
 from typing import Callable, NamedTuple, Optional
 
+import yaml
+
 logger = logging.getLogger(__name__)
 
 
@@ -386,6 +388,13 @@ class Edge(NamedTuple):
     line: int
     resolved: Optional[str]
 
+    by_basename: bool = False
+    """Whether `launch_file` is a bare filename to search the share directory for.
+
+    True only for launch-manager components, which name a file and leave the manager to find
+    it. Everywhere else the path is written out and has to resolve exactly.
+    """
+
 
 class Walk(NamedTuple):
     """What following a seed found.
@@ -433,28 +442,27 @@ _SHARE_PATH = re.compile(
 #: A package name we could look up, as opposed to one assembled at launch time.
 _LITERAL_PACKAGE = re.compile(r"^[A-Za-z0-9_]+$")
 
-#: A launch-manager component: `package:` and then `launch_file:` in the same block.
-_COMPONENT_LAUNCH = re.compile(
-    r"(?m)^[\s\-]*package\s*:\s*['\"]?([A-Za-z0-9_]+)['\"]?"
-    r"(?:.*\n){0,6}?[\s\-]*launch_file\s*:\s*['\"]?([A-Za-z0-9_.\-]+)['\"]?"
-)
-
 _LAUNCH_SUFFIXES = (".launch.py", ".launch.xml", ".launch.yaml", ".launch.yml")
 
 
-def _find_in_share(share: str, relative: str) -> Optional[str]:
+def _find_in_share(
+    share: str, relative: str, by_basename: bool = False
+) -> Optional[str]:
     """The launch file inside a package's share directory, or None.
 
-    The written path first, then the same basename anywhere under the package. The fallback
-    exists for launch-manager components, which name a launch file by bare filename and let
-    the manager find it: `nav2.yaml` says `nav2.launch.yaml`, the file is at
-    `launch/navigation/nav2.launch.yaml`.
+    The written path, and for a bare filename also the same basename anywhere under the
+    package - a launch-manager component says `nav2.launch.yaml` and lets the manager find it
+    at `launch/navigation/nav2.launch.yaml`. First match in sorted order if it occurs twice.
 
-    First match in sorted order when a basename occurs twice.
+    Searching for a written-out path instead would resolve a renamed or uninstalled launch
+    file to a same-named one elsewhere in the package, and report what *that* file names.
     """
     direct = os.path.join(share, relative)
     if os.path.isfile(direct):
         return direct
+
+    if not by_basename:
+        return None
 
     matches = sorted(
         glob.glob(os.path.join(share, "**", os.path.basename(relative)), recursive=True)
@@ -556,18 +564,57 @@ def _edges_in(path: str, scope: Optional[dict] = None) -> list[Edge]:
             # A computed name is kept as written; `_walk` leaves it unresolved.
             edges.append(Edge(package, relative, path, _line_of(text, m.start()), None))
 
-    for m in _COMPONENT_LAUNCH.finditer(text):
-        package, launch_file = m.group(1), m.group(2)
-        edges.append(
-            Edge(
-                package,
-                os.path.join("launch", launch_file),
-                path,
-                _line_of(text, m.start()),
-                None,
-            )
-        )
+    if fmt == FORMAT_YAML:
+        edges.extend(_component_edges(path, text))
 
+    return edges
+
+
+def _component_edges(path: str, text: str) -> list[Edge]:
+    """Launch-manager components in a YAML file: a mapping with `package` and `launch_file`.
+
+    Parsed rather than pattern-matched, so that the two keys have to belong to the *same*
+    mapping. A regex scanning a window of following lines paired a node-only component's
+    `package` with the next component's `launch_file`, which both invented a finding and left
+    the real include unfollowed.
+    """
+    try:
+        root = yaml.compose(text)
+    except yaml.YAMLError:
+        return []
+
+    edges: list[Edge] = []
+
+    def visit(node: "yaml.Node") -> None:
+        if isinstance(node, yaml.SequenceNode):
+            for item in node.value:
+                visit(item)
+            return
+        if not isinstance(node, yaml.MappingNode):
+            return
+
+        scalars = {
+            key.value: (value, key)
+            for key, value in node.value
+            if isinstance(key, yaml.ScalarNode) and isinstance(value, yaml.ScalarNode)
+        }
+        package, launch_file = scalars.get("package"), scalars.get("launch_file")
+        if package and launch_file:
+            edges.append(
+                Edge(
+                    package[0].value,
+                    os.path.join("launch", launch_file[0].value),
+                    path,
+                    package[1].start_mark.line + 1,
+                    None,
+                    by_basename=True,
+                )
+            )
+
+        for _, value in node.value:
+            visit(value)
+
+    visit(root)
     return edges
 
 
@@ -588,11 +635,9 @@ def declared_args(path: str) -> dict:
         return {}
 
     try:
-        import yaml
-
         with open(path, encoding="utf-8") as f:
             document = yaml.safe_load(f) or {}
-    except Exception:
+    except (OSError, yaml.YAMLError):
         # Unparsable: nothing to expand from, so names stay as written and end up unresolved.
         return {}
 
@@ -650,6 +695,21 @@ _SHARE_CALLS = (
 )
 
 
+def _called_name(node: ast.Call) -> str:
+    """The trailing name of a call target: `f(...)` and `a.b.f(...)` both give `f`.
+
+    Qualified calls are common in launch files - `launch.actions.IncludeLaunchDescription`,
+    `ament_index_python.get_package_share_directory` - and matching only `ast.Name` made them
+    invisible: no edge at all, rather than one reported as unreadable.
+    """
+    func = node.func
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return ""
+
+
 def _string_of(node: ast.AST) -> Optional[str]:
     return (
         node.value
@@ -679,14 +739,16 @@ def _path_expression(node: ast.AST, bound: dict) -> "Optional[tuple[str, list[st
     if not isinstance(node, ast.Call):
         return None
 
-    if getattr(node.func, "id", "") in _SHARE_CALLS:
+    called = _called_name(node)
+
+    if called in _SHARE_CALLS:
         named = _string_of(node.args[0]) if node.args else None
         return (named, []) if named else None
 
     items: "list[ast.AST]" = []
-    if getattr(node.func, "attr", "") == "join":
+    if called == "join":
         items = list(node.args)
-    elif getattr(node.func, "id", "") == "PathJoinSubstitution":
+    elif called == "PathJoinSubstitution":
         if node.args and isinstance(node.args[0], (ast.List, ast.Tuple)):
             items = list(node.args[0].elts)
 
@@ -760,7 +822,7 @@ def _python_edges(path: str) -> "list[Edge]":
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
-        if getattr(node.func, "id", "") != "IncludeLaunchDescription":
+        if _called_name(node) != "IncludeLaunchDescription":
             continue
 
         package: Optional[str] = None
@@ -893,7 +955,11 @@ def _walk(
                 continue
 
             share = share_lookup(edge.package)
-            target = _find_in_share(share, edge.launch_file) if share else None
+            target = (
+                _find_in_share(share, edge.launch_file, edge.by_basename)
+                if share
+                else None
+            )
 
             if target is not None and os.path.isfile(target):
                 edges.append(edge._replace(resolved=target))

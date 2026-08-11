@@ -268,6 +268,44 @@ class TestIncludesWrittenInPython(ScanFromTestCase):
 
         self.assertIn("gz_internals", walk.packages)
 
+    def test_a_qualified_call_is_followed(self):
+        """`launch.actions.IncludeLaunchDescription(...)`, matched on the trailing name.
+
+        Matching `ast.Name` only made the qualified form produce no edge at all - not even an
+        unreadable one - so everything below it went unread with nothing to say so.
+        """
+        self.ws.write(
+            "other", "launch/child.launch.py", "Node(package='deep_package')\n"
+        )
+        seed = self.ws.write(
+            "app",
+            "launch/app.launch.py",
+            "import launch, ament_index_python\n"
+            "launch.actions.IncludeLaunchDescription(\n"
+            "    os.path.join(\n"
+            "        ament_index_python.get_package_share_directory('other'),\n"
+            "        'launch', 'child.launch.py')\n"
+            ")\n",
+        )
+
+        walk = scan_from(seed, share_lookup=self.ws.lookup)
+
+        self.assertIn("deep_package", walk.packages)
+        self.assertEqual([], walk.unresolved)
+
+    def test_a_qualified_call_it_cannot_read_is_still_reported(self):
+        seed = self.ws.write(
+            "app",
+            "launch/app.launch.py",
+            "import launch\n"
+            "launch.actions.IncludeLaunchDescription(pick_a_launch_file())\n",
+        )
+
+        walk = scan_from(seed, share_lookup=self.ws.lookup)
+
+        self.assertEqual(1, len(walk.unresolved))
+        self.assertEqual(2, walk.unresolved[0].line)
+
     def test_an_include_it_cannot_read_is_reported_with_its_line(self):
         """An include assembled at runtime cannot be followed, so it is reported."""
         seed = self.ws.write(
@@ -468,3 +506,62 @@ class TestFindingALaunchFileInsideAPackage(ScanFromTestCase):
 
         self.assertEqual(1, len(walk.unresolved))
         self.assertIn("not_anywhere.launch.yaml", walk.unresolved[0].launch_file)
+
+    def test_a_written_out_path_does_not_fall_back_to_the_basename(self):
+        """The search is for components only. A renamed or uninstalled launch file used to
+        resolve to a same-named one elsewhere in the package, reporting what *that* file
+        names and hiding the real finding."""
+        self.ws.write(
+            "present",
+            "somewhere_else/gone.launch.yaml",
+            "launch:\n  - node:\n      pkg: from_the_wrong_file\n",
+        )
+        seed = self.ws.write(
+            "app",
+            "launch/app.launch.yaml",
+            'launch:\n  - include:\n      file: "$(find-pkg-share present)/launch/gone.launch.yaml"\n',
+        )
+
+        walk = scan_from(seed, share_lookup=self.ws.lookup)
+
+        self.assertEqual(1, len(walk.unresolved))
+        self.assertNotIn("from_the_wrong_file", walk.packages)
+
+
+class TestComponentBlocks(ScanFromTestCase):
+    """`package` and `launch_file` have to belong to the same mapping."""
+
+    def test_a_node_only_component_does_not_borrow_the_next_launch_file(self):
+        """A regex scanning the following lines paired the first component's `package` with the
+        second's `launch_file`: a finding against a package that ships nothing of the sort, and
+        the real include left unfollowed."""
+        self.ws.write(
+            "pkg_b",
+            "launch/b.launch.yaml",
+            "launch:\n  - node:\n      pkg: only_under_pkg_b\n",
+        )
+        seed = self.ws.write(
+            "config",
+            "components/two.yaml",
+            "components:\n"
+            "  - name: one\n"
+            "    package: pkg_a\n"
+            "    node: some_node\n"
+            "  - name: two\n"
+            "    package: pkg_b\n"
+            "    launch_file: b.launch.yaml\n",
+        )
+
+        walk = scan_from(seed, share_lookup=self.ws.lookup)
+
+        self.assertEqual([], walk.unresolved)
+        self.assertIn("only_under_pkg_b", walk.packages)
+
+    def test_an_unparsable_file_yields_no_component_edges(self):
+        seed = self.ws.write(
+            "config", "components/broken.yaml", "components:\n  - [unclosed\n"
+        )
+
+        walk = scan_from(seed, share_lookup=self.ws.lookup)
+
+        self.assertEqual([], walk.unresolved)
