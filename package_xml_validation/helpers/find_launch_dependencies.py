@@ -442,6 +442,17 @@ _SHARE_PATH = re.compile(
 #: A package name we could look up, as opposed to one assembled at launch time.
 _LITERAL_PACKAGE = re.compile(r"^[A-Za-z0-9_]+$")
 
+
+def is_literal_package(name: str) -> bool:
+    """Whether `name` is a package name we could look up.
+
+    False for a name still holding a substitution. Callers reporting on an unresolved edge
+    need the distinction: an unexpanded `$(var robot)_sim` is an include nobody could follow,
+    not a package that failed to ship a file.
+    """
+    return bool(_LITERAL_PACKAGE.match(name))
+
+
 _LAUNCH_SUFFIXES = (".launch.py", ".launch.xml", ".launch.yaml", ".launch.yml")
 
 
@@ -873,16 +884,32 @@ def scan_directory(
         A :py:class:`Walk` over all of them.
 
     """
+    return scan_directories([directory], share_lookup, args, max_depth)
+
+
+def scan_directories(
+    directories: "list[str]",
+    share_lookup: Callable[[str], Optional[str]] = default_share_lookup,
+    args: Optional[dict] = None,
+    max_depth: int = 12,
+) -> Walk:
+    """:py:func:`scan_directory` over several directories, as a single walk.
+
+    A package keeps launch files in more than one directory and they include the same things,
+    so walking each directory separately reads - and reports - shared files once per
+    directory.
+    """
     seeds = []
 
-    for root, _, files in os.walk(directory):
-        for name in sorted(files):
-            full = os.path.join(root, name)
-            if _format_of(full) is None:
-                continue
-            if _format_of(full) == FORMAT_TOML and not _is_under_launch_dir(full):
-                continue
-            seeds.append(full)
+    for directory in directories:
+        for root, _, files in os.walk(directory):
+            for name in sorted(files):
+                full = os.path.join(root, name)
+                if _format_of(full) is None:
+                    continue
+                if _format_of(full) == FORMAT_TOML and not _is_under_launch_dir(full):
+                    continue
+                seeds.append(full)
 
     return _walk(seeds, share_lookup, args, max_depth)
 
@@ -949,7 +976,7 @@ def _walk(
         references.extend(scan_file_detailed(current, scope))
 
         for edge in _edges_in(current, scope):
-            if not _LITERAL_PACKAGE.match(edge.package):
+            if not is_literal_package(edge.package):
                 # Built from a substitution, so there is nothing to look up.
                 edges.append(edge)
                 continue

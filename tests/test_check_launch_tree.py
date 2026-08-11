@@ -1,11 +1,14 @@
 """The launch-tree check: does everything this tree reaches exist here?"""
 
+import contextlib
+import io
 import os
 import tempfile
 import unittest
 from unittest import mock
 
 from package_xml_validation.check_launch_tree import (
+    LISTED_UNREAD,
     check,
     main,
     package_dirs_under,
@@ -28,6 +31,14 @@ class LaunchTreeTestCase(unittest.TestCase):
 
     def install(self, package, relative, text=""):
         path = os.path.join(self.prefix, "share", package, relative)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+        return path
+
+    def write_into(self, directory, relative, text):
+        """Another file in a package that already exists."""
+        path = os.path.join(directory, relative)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             f.write(text)
@@ -105,6 +116,23 @@ class TestWhatItFinds(LaunchTreeTestCase):
         _, missing, _ = check(pkg)
 
         self.assertEqual(["absent_from_everywhere"], missing)
+
+    def test_a_name_still_holding_a_substitution_is_neither(self):
+        """It names no package, so it is neither a missing package nor a package that failed
+        to ship a file - it is an include nobody could follow, and was reported as
+        `$(var undeclared)_sim does not ship ...`."""
+        pkg = self.package(
+            "app",
+            "launch/app.launch.yaml",
+            "launch:\n  - include:\n"
+            '      file: "$(find-pkg-share $(var undeclared)_sim)/launch/x.launch.yaml"\n',
+        )
+
+        walk, missing, dead = check(pkg)
+
+        self.assertEqual([], missing)
+        self.assertEqual([], dead)
+        self.assertEqual(1, len(walk.unresolved))
 
     def test_a_healthy_package_reports_nothing(self):
         self.install("driver", "launch/driver.launch.yaml", "launch: []\n")
@@ -200,6 +228,66 @@ class TestHowItFails(LaunchTreeTestCase):
             main()
 
 
+class TestWhatItPrints(LaunchTreeTestCase):
+    """The report is the whole product of this tool, so its lines are worth asserting."""
+
+    def report_for(self, package_dir):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            with mock.patch("sys.argv", ["check-launch-tree", package_dir]):
+                main()
+        return out.getvalue()
+
+    def test_a_dead_include_names_the_package_the_file_and_the_line(self):
+        self.install("driver", "launch/something_else.launch.yaml", "launch: []\n")
+        pkg = self.package(
+            "app",
+            "launch_manager_components/broken.yaml",
+            "launch:\n  package: driver\n  launch_file: not_shipped.launch.yaml\n",
+        )
+
+        report = self.report_for(pkg)
+
+        self.assertIn("driver does not ship launch/not_shipped.launch.yaml", report)
+        self.assertIn("launch_manager_components/broken.yaml:2", report)
+
+    def test_a_file_outside_the_package_is_named_absolutely(self):
+        """The reference that breaks a tree is often in another package entirely, where a
+        relative path would be a chain of `../..`."""
+        self.install(
+            "aggregator",
+            "launch/pipeline.launch.yaml",
+            "launch:\n  - node:\n      pkg: absent_from_everywhere\n",
+        )
+        pkg = self.package(
+            "app",
+            "launch_manager_components/detection.yaml",
+            "launch:\n  package: aggregator\n  launch_file: pipeline.launch.yaml\n",
+        )
+
+        report = self.report_for(pkg)
+
+        self.assertIn("absent_from_everywhere is not installed", report)
+        self.assertIn(
+            os.path.join(self.prefix, "share", "aggregator", "launch"), report
+        )
+
+    def test_unfollowable_includes_beyond_the_listed_few_are_counted(self):
+        """A truncated list that does not say it is truncated reads as the whole story."""
+        lines = ["launch:"]
+        for i in range(LISTED_UNREAD + 3):
+            lines.append("  - include:")
+            lines.append(
+                f'      file: "$(find-pkg-share $(var undeclared)_{i})/launch/x.launch.yaml"'
+            )
+        pkg = self.package("app", "launch/app.launch.yaml", "\n".join(lines) + "\n")
+
+        report = self.report_for(pkg)
+
+        self.assertIn(f"{LISTED_UNREAD + 3} include(s) could not be followed", report)
+        self.assertIn("... and 3 more", report)
+
+
 class TestLaunchArguments(LaunchTreeTestCase):
     """A tree whose shape depends on an argument is only followed once a value is known."""
 
@@ -237,3 +325,50 @@ class TestLaunchArguments(LaunchTreeTestCase):
 
         self.assertEqual([], walk.unresolved)
         self.assertIn("telemax_only", missing)
+
+    def test_the_cli_passes_arg_name_value_through(self):
+        """`--arg robot=telemax` reaches the walk, so the include resolves and the package
+        behind it is found missing - which fails the run."""
+        with mock.patch(
+            "sys.argv",
+            ["check-launch-tree", "--error", "--arg", "robot=telemax", self.pkg],
+        ):
+            with self.assertRaises(SystemExit) as exit:
+                main()
+        self.assertEqual(1, exit.exception.code)
+
+
+class TestOneFindingIsReportedOnce(LaunchTreeTestCase):
+    """Seed directories share one walk, so a file both reach is read once.
+
+    Walking each directory separately re-read everything reachable from more than one of them,
+    so a finding inside a shared launch file was reported once per directory that led to it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.install("driver", "launch/a_different_file.launch.yaml", "launch: []\n")
+        self.install(
+            "common",
+            "launch/shared.launch.yaml",
+            "launch:\n  - include:\n"
+            '      file: "$(find-pkg-share driver)/launch/gone.launch.yaml"\n',
+        )
+
+        reaches_shared = (
+            "launch:\n  - include:\n"
+            '      file: "$(find-pkg-share common)/launch/shared.launch.yaml"\n'
+        )
+        self.pkg = self.package("app", "launch/a.launch.yaml", reaches_shared)
+        self.write_into(self.pkg, "launch_manager_components/b.yaml", reaches_shared)
+
+    def test_the_shared_file_is_read_once(self):
+        walk, _, _ = check(self.pkg)
+
+        read_shared = [f for f in walk.visited if f.endswith("shared.launch.yaml")]
+        self.assertEqual(1, len(read_shared))
+
+    def test_its_dead_include_is_reported_once(self):
+        _, _, dead = check(self.pkg)
+
+        self.assertEqual(1, len(dead))

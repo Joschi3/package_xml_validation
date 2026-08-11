@@ -21,7 +21,8 @@ import sys
 from .helpers.find_launch_dependencies import (
     Walk,
     default_share_lookup,
-    scan_directory,
+    is_literal_package,
+    scan_directories,
 )
 from .helpers.workspace import find_package_xml_files
 
@@ -31,6 +32,9 @@ __all__ = ["check", "main", "package_dirs_under"]
 #: Directories worth seeding from: `launch`, plus the two that hold launch-manager component
 #: definitions naming the package and launch file they start.
 DEFAULT_SEED_DIRS = ("launch", "launch_manager_components", "launch_manager_configs")
+
+#: How many unfollowable includes to list before summarising the rest as a count.
+LISTED_UNREAD = 5
 
 
 def workspace_is_available() -> bool:
@@ -66,29 +70,21 @@ def check(package_dir: str, args: Optional[dict] = None) -> "tuple[Walk, list, l
         if os.path.isdir(os.path.join(package_dir, name))
     ]
 
-    references: list = []
-    edges: list = []
-    visited: list = []
-    seen: set = set()
-
-    for seed in seeds:
-        walk = scan_directory(seed, args=args)
-        references.extend(walk.references)
-        edges.extend(walk.edges)
-        for one in walk.visited:
-            if one not in seen:
-                seen.add(one)
-                visited.append(one)
-
-    walk = Walk(references=references, edges=edges, visited=visited)
+    # One walk over every seed directory, so a file reachable from two of them is read - and
+    # reported - once.
+    walk = scan_directories(seeds, args=args)
 
     missing = sorted(
         {one.package for one in walk.references if not _installed(one.package)}
     )
 
-    # An include unfollowable *because its package is absent* is already reported as missing.
+    # A dead include is one whose package is here and whose file is not. An include whose
+    # package is absent is already reported as missing, and one whose name still holds a
+    # substitution names no package at all - both belong in the unfollowable list instead.
     dead = [
-        one for one in walk.unresolved if one.package and one.package not in missing
+        one
+        for one in walk.unresolved
+        if is_literal_package(one.package) and one.package not in missing
     ]
 
     return walk, missing, dead
@@ -135,9 +131,11 @@ def _report(package_dir: str, walk: Walk, missing: list, dead: list) -> None:
         # Printed even when nothing is wrong, so a clean result that skipped half the tree
         # does not read like one that did not.
         print(f"  {len(unread)} include(s) could not be followed and were not checked:")
-        for edge in unread[:5]:
+        for edge in unread[:LISTED_UNREAD]:
             target = f"{edge.package or '(computed)'}/{edge.launch_file}"
             print(f"      {_where(edge.file, package_dir)}:{edge.line}  {target}")
+        if len(unread) > LISTED_UNREAD:
+            print(f"      ... and {len(unread) - LISTED_UNREAD} more")
 
 
 def main() -> None:
