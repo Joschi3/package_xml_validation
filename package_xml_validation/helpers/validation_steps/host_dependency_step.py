@@ -61,6 +61,13 @@ class HostDependencyStep(ValidationStep):
             return result
 
         if host not in self.hosts.packages:
+            if not self.hosts.complete:
+                # The configuration could not be read, so the host may well be in it. Saying
+                # it is not would send the reader to fix a manifest that is already right.
+                result.warnings.append(
+                    f"Cannot tell what host '{host}' runs: {self._why_incomplete()}"
+                )
+                return result
             known = ", ".join(sorted(self.hosts.packages)) or "none"
             result.errors.append(
                 f"{self.package_name}/package.xml claims host '{host}', which no "

@@ -383,6 +383,14 @@ class TestLaunchManagerInstallSets(LaunchTreeTestCase):
         self.assertIn("is not declared by any install set that launches it", report)
         self.assertIn(f"gripper - {os.path.join(install_set, 'package.xml')}", report)
 
+    def test_scope_defaults_are_not_shared_between_instances(self):
+        """A NamedTuple default is one object for every instance that omits the field, so a
+        plain dict here would let one scope's contents leak into the next."""
+        with self.assertRaises(TypeError):
+            Scope({}, (), frozenset()).host_packages["leaked"] = set()
+
+        self.assertEqual({}, dict(Scope({}, (), frozenset()).host_packages))
+
     def test_a_host_with_no_install_set_is_named_as_such(self):
         self.write(
             os.path.join(self.config_pkg, "launch_manager_configs", "default.yaml"),

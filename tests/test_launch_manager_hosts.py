@@ -31,12 +31,23 @@ class LaunchManagerTestCase(unittest.TestCase):
             f.write(text)
         return path
 
+    def manifest(self, name, body=""):
+        """A manifest with every required element, so the only findings are the ones a test
+        sets up - a missing <license> raises a critical error that reaches the same summary."""
+        return (
+            '<?xml version="1.0"?>\n'
+            f'<package format="3">\n'
+            f"  <name>{name}</name>\n"
+            "  <version>0.0.0</version>\n"
+            "  <description>d</description>\n"
+            '  <maintainer email="dev@example.com">dev</maintainer>\n'
+            "  <license>MIT</license>\n"
+            f"{body}</package>\n"
+        )
+
     def package(self, name):
         directory = os.path.join(self.root, name)
-        self.write(
-            os.path.join(directory, "package.xml"),
-            f'<package format="3"><name>{name}</name></package>',
-        )
+        self.write(os.path.join(directory, "package.xml"), self.manifest(name))
         return directory
 
     def config(self, package_dir, components, name="default.yaml"):
@@ -179,11 +190,12 @@ class TestTheValidatorDelegates(LaunchManagerTestCase):
     declares its own share. Without the allowance every reference reads as missing here."""
 
     def install_set(self, name, host, deps):
-        body = "".join(f"<exec_depend>{one}</exec_depend>" for one in deps)
+        body = "".join(f"  <exec_depend>{one}</exec_depend>\n" for one in deps)
+        body += (
+            f"  <export><launch_manager_host>{host}</launch_manager_host></export>\n"
+        )
         self.write(
-            os.path.join(self.root, name, "package.xml"),
-            f'<package format="3"><name>{name}</name>{body}'
-            f"<export><launch_manager_host>{host}</launch_manager_host></export></package>",
+            os.path.join(self.root, name, "package.xml"), self.manifest(name, body)
         )
 
     def setUp(self):
@@ -219,6 +231,32 @@ class TestTheValidatorDelegates(LaunchManagerTestCase):
         self.install_set("app_gripper", "gripper", [])
 
         self.assertEqual(1, len(self.missing_for_app()))
+
+    def test_a_host_with_no_install_set_does_not_sign_off_as_corrected(self):
+        """Creating the missing package is not something the tool can do, so a run whose only
+        finding is this one must not print the success line beside its own error."""
+        from package_xml_validation.package_xml_validator import PackageXmlValidator
+
+        # gripper is fully declared, so the unclaimed jetson is the run's only finding - any
+        # other error would reach the same summary by a different route and prove nothing.
+        self.config(self.app, [("a_driver", ["gripper", "jetson"])])
+        self.install_set("app_gripper", "gripper", ["driver"])
+
+        validator = PackageXmlValidator(check_rosdeps=False)
+        with self.assertLogs("package_xml_validation.package_xml_validator") as logs:
+            valid = validator.check_and_format([self.root])
+
+        self.assertFalse(valid)
+        self.assertTrue(
+            any("No package claims host 'jetson'" in one for one in logs.output)
+        )
+        self.assertFalse(
+            any(
+                "Corrected `package.xml` files successfully" in one
+                for one in logs.output
+            ),
+            "the run signed off as successful while reporting a gap it cannot fix",
+        )
 
 
 class TestWhenItCannotAnswer(LaunchManagerTestCase):

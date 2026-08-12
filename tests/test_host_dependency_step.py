@@ -118,6 +118,21 @@ class TestWhenItCannotBeSure(unittest.TestCase):
         self.assertIn("grippr", result.errors[0])
         self.assertIn("gripper", result.errors[0])
 
+    def test_an_unknown_host_is_only_an_error_once_the_configuration_was_read(self):
+        """When the derivation failed the host may well be in a configuration nobody could
+        read, and saying it is not sends the reader to fix a manifest that is already right."""
+        hosts = HostDependencies(
+            packages={},
+            problems=["2 packages hold a launch_manager_configs/ directory"],
+        )
+        root = manifest("install_set", host="gripper")
+
+        result = step(hosts, check_only=True).perform_check(root, "package.xml")
+
+        self.assertTrue(result.valid)
+        self.assertEqual([], result.errors)
+        self.assertIn("Cannot tell what host 'gripper' runs", result.warnings[0])
+
     def test_an_incomplete_derivation_never_fills(self):
         """The set is short by an unknown amount, so filling from it would write a manifest
         that looks complete and is not."""

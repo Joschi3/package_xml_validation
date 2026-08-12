@@ -25,7 +25,9 @@ a workspace.
 """
 
 from pathlib import Path
+from types import MappingProxyType
 from typing import NamedTuple, Optional
+from collections.abc import Mapping
 import argparse
 import os
 import sys
@@ -144,11 +146,13 @@ class Scope(NamedTuple):
     """The manifest of the package holding `launch_manager_configs/`, the only one whose launch
     files may leave their dependencies to an install set."""
 
-    host_packages: dict = {}
+    # Read-only defaults: a NamedTuple's default is one object shared by every instance that
+    # omits the field, so a plain {} here would let one scope's contents leak into the next.
+    host_packages: "Mapping[str, set]" = MappingProxyType({})
     """`host -> packages its components launch`, so a reference nobody declared can be charged
     to the hosts that need it."""
 
-    install_sets: dict = {}
+    install_sets: "Mapping[str, str]" = MappingProxyType({})
     """`host -> the manifest claiming it`. A host missing here has no install set at all."""
 
     @classmethod

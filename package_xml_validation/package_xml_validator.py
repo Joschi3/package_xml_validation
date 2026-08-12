@@ -278,15 +278,20 @@ class PackageXmlValidator:
             return frozenset()
         return self.launch_manager.delegated
 
-    def _report_hosts_without_an_install_set(self) -> None:
+    def _report_hosts_without_an_install_set(self) -> bool:
         """A host the configuration launches on, that no package declares dependencies for.
 
         Nothing installs what it runs, and no per-package check can notice: the gap is the
         absence of a package, so it has to be reported from the run rather than from a file.
+
+        Returns whether any were found. Creating the missing package is not something this can
+        do, so the caller counts it among the unresolvable errors - otherwise a run whose only
+        finding is this one signs off with "corrected successfully".
         """
         if self.launch_manager is None:
-            return
-        for host, packages in sorted(self.launch_manager.unclaimed.items()):
+            return False
+        unclaimed = sorted(self.launch_manager.unclaimed.items())
+        for host, packages in unclaimed:
             self.logger.error(
                 f"No package claims host '{host}', so nothing declares the "
                 f"{len(packages)} package(s) it launches: {', '.join(sorted(packages))}. "
@@ -295,6 +300,7 @@ class PackageXmlValidator:
                 extra={"flush_left": True},
             )
             self.all_valid = False
+        return bool(unclaimed)
 
     def check_and_format_files(self, package_xml_files: Iterable[str]) -> bool:
         """Validate and optionally format a list of package.xml files.
@@ -373,7 +379,7 @@ class PackageXmlValidator:
 
             self.all_valid &= self.xml_valid
 
-        self._report_hosts_without_an_install_set()
+        encountered_unresolvable_error |= self._report_hosts_without_an_install_set()
         # Final result messages
         if not self.all_valid and self.check_only:
             self.logger.warning(
