@@ -14,15 +14,17 @@ what it finds by whether anyone can act on it:
 * **an include nobody could follow** - a warning, listed so a walk that read half the tree does
   not read like one that read all of it.
 
-The two fatal kinds only fail the run when the *owning* package is one the committer can fix:
-a package in the checkout being scanned, or one under a `--fatal-under` prefix. Against a
-binary-only install they are reported as warnings.
+The two fatal kinds only fail the run when the *owning* package is one the committer can fix,
+which is any of three things: a package in the checkout being scanned, one whose source is
+elsewhere in the same workspace's `src`, or one below a `--fatal-under` prefix. Against a
+package that is only a binary install they are reported as warnings.
 
 Crossing package boundaries needs `AMENT_PREFIX_PATH`. Without it the walk stops at the
 checkout's own launch files and says so - the manifest check still runs, since it never needed
 a workspace.
 """
 
+from pathlib import Path
 from typing import NamedTuple, Optional
 import argparse
 import os
@@ -42,7 +44,7 @@ from .helpers.formatter.dependency_queries import (
     get_package_name,
     retrieve_exec_dependencies_with_conditions,
 )
-from .helpers.workspace import find_package_xml_files
+from .helpers.workspace import find_package_xml_files, find_workspace_root
 
 __all__ = [
     "FATAL",
@@ -92,14 +94,36 @@ class Finding(NamedTuple):
     """For a dead include, the file the include named."""
 
 
+def workspace_sources(paths: "list[str]") -> "list[str]":
+    """The `<ws>/src` each path sits in, where there is one.
+
+    A package is fixable when its source is anywhere in the same workspace, not only when it
+    is in the repository being committed to - a workspace with one repository per package
+    would otherwise put every sibling out of reach.
+    """
+    found: "list[str]" = []
+    for one in paths:
+        try:
+            # Resolved first: find_workspace_root compares the path it is handed against an
+            # absolute <ws>/src, and the hook passes `.`.
+            root = find_workspace_root(Path(one).resolve())
+        except ValueError:
+            # Not a <ws>/src/<pkg> layout, so there is no workspace tier. Not a problem.
+            continue
+        source = root / "src"
+        if source.is_dir() and str(source) not in found:
+            found.append(str(source))
+    return found
+
+
 class Scope(NamedTuple):
     """Which manifests this run may fail on, and which names never to report at all."""
 
     source: dict
-    """`package name -> package.xml` for the checkout being scanned. Always ours to fix."""
+    """`package name -> package.xml`, for every package this run is allowed to fail on."""
 
     fatal_under: tuple = ()
-    """Extra prefixes to treat the same way, such as an install space CI fills itself."""
+    """The `--fatal-under` prefixes, kept so a manifest the index missed is still covered."""
 
     ignored: frozenset = frozenset()
 
@@ -110,7 +134,17 @@ class Scope(NamedTuple):
         fatal_under: "tuple[str, ...]" = (),
         ignored: "frozenset[str]" = frozenset(),
     ) -> "Scope":
-        return cls(_index(find_package_xml_files(paths)), fatal_under, ignored)
+        """Index every package a finding may be fatal against.
+
+        Three tiers: a listed path, such as an install space CI populates itself; the `src` of
+        the surrounding workspace; and the checkout being scanned. Indexed least editable
+        first, so where a package appears in more than one the most editable copy wins - that
+        is both the manifest a finding is reported against and the one it is graded on.
+        """
+        index: dict = {}
+        for root in (*fatal_under, *workspace_sources(paths), *paths):
+            index.update(_index(find_package_xml_files([root])))
+        return cls(index, fatal_under, ignored)
 
     def severity_of(self, manifest: Optional[str]) -> str:
         if manifest is None:
@@ -434,8 +468,9 @@ def main() -> None:
         action="append",
         default=[],
         metavar="PATH",
-        help="Also treat packages installed below PATH as yours to fix, so findings against "
-        "them fail the run. Repeat for several. Packages in SRC always count.",
+        help="Also treat packages below PATH as yours to fix, so findings against them fail "
+        "the run. Repeat for several. Packages in SRC, and packages whose source is elsewhere "
+        "in the same workspace, already count without this.",
     )
     parser.add_argument(
         "--ignore",
@@ -471,9 +506,7 @@ def main() -> None:
         print("check-launch-tree: no packages found. Nothing to check.")
         return
 
-    scope = Scope(
-        _index(manifests), tuple(parsed.fatal_under), frozenset(parsed.ignore)
-    )
+    scope = Scope.of(parsed.src, tuple(parsed.fatal_under), frozenset(parsed.ignore))
     resolvable = workspace_is_available()
 
     fatal = 0

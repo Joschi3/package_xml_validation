@@ -347,6 +347,98 @@ class TestWhoIsHeldResponsible(LaunchTreeTestCase):
 
         self.assertEqual(FATAL, of_kind(findings, UNDECLARED)[0].severity)
 
+    def test_fatal_under_reaches_a_source_tree_too(self):
+        """The flag indexes what it points at rather than only prefix-matching the manifest a
+        finding landed on, so it works for a source checkout outside the scanned path. Without
+        that, the owner stays the installed copy and the prefix never matches."""
+        self.install(
+            "driver",
+            "launch/d.launch.yaml",
+            "launch:\n  - node:\n      pkg: undeclared_by_driver\n",
+        )
+        source = self.package(
+            "driver",
+            "launch/d.launch.yaml",
+            "launch:\n  - node:\n      pkg: undeclared_by_driver\n",
+            under="elsewhere",
+        )
+        app = self.package(
+            "app",
+            "launch/app.launch.yaml",
+            'launch:\n  - include:\n      file: "$(find-pkg-share driver)/launch/d.launch.yaml"\n',
+            deps=["driver"],
+        )
+        elsewhere = os.path.join(self.root, "elsewhere")
+
+        _, findings = check(app, scope=Scope.of([app], fatal_under=(elsewhere,)))
+
+        undeclared = of_kind(findings, UNDECLARED)
+        self.assertEqual(1, len(undeclared))
+        self.assertEqual(FATAL, undeclared[0].severity)
+        self.assertEqual(os.path.join(source, "package.xml"), undeclared[0].owner)
+
+    def test_a_sibling_repository_in_the_same_workspace_is_ours(self):
+        """One repository per package is the normal ROS layout, so "the checkout" is a single
+        package and every sibling would otherwise be someone else's problem. Only `src/app` is
+        passed here; `src/driver` is found by walking up to the workspace root."""
+        self.install(
+            "driver",
+            "launch/d.launch.yaml",
+            "launch:\n  - node:\n      pkg: undeclared_by_driver\n",
+        )
+        driver = self.package(
+            "driver",
+            "launch/d.launch.yaml",
+            "launch:\n  - node:\n      pkg: undeclared_by_driver\n",
+            under="src",
+        )
+        app = self.package(
+            "app",
+            "launch/app.launch.yaml",
+            'launch:\n  - include:\n      file: "$(find-pkg-share driver)/launch/d.launch.yaml"\n',
+            under="src",
+            deps=["driver"],
+        )
+
+        _, findings = check(app, scope=Scope.of([app]))
+
+        undeclared = of_kind(findings, UNDECLARED)
+        self.assertEqual(1, len(undeclared))
+        self.assertEqual(FATAL, undeclared[0].severity)
+        self.assertEqual(os.path.join(driver, "package.xml"), undeclared[0].owner)
+
+    def test_the_workspace_is_found_from_a_relative_path(self):
+        """The hook passes `.`, and `find_workspace_root` compares what it is handed against
+        an absolute `<ws>/src` - so an unresolved path finds no workspace at all."""
+        driver = self.package(
+            "driver", "launch/d.launch.yaml", "launch: []\n", under="src"
+        )
+        app = self.package("app", "launch/app.launch.yaml", "launch: []\n", under="src")
+
+        cwd = os.getcwd()
+        os.chdir(app)
+        try:
+            scope = Scope.of(["."])
+        finally:
+            os.chdir(cwd)
+
+        self.assertEqual(
+            os.path.join(driver, "package.xml"), scope.source.get("driver")
+        )
+
+    def test_a_checkout_outside_any_workspace_still_works(self):
+        """`find_workspace_root` raises when there is no <ws>/src/<pkg> layout above the path.
+        That is a missing tier, not an error."""
+        pkg = self.package(
+            "app",
+            "launch/app.launch.yaml",
+            "launch:\n  - node:\n      pkg: some_driver\n",
+        )
+
+        scope = Scope.of([pkg])
+
+        self.assertEqual(["app"], sorted(scope.source))
+
     def test_the_checkouts_manifest_wins_over_the_installed_copy(self):
         """Includes resolve through find-pkg-share, so the file read is the installed one. The
         manifest to grade against is still the one in the checkout."""

@@ -147,15 +147,21 @@ The separate `check-launch-tree` hook follows every include out of a package's l
 | not installed | nothing in this workspace provides the package | warning |
 | could not be followed | a name built from `$(eval …)`, or an argument with no value | warning |
 
-The split is what makes the hook usable in CI: a runner that has not built the workspace will report half of it as not installed, which is nobody's fault, while a missing manifest entry is a real defect and needs no workspace to see.
+The two fatal findings only fail the run when the package that *owns* the offending launch file is one you can fix. Three things count:
 
-The two fatal findings only fail the run when the package that *owns* the offending launch file is one you can fix — a package in the checkout being scanned, or one below a `--fatal-under` prefix. Against a binary-only install they drop to warnings. Where a package is both installed and in the checkout, the checkout's manifest is the one checked.
+1. it is in the repository being scanned;
+2. its source is elsewhere in the same workspace's `src`, found by walking up to the workspace root — the usual ROS layout is one repository per package, so a defect one include away is normally in a sibling repository rather than in this one;
+3. it is below a `--fatal-under` prefix, which is how CI marks an install space the pipeline populates itself.
+
+Anything else — a package that exists only as a binary install — drops to a warning, since no commit here can fix it.
+
+Where a package appears in more than one of those places, the most editable copy wins: the manifest reported and graded is the one in the repository, then the one in the workspace, then the installed one. This matters because includes resolve through `find-pkg-share`, so the launch file the walk actually *reads* is almost always the installed copy.
 
 Crossing package boundaries resolves through `AMENT_PREFIX_PATH`. Without a sourced workspace the walk stops at the checkout's own launch files and says so; the manifest check still runs.
 
 | Option | |
 | --- | --- |
-| `--fatal-under PATH` | also treat packages installed below `PATH` as yours to fix. Repeatable. In CI, `--fatal-under /opt/<distro>` covers packages the pipeline installs itself |
+| `--fatal-under PATH` | also treat packages below `PATH` as yours to fix. Repeatable. In CI, `--fatal-under /opt/<distro>` covers packages the pipeline installs itself. The repository and the surrounding workspace already count without it |
 | `--warn-only` | report everything, always exit zero — for introducing the hook to a repository that already has findings |
 | `--ignore NAME` | leave a package out of every report. Repeatable |
 | `--arg NAME=VALUE` | follow the tree a particular set of launch arguments produces, rather than the one the declared defaults describe. Repeatable |
