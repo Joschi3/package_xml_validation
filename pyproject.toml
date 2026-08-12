@@ -41,6 +41,7 @@ package_xml_validation = ["data/*.yaml"]
 
 [project.scripts]
 package-xml-validator = "package_xml_validation.package_xml_validator:main"
+check-launch-tree = "package_xml_validation.check_launch_tree:main"
 
 [tool.mypy]
 python_version = "3.9"

@@ -46,6 +46,17 @@ class TestFindLaunchDependencies(unittest.TestCase):
             "find_prefix_pkg",
         ],
         "better_launch_example.launch.py": ["bl_pkg_a", "bl_pkg_b"],
+        # `pkg:` and `package =` are YAML and TOML syntax; in Python they are an annotation
+        # and an assignment.
+        "python_annotation_and_literal.py": [],
+        # A key merely *ending* in `pkg` is not a reference.
+        "yaml_keys_ending_in_pkg.launch.yml": ["real_package", "quoted_package"],
+        # ... but the anchor allows the `- ` of a sequence item, which is how every hector
+        # component definition names its package.
+        "yaml_sequence_item_package.yaml": [
+            "sequence_item_package",
+            "another_sequence_package",
+        ],
     }
 
     # Directory where example launch files live
@@ -120,3 +131,70 @@ class TestFindLaunchDependencies(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPatternsAreScopedToTheirFormat(unittest.TestCase):
+    """A pattern only applies to the languages it is syntax for.
+
+    The Python fixture writes each form at the start of a line, where anchoring alone would let
+    it through, so these fail if the format scoping is removed and not only if the anchor is.
+    """
+
+    BASE_DIR = os.path.join(os.path.dirname(__file__), "examples", "launch_examples")
+
+    def scan(self, filename):
+        found = set()
+        scan_file(os.path.join(self.BASE_DIR, filename), found)
+        return found
+
+    def test_a_python_annotation_is_not_a_mapping_key(self):
+        """`pkg: str = "hello"` at module level: a YAML key everywhere but in Python."""
+        self.assertNotIn("str", self.scan("python_annotation_and_literal.py"))
+
+    def test_a_python_assignment_is_not_the_toml_form(self):
+        """`package = "x"` names a package in better_launch TOML and nothing in Python."""
+        self.assertNotIn(
+            "sneaky_toml_form", self.scan("python_annotation_and_literal.py")
+        )
+
+    def test_a_string_containing_pkg_is_not_a_package(self):
+        """A `"pkg:robot.launch.yaml"` literal names a file, not a dependency."""
+        self.assertNotIn("robot", self.scan("python_annotation_and_literal.py"))
+
+    def test_a_key_merely_ending_in_pkg_is_not_a_reference(self):
+        """`mypkg: foo` is a key of its own, not the `pkg:` key."""
+        found = self.scan("yaml_keys_ending_in_pkg.launch.yml")
+        self.assertNotIn("not_a_package", found)
+        self.assertNotIn("also_not_a_package", found)
+
+    def test_the_real_references_beside_them_still_match(self):
+        """The point is precision, not silence."""
+        found = self.scan("yaml_keys_ending_in_pkg.launch.yml")
+        self.assertIn("real_package", found)
+        self.assertIn("quoted_package", found)
+
+    def test_a_sequence_item_key_still_matches(self):
+        """`- package: x` is how every hector component definition names its package."""
+        found = self.scan("yaml_sequence_item_package.yaml")
+        self.assertEqual({"sequence_item_package", "another_sequence_package"}, found)
+
+    def test_every_format_specific_pattern_is_withheld_from_the_others(self):
+        """The mechanism itself, rather than one fixture's worth of it: whatever a pattern
+        declares it is syntax for is exactly what `_patterns_for` hands it."""
+        from package_xml_validation.helpers.find_launch_dependencies import (
+            ANY_FORMAT,
+            COMPILED_PATTERNS,
+            PATTERNS,
+            _patterns_for,
+        )
+
+        specific = [i for i, (_, fmts) in enumerate(PATTERNS) if fmts != ANY_FORMAT]
+        self.assertTrue(specific, "no format-specific pattern left to check")
+
+        for fmt in ANY_FORMAT:
+            applied = {i for _, i in _patterns_for(fmt)}
+            for i in specific:
+                declared = fmt in COMPILED_PATTERNS[i][1]
+                self.assertEqual(
+                    declared, i in applied, f"pattern {PATTERNS[i][0]!r} in {fmt}"
+                )

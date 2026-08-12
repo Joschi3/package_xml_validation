@@ -1,0 +1,6 @@
+# A hector launch component: the key is the first thing on the line after the sequence dash.
+components:
+  - package: sequence_item_package
+    executable: something
+  - package: another_sequence_package
+    executable: something_else

@@ -26,6 +26,9 @@ repos:
     hooks:
       - id: format-package-xml
         name: Format package.xml
+      # Optional. See "Launch Tree Integrity" below.
+      - id: check-launch-tree
+        name: Check launch tree references
 ```
 
 ### 2. Install the Hook
@@ -132,6 +135,32 @@ The on-disk file now matches the **After** snippet above. The exit code is non-z
 * **Launch File Scanning:** Scans `.py`, `.yaml`, and `.xml` launch files. If a package is used in a launch file but missing from `package.xml`, it adds it as an `<exec_depend>` or `<test_depend>`. Can be disabled with `--skip-launch-dep-check` when launch scanning produces false positives or is not desired for a given package.
 * **CMake Synchronization:** Compares `package.xml` against `CMakeLists.txt` to ensure build dependencies match, adding missing entries as `<depend>` or `<test_depend>`. Calls of the form `find_package(<pkg> QUIET)` are treated as optional and skipped. all other forms such as `find_package(<pkg>)`, `find_package(<pkg> REQUIRED)`, and `find_package(<pkg> REQUIRED QUIET)` are enforced in `package.xml`.
 * **Rosdep Validation:** Verifies that your dependency names exist as valid keys in the rosdep database.
+
+### Launch Tree Integrity
+
+The separate `check-launch-tree` hook follows every include out of a package's launch files, across package boundaries, and grades what it finds by whether anyone can act on it:
+
+| Finding | Meaning | Effect |
+| --- | --- | --- |
+| not declared | a launch file names a package its own `package.xml` does not depend on | **fails the run** |
+| dead include | the package is installed, the launch file it names is not | **fails the run** |
+| not installed | nothing in this workspace provides the package | warning |
+| could not be followed | a name built from `$(eval …)`, or an argument with no value | warning |
+
+The two fatal findings only fail the run when the package that *owns* the offending launch file is one you can fix. Three things count:
+
+1. it is in the repository being scanned;
+2. its source is elsewhere in the same workspace's `src`,
+3. it is below a `--fatal-under` prefix, which is how CI marks an install space the pipeline populates itself.
+
+Crossing package boundaries resolves through `AMENT_PREFIX_PATH`. Without a sourced workspace the walk stops at the checkout's own launch files and says so; the manifest check still runs.
+
+| Option | |
+| --- | --- |
+| `--fatal-under PATH` | also treat packages below `PATH` as yours to fix. Repeatable. In CI, `--fatal-under /opt/<distro>` covers packages the pipeline installs itself. The repository and the surrounding workspace already count without it |
+| `--warn-only` | report everything, always exit zero — for introducing the hook to a repository that already has findings |
+| `--ignore NAME` | leave a package out of every report. Repeatable |
+| `--arg NAME=VALUE` | follow the tree a particular set of launch arguments produces, rather than the one the declared defaults describe. Repeatable |
 
 ### Build Configuration
 
@@ -246,6 +275,7 @@ against the in-memory tree, and writes back only if a step actually mutated.
 | Module | Responsibility |
 | --- | --- |
 | `package_xml_validator.py` | CLI entry point and per-file orchestration (parse → run steps → optionally write). |
+| `check_launch_tree.py` | Second entry point: follows the launch tree across packages, and grades each finding by whether the package that owns the offending file is one the committer can fix. |
 | `helpers/validation_steps/` | One `*Step` class per validation rule. Each docstring states the rule, inputs, and when (if ever) it mutates the tree. |
 | `helpers/formatter/` | Pure structural checks (`structural_checks.py`), tree mutators (`mutations.py`), indentation/pretty-print helpers, and shared schema constants. `PackageXmlFormatter` is a thin facade. |
 | `helpers/cmake_parsers.py` | Lightweight regex-based CMake parser used by `CMakeComparisonStep`. |
