@@ -600,9 +600,53 @@ class TestWhatItPrints(LaunchTreeTestCase):
         report = self.report_for(pkg)
 
         self.assertIn(
-            "is not declared in package.xml (and is not installed here)", report
+            "absent_driver is not declared by app (and is not installed here)", report
         )
         self.assertNotIn("is not installed in this workspace", report)
+
+    def test_the_header_says_the_tree_was_followed_across_packages(self):
+        """Every finding below may sit in a package the reader never opened, so the report has
+        to say up front that it left this one."""
+        self.install(
+            "aggregator",
+            "launch/pipeline.launch.yaml",
+            "launch:\n  - node:\n      pkg: undeclared_by_aggregator\n",
+        )
+        pkg = self.package(
+            "app",
+            "launch_manager_components/detection.yaml",
+            "launch:\n  package: aggregator\n  launch_file: pipeline.launch.yaml\n",
+            deps=["aggregator"],
+        )
+
+        report = self.report_for(pkg)
+
+        self.assertIn("followed this package's launch tree", report.splitlines()[0])
+        self.assertIn("2 launch file(s) across 2 package(s)", report)
+
+    def test_an_undeclared_finding_names_the_package_at_fault(self):
+        """Reading a `share/<name>/package.xml` path to work out who is at fault is what made
+        the old wording hard to scan, so the name leads and the path is a detail under it."""
+        self.install(
+            "aggregator",
+            "launch/pipeline.launch.yaml",
+            "launch:\n  - node:\n      pkg: undeclared_by_aggregator\n",
+        )
+        pkg = self.package(
+            "app",
+            "launch_manager_components/detection.yaml",
+            "launch:\n  package: aggregator\n  launch_file: pipeline.launch.yaml\n",
+            deps=["aggregator"],
+        )
+
+        report = self.report_for(pkg)
+
+        self.assertIn("undeclared_by_aggregator is not declared by aggregator", report)
+        self.assertIn(
+            f"manifest {os.path.join(self.prefix, 'share', 'aggregator', 'package.xml')}",
+            report,
+        )
+        self.assertIn("named in", report)
 
     def test_a_package_that_is_only_absent_says_so_and_passes(self):
         """The line a CI runner without a built workspace will see most of."""
