@@ -34,6 +34,13 @@ class LaunchDependencyStep(ValidationStep):
     be installed at runtime in environments where its condition is
     False. Disable with ``--ignore-conditions``.
 
+    ``delegated`` names dependencies declared by a launch-manager install
+    set rather than here. A package holding the launch files for several
+    hosts declares almost nothing itself, because each host installs only
+    what it runs; without this every one of those references would read as
+    missing. Delegated references are neither reported nor auto-filled -
+    the install set owns them, and :class:`HostDependencyStep` checks it.
+
     When ``auto_fill_missing_deps=True``, missing deps are validated
     against rosdep before being added — names that don't resolve are
     flagged rather than auto-filled. When ``check_only=True`` or
@@ -49,6 +56,7 @@ class LaunchDependencyStep(ValidationStep):
         rosdep_validator: RosdepValidator | None,
         package_name: str | None,
         exceptions: DependencyExceptions | None = None,
+        delegated: frozenset[str] = frozenset(),
     ) -> None:
         """Initialize launch dependency validation step."""
         super().__init__(config)
@@ -56,6 +64,7 @@ class LaunchDependencyStep(ValidationStep):
         self.rosdep_validator = rosdep_validator
         self.package_name = package_name
         self.exceptions = exceptions or DependencyExceptions()
+        self.delegated = delegated
         self._logger = get_logger(__name__)
 
     def perform_check(self, root: XmlElement, xml_file: str) -> ValidationResult:
@@ -108,6 +117,7 @@ class LaunchDependencyStep(ValidationStep):
             for dep in launch_deps
             if dep not in xml_deps
             and dep != self.package_name
+            and dep not in self.delegated
             and not self.exceptions.is_ignored(dep)
         ]
         if not missing_deps:
