@@ -46,14 +46,13 @@ class TestFindLaunchDependencies(unittest.TestCase):
             "find_prefix_pkg",
         ],
         "better_launch_example.launch.py": ["bl_pkg_a", "bl_pkg_b"],
-        # A pattern is a piece of syntax, and `pkg:` means different things in different
-        # languages. In Python it is a type annotation or part of a string, never a mapping
-        # key - reading it as one reported packages named `str` and `robot`.
+        # `pkg:` and `package =` are YAML and TOML syntax; in Python they are an annotation
+        # and an assignment.
         "python_annotation_and_literal.py": [],
-        # Any key *ending* in `pkg` used to match, because nothing anchored the pattern.
+        # A key merely *ending* in `pkg` is not a reference.
         "yaml_keys_ending_in_pkg.launch.yml": ["real_package", "quoted_package"],
-        # ... and the anchor has to allow the `- ` of a sequence item, or every hector
-        # component definition would stop being scanned.
+        # ... but the anchor allows the `- ` of a sequence item, which is how every hector
+        # component definition names its package.
         "yaml_sequence_item_package.yaml": [
             "sequence_item_package",
             "another_sequence_package",
@@ -137,9 +136,8 @@ if __name__ == "__main__":
 class TestPatternsAreScopedToTheirFormat(unittest.TestCase):
     """A pattern only applies to the languages it is syntax for.
 
-    The three cases below were all live false positives. They are asserted directly, rather
-    than only through the example files, because the mechanism is the point: a Python file
-    must not be searched for YAML mapping keys, whatever it happens to contain.
+    The Python fixture writes each form at the start of a line, where anchoring alone would let
+    it through, so these fail if the format scoping is removed and not only if the anchor is.
     """
 
     BASE_DIR = os.path.join(os.path.dirname(__file__), "examples", "launch_examples")
@@ -149,53 +147,54 @@ class TestPatternsAreScopedToTheirFormat(unittest.TestCase):
         scan_file(os.path.join(self.BASE_DIR, filename), found)
         return found
 
-    def test_a_python_type_annotation_is_not_a_package(self):
-        """`def resolve(pkg: str, ...)` reported a package named `str`."""
+    def test_a_python_annotation_is_not_a_mapping_key(self):
+        """`pkg: str = "hello"` at module level: a YAML key everywhere but in Python."""
         self.assertNotIn("str", self.scan("python_annotation_and_literal.py"))
 
+    def test_a_python_assignment_is_not_the_toml_form(self):
+        """`package = "x"` names a package in better_launch TOML and nothing in Python."""
+        self.assertNotIn(
+            "sneaky_toml_form", self.scan("python_annotation_and_literal.py")
+        )
+
     def test_a_string_containing_pkg_is_not_a_package(self):
-        """`"pkg:robot.launch.yaml"` in a unit test reported a package named `robot`, and the
-        hook then demanded a <test_depend> on it."""
+        """A `"pkg:robot.launch.yaml"` literal names a file, not a dependency."""
         self.assertNotIn("robot", self.scan("python_annotation_and_literal.py"))
 
     def test_a_key_merely_ending_in_pkg_is_not_a_reference(self):
-        """`mypkg: foo` matched, because nothing anchored the pattern to the start of a key."""
+        """`mypkg: foo` is a key of its own, not the `pkg:` key."""
         found = self.scan("yaml_keys_ending_in_pkg.launch.yml")
         self.assertNotIn("not_a_package", found)
         self.assertNotIn("also_not_a_package", found)
 
     def test_the_real_references_beside_them_still_match(self):
-        """The point of the fix is precision, not silence."""
+        """The point is precision, not silence."""
         found = self.scan("yaml_keys_ending_in_pkg.launch.yml")
         self.assertIn("real_package", found)
         self.assertIn("quoted_package", found)
 
     def test_a_sequence_item_key_still_matches(self):
-        """`- package: x` is how every hector component definition names its package, so the
-        anchor has to allow the leading dash."""
+        """`- package: x` is how every hector component definition names its package."""
         found = self.scan("yaml_sequence_item_package.yaml")
         self.assertEqual({"sequence_item_package", "another_sequence_package"}, found)
 
-    def test_the_toml_form_stays_out_of_yaml_and_python(self):
-        """`package = "x"` is a TOML form. It is also an ordinary assignment in Python, which
-        is why it was scoped in the first place - that scoping is now the general rule.
-
-        Selected by the pattern's own declared formats rather than by asking which patterns
-        apply to TOML: the latter also returns the format-agnostic ones like
-        `$(find-pkg-share x)`, which are meant to apply everywhere.
-        """
+    def test_every_format_specific_pattern_is_withheld_from_the_others(self):
+        """The mechanism itself, rather than one fixture's worth of it: whatever a pattern
+        declares it is syntax for is exactly what `_patterns_for` hands it."""
         from package_xml_validation.helpers.find_launch_dependencies import (
-            FORMAT_TOML,
+            ANY_FORMAT,
+            COMPILED_PATTERNS,
             PATTERNS,
+            _patterns_for,
         )
 
-        toml_only = [rx for rx, formats in PATTERNS if formats == {FORMAT_TOML}]
+        specific = [i for i, (_, fmts) in enumerate(PATTERNS) if fmts != ANY_FORMAT]
+        self.assertTrue(specific, "no format-specific pattern left to check")
 
-        self.assertTrue(toml_only, "no TOML-specific pattern left to check")
-        for rx in toml_only:
-            self.assertIn("package", rx)
-            found = set()
-            scan_file(
-                os.path.join(self.BASE_DIR, "python_annotation_and_literal.py"), found
-            )
-            self.assertEqual(set(), found)
+        for fmt in ANY_FORMAT:
+            applied = {i for _, i in _patterns_for(fmt)}
+            for i in specific:
+                declared = fmt in COMPILED_PATTERNS[i][1]
+                self.assertEqual(
+                    declared, i in applied, f"pattern {PATTERNS[i][0]!r} in {fmt}"
+                )
