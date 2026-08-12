@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from pathlib import Path
 from typing import TYPE_CHECKING
 from collections.abc import Iterable
 
@@ -30,7 +31,7 @@ from .helpers.validation_steps import (
     ValidationConfig,
     ValidationStep,
 )
-from .helpers.workspace import find_package_xml_files
+from .helpers.workspace import find_package_xml_files, parse_pkg_name
 
 if TYPE_CHECKING:
     from .helpers.package_types import XmlElement
@@ -52,6 +53,7 @@ class PackageXmlValidator:
         ignored_deps: Iterable[str] | None = None,
         skip_launch_dep_check: bool = False,
         evaluate_conditions: bool = True,
+        excluded_packages: Iterable[str] | None = None,
     ) -> None:
         """Initialize the package.xml validator with feature flags.
 
@@ -75,6 +77,9 @@ class PackageXmlValidator:
                 evaluates to False against ``os.environ`` are skipped during
                 rosdep / CMake comparison. Disable with ``--ignore-conditions``
                 to evaluate every entry regardless.
+            excluded_packages: Package names to leave alone entirely - neither
+                checked nor rewritten. Matched against ``<name>``, not the
+                directory, since the two often differ.
 
         Returns:
             None.
@@ -83,6 +88,9 @@ class PackageXmlValidator:
         self.verbose = verbose
         self.global_ignored_deps = (
             frozenset(ignored_deps) if ignored_deps else frozenset()
+        )
+        self.excluded_packages = (
+            frozenset(excluded_packages) if excluded_packages else frozenset()
         )
         self.missing_deps_only = missing_deps_only
         self.ignore_formatting_errors = ignore_formatting_errors
@@ -214,6 +222,31 @@ class PackageXmlValidator:
 
         return steps
 
+    def _without_excluded(self, package_xml_files: Iterable[str]) -> list[str]:
+        """Drop the packages named by ``--exclude-package``.
+
+        Matched on ``<name>``, not the directory holding it: a repository routinely has a
+        `foo/` directory whose package is called `foo_bar`, and excluding a package the user
+        did not name would be worse than not offering the option at all.
+
+        Dropped before the loop, so an excluded package is not announced as processed, does
+        not run a single step, is never written back, and cannot affect the exit code. It is
+        still named once - a package that quietly stops being checked stays unchecked.
+        """
+        if not self.excluded_packages:
+            return list(package_xml_files)
+
+        kept = []
+        for xml_file in package_xml_files:
+            name = parse_pkg_name(Path(xml_file))
+            if name in self.excluded_packages:
+                self.logger.info(
+                    f"Skipping {name} (--exclude-package).", extra={"flush_left": True}
+                )
+            else:
+                kept.append(xml_file)
+        return kept
+
     def check_and_format_files(self, package_xml_files: Iterable[str]) -> bool:
         """Validate and optionally format a list of package.xml files.
 
@@ -226,7 +259,7 @@ class PackageXmlValidator:
         """
         self.all_valid = True
         encountered_unresolvable_error = False
-        for xml_file in package_xml_files:
+        for xml_file in self._without_excluded(package_xml_files):
             self.xml_valid = True
             pkg_name = os.path.basename(os.path.dirname(xml_file))
             self.logger.info(f"Processing {pkg_name}...", extra={"flush_left": True})
@@ -418,6 +451,18 @@ def main() -> None:
     )
 
     parser.add_argument(
+        "--exclude-package",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help=(
+            "A package to leave alone entirely - neither checked nor rewritten. "
+            "Matched against the <name> tag, not the directory. May be passed "
+            "multiple times."
+        ),
+    )
+
+    parser.add_argument(
         "--skip-launch-dep-check",
         action="store_true",
         help="Skip checking for missing dependencies in launch and test files.",
@@ -475,6 +520,7 @@ def main() -> None:
         ignored_deps=global_ignored,
         skip_launch_dep_check=args.skip_launch_dep_check,
         evaluate_conditions=not args.ignore_conditions,
+        excluded_packages=args.exclude_package,
     )
 
     if args.file:

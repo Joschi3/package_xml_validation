@@ -209,6 +209,7 @@ package-xml-validator . --compare-with-cmake --auto-fill-missing-deps
 | `--ignore-cmake-key KEY` | Treat `find_package(KEY ...)` in `CMakeLists.txt` as not requiring a `package.xml` `<depend>` entry. Repeatable. Merged with the built-in defaults (`Threads`, `OpenMP`, `ament_cmake`). |
 | `--ignore-deps dep1,dep2` | Comma-separated list of dependency names to globally ignore in validation. |
 | `--skip-launch-dep-check` | Skip checking for missing dependencies in launch and test files. |
+| `--exclude-package NAME` | Leave a package alone entirely — neither checked nor rewritten, and it cannot fail the run. Matched against the `<name>` tag, not the directory. Repeatable. |
 | `--ignore-conditions` | Disable evaluation of REP-149 `condition="…"` attributes; every entry is then evaluated regardless of its condition. |
 
 ---
