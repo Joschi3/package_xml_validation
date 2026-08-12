@@ -155,6 +155,7 @@ The two fatal findings only fail the run when the package that *owns* the offend
 
 Crossing package boundaries resolves through `AMENT_PREFIX_PATH`. Without a sourced workspace the walk stops at the checkout's own launch files and says so; the manifest check still runs.
 
+
 | Option | |
 | --- | --- |
 | `--fatal-under PATH` | also treat packages below `PATH` as yours to fix. Repeatable. In CI, `--fatal-under /opt/<distro>` covers packages the pipeline installs itself. The repository and the surrounding workspace already count without it |

@@ -14,9 +14,12 @@
 # workspace could have told it, so a runner without one is not a failure.
 #
 # `verbose: true` is load-bearing: pre-commit discards a passing hook's output, so without it
-# every warning this prints would go nowhere. Pass --warn-only to introduce the hook to a
-# repository that already has findings, and --fatal-under PATH to treat an install space CI
+# every warning this prints would go nowhere. Pass --fatal-under PATH to treat an install space CI
 # fills itself as yours to fix.
+#
+# `files` covers package.xml as well as the launch files, because dropping a dependency from a
+# manifest is one of the two ways to create the finding this hook exists to catch - and a
+# commit that only edits the manifest would otherwise never run it.
 -   id: check-launch-tree
     name: Check launch tree references
     description: Follow every include from this package's launch files, and check that each manifest along the way declares what its launch files name.
@@ -24,4 +27,4 @@
     language: python
     pass_filenames: false
     verbose: true
-    files: '(^|/)(launch|components|launch_manager_components|launch_manager_configs)/.*\.(py|xml|ya?ml|toml|launch)$'
+    files: '(^|/)(launch|components|launch_manager_components|launch_manager_configs)/.*\.(py|xml|ya?ml|toml|launch)$|(^|/)package\.xml$'
