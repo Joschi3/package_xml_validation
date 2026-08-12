@@ -311,6 +311,72 @@ class TestWhatItFinds(LaunchTreeTestCase):
         self.assertEqual([], findings)
 
 
+class TestLaunchManagerInstallSets(LaunchTreeTestCase):
+    """A package holding the launch files for several hosts declares almost nothing itself.
+
+    Each host installs only what it runs, so the dependencies are declared by sibling install
+    sets. Without that allowance every reference in the shared package reads as missing.
+    """
+
+    def install_set(self, name, host, deps):
+        directory = os.path.join(self.root, name)
+        body = "".join(f"<exec_depend>{one}</exec_depend>" for one in deps)
+        self.write(
+            os.path.join(directory, "package.xml"),
+            f'<package format="3"><name>{name}</name>{body}'
+            f"<export><launch_manager_host>{host}</launch_manager_host></export></package>",
+        )
+        return directory
+
+    def setUp(self):
+        super().setUp()
+        self.install("driver", "launch/driver.launch.yaml", "launch: []\n")
+        self.config_pkg = self.package(
+            "app",
+            "launch_manager_configs/default.yaml",
+            "components:\n  - name: a_driver\n    hosts: gripper\n",
+        )
+        self.write_into(
+            self.config_pkg,
+            "launch_manager_components/a_driver.yaml",
+            "launch:\n  package: driver\n  launch_file: driver.launch.yaml\n",
+        )
+
+    def test_a_reference_an_install_set_declares_is_not_a_finding(self):
+        self.install_set("app_gripper", "gripper", ["driver"])
+
+        _, findings = check(self.config_pkg, scope=Scope.of([self.root]))
+
+        self.assertEqual([], of_kind(findings, UNDECLARED))
+
+    def test_a_reference_nobody_declares_still_is(self):
+        """The allowance is for dependencies declared elsewhere, not for switching the check
+        off."""
+        self.install_set("app_gripper", "gripper", [])
+
+        _, findings = check(self.config_pkg, scope=Scope.of([self.root]))
+
+        self.assertEqual(
+            ["driver"], [one.package for one in of_kind(findings, UNDECLARED)]
+        )
+
+    def test_an_ordinary_package_may_not_borrow_the_allowance(self):
+        """Only the package holding the configuration delegates; a package that merely sits in
+        the same repository still declares its own dependencies."""
+        self.install_set("app_gripper", "gripper", ["driver"])
+        other = self.package(
+            "other",
+            "launch/other.launch.yaml",
+            "launch:\n  - node:\n      pkg: driver\n",
+        )
+
+        _, findings = check(other, scope=Scope.of([self.root]))
+
+        self.assertEqual(
+            ["driver"], [one.package for one in of_kind(findings, UNDECLARED)]
+        )
+
+
 class TestWhoIsHeldResponsible(LaunchTreeTestCase):
     """A finding is only fatal when the package that owns the offending file is fixable."""
 

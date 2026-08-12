@@ -44,6 +44,7 @@ from .helpers.formatter.dependency_queries import (
     get_package_name,
     retrieve_exec_dependencies_with_conditions,
 )
+from .helpers.launch_manager import declared_host, find_config_package
 from .helpers.workspace import find_package_xml_files, find_workspace_root
 
 __all__ = [
@@ -127,6 +128,18 @@ class Scope(NamedTuple):
 
     ignored: frozenset = frozenset()
 
+    delegated: frozenset = frozenset()
+    """Dependencies declared by a launch-manager install set.
+
+    A package holding the launch files for several hosts declares almost nothing itself, since
+    each host installs only what it runs. These are the references that are declared, just not
+    where the launch file naming them lives.
+    """
+
+    config_manifest: Optional[str] = None
+    """The manifest of the package holding `launch_manager_configs/`, the only one whose launch
+    files may leave their dependencies to an install set."""
+
     @classmethod
     def of(
         cls,
@@ -144,7 +157,20 @@ class Scope(NamedTuple):
         index: dict = {}
         for root in (*fatal_under, *workspace_sources(paths), *paths):
             index.update(_index(find_package_xml_files([root])))
-        return cls(index, fatal_under, ignored)
+
+        delegated: set = set()
+        for manifest in index.values():
+            if _read(manifest).host:
+                delegated.update(_read(manifest).declared)
+
+        config = find_config_package(sorted(package_dirs_under(paths)))
+        return cls(
+            index,
+            fatal_under,
+            ignored,
+            frozenset(delegated),
+            os.path.join(config, "package.xml") if config else None,
+        )
 
     def severity_of(self, manifest: Optional[str]) -> str:
         if manifest is None:
@@ -208,11 +234,22 @@ def check(
 
 # ── Reading the manifests a walk is graded against ───────────────────────────────────────
 
-_MANIFESTS: "dict[str, tuple[Optional[str], frozenset, frozenset]]" = {}
+
+class Manifest(NamedTuple):
+    """What a `package.xml` says that matters here."""
+
+    name: Optional[str]
+    declared: frozenset
+    ignored: frozenset
+    host: Optional[str] = None
+    """The launch-manager host this package is the install set for, if it claims one."""
 
 
-def _read(manifest: str) -> "tuple[Optional[str], frozenset, frozenset]":
-    """`(package name, declared exec deps, names to ignore)`, parsed once per path.
+_MANIFESTS: "dict[str, Manifest]" = {}
+
+
+def _read(manifest: str) -> Manifest:
+    """Read a `package.xml`, once per path.
 
     Exec dependencies, because a launch file names what it runs. Conditions are evaluated and
     `<!-- validator:ignore ... -->` is honoured, so this agrees with what
@@ -223,17 +260,18 @@ def _read(manifest: str) -> "tuple[Optional[str], frozenset, frozenset]":
             parser = ET.XMLParser(no_network=True, resolve_entities=False)
             root = ET.parse(manifest, parser).getroot()
         except (OSError, ET.XMLSyntaxError):
-            _MANIFESTS[manifest] = (None, frozenset(), frozenset())
+            _MANIFESTS[manifest] = Manifest(None, frozenset(), frozenset())
         else:
             declared = frozenset(
                 name
                 for name, condition in retrieve_exec_dependencies_with_conditions(root)
                 if evaluate_condition(condition)
             )
-            _MANIFESTS[manifest] = (
+            _MANIFESTS[manifest] = Manifest(
                 get_package_name(root),
                 declared,
                 parse_exceptions(root).ignored_deps,
+                declared_host(root),
             )
     return _MANIFESTS[manifest]
 
@@ -242,7 +280,7 @@ def _index(manifests: "list[str]") -> dict:
     """`package name -> package.xml`, for looking a source manifest up by name."""
     found = {}
     for manifest in manifests:
-        name = _read(manifest)[0]
+        name = _read(manifest).name
         if name:
             found[name] = manifest
     return found
@@ -259,7 +297,7 @@ def _owner(path: str, source: dict) -> Optional[str]:
     while True:
         manifest = os.path.join(directory, "package.xml")
         if os.path.isfile(manifest):
-            name = _read(manifest)[0]
+            name = _read(manifest).name
             return source.get(name, manifest) if name else manifest
         parent = os.path.dirname(directory)
         if parent == directory:
@@ -296,7 +334,7 @@ def _muted(package: str, scope: Scope, manifest: Optional[str]) -> bool:
     """Whether this package was asked to be left out, globally or by the manifest citing it."""
     if package in scope.ignored:
         return True
-    return manifest is not None and package in _read(manifest)[2]
+    return manifest is not None and package in _read(manifest).ignored
 
 
 def _first_mention(walk: Walk) -> dict:
@@ -317,8 +355,13 @@ def _undeclared(walk: Walk, scope: Scope, owners: dict) -> "list[Finding]":
         if manifest is None or _muted(one.package, scope, manifest):
             continue
 
-        name, declared, _ = _read(manifest)
-        if one.package == name or one.package in declared:
+        owner = _read(manifest)
+        satisfied = owner.declared
+        if manifest == scope.config_manifest:
+            # Its launch files describe what every host runs; each host's install set declares
+            # its own share. Without this the whole arrangement reads as missing.
+            satisfied = satisfied | scope.delegated
+        if one.package == owner.name or one.package in satisfied:
             continue
 
         if (manifest, one.package) in seen:
@@ -406,7 +449,7 @@ def _owner_name(manifest: Optional[str]) -> str:
     """
     if manifest is None:
         return "its own package"
-    return _read(manifest)[0] or os.path.basename(os.path.dirname(manifest))
+    return _read(manifest).name or os.path.basename(os.path.dirname(manifest))
 
 
 def _report(

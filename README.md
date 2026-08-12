@@ -136,6 +136,41 @@ The on-disk file now matches the **After** snippet above. The exit code is non-z
 * **CMake Synchronization:** Compares `package.xml` against `CMakeLists.txt` to ensure build dependencies match, adding missing entries as `<depend>` or `<test_depend>`. Calls of the form `find_package(<pkg> QUIET)` are treated as optional and skipped. all other forms such as `find_package(<pkg>)`, `find_package(<pkg> REQUIRED)`, and `find_package(<pkg> REQUIRED QUIET)` are enforced in `package.xml`.
 * **Rosdep Validation:** Verifies that your dependency names exist as valid keys in the rosdep database.
 
+### Launch-Manager Install Sets
+
+Some workspaces keep every launch file in one package and declare the dependencies in sibling
+*install sets*, one per machine — the shape you end up with when a robot's computers are not all
+big enough to install everything. Neither of the checks above can make sense of that on its own:
+the package naming a dependency is not the package declaring it.
+
+A package says which machine it is the install set for in its own `<export>` section:
+
+```xml
+<export>
+  <build_type>ament_cmake</build_type>
+  <launch_manager_host>athena-gripper</launch_manager_host>
+</export>
+```
+
+With that, the validator reads `launch_manager_configs/*.yaml` to see which components run on that
+host, follows each component into its launch tree, and checks the install set against everything
+those trees name. `--auto-fill-missing-deps` adds what is missing. The package holding the launch
+files stops reporting those references as missing, since an install set declares them.
+
+The whole feature is opt-in: with no `launch_manager_host` export anywhere, nothing changes.
+
+Three properties worth knowing:
+
+* **Additive only.** The derivation is a lower bound — a controller plugin named by class in a
+  parameter file, or a package handed to a generic component as an argument, is named nowhere a
+  launch-file scan can reach. A declared dependency that was not derived is left alone and not
+  reported; removing it would uninstall something the robot needs.
+* **Nothing is filled from an incomplete derivation.** If a component's definition cannot be found
+  — commonly because the shared component library is not installed — the run says so and fills
+  nothing, rather than writing a manifest that looks complete.
+* **A host with no install set is reported.** If a configuration launches on a machine no package
+  claims, nothing declares what that machine runs, and no per-package check could notice.
+
 ### Launch Tree Integrity
 
 The separate `check-launch-tree` hook follows every include out of a package's launch files, across package boundaries, and grades what it finds by whether anyone can act on it:

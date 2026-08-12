@@ -14,6 +14,7 @@ import lxml.etree as ET
 
 from .helpers.cmake_parsers import _DEFAULT_CMAKE_KEYS_NO_ROSDEP
 from .helpers.exception_parser import DependencyExceptions, parse_exceptions
+from .helpers.launch_manager import LaunchManagerContext, context_for
 from .helpers.logger import get_logger
 from .helpers.pkg_xml_formatter import PackageXmlFormatter
 from .helpers.rosdep_validator import RosdepValidator
@@ -23,6 +24,7 @@ from .helpers.validation_steps import (
     CMakeComparisonStep,
     DependencyExclusivityStep,
     FormatterValidationStep,
+    HostDependencyStep,
     LaunchDependencyStep,
     ManifestSchemaStep,
     MemberOfGroupStep,
@@ -92,6 +94,7 @@ class PackageXmlValidator:
         self.excluded_packages = (
             frozenset(excluded_packages) if excluded_packages else frozenset()
         )
+        self.launch_manager: LaunchManagerContext | None = None
         self.missing_deps_only = missing_deps_only
         self.ignore_formatting_errors = ignore_formatting_errors
         self.check_only = check_only or missing_deps_only or ignore_formatting_errors
@@ -184,8 +187,21 @@ class PackageXmlValidator:
                 self.rosdep_validator if self.check_rosdeps else None,
                 package_name,
                 exceptions,
+                delegated=self._delegated_for(xml_file),
             ),
         ]
+
+        if self.launch_manager is not None:
+            steps.append(
+                HostDependencyStep(
+                    self.validation_config,
+                    self.formatter,
+                    self.rosdep_validator if self.check_rosdeps else None,
+                    package_name,
+                    self.launch_manager.hosts,
+                    exceptions,
+                )
+            )
 
         if not self.missing_deps_only:
             steps.extend(
@@ -247,6 +263,39 @@ class PackageXmlValidator:
                 kept.append(xml_file)
         return kept
 
+    def _delegated_for(self, xml_file: str) -> frozenset[str]:
+        """Dependencies this package's launch files may leave to a launch-manager install set.
+
+        Only the package holding the configuration gets this. Its launch files describe what
+        every host runs, while each host's install set declares its own share; without the
+        allowance every one of those references reads as missing here.
+        """
+        if self.launch_manager is None:
+            return frozenset()
+        if os.path.dirname(os.path.abspath(xml_file)) != os.path.abspath(
+            self.launch_manager.config_package
+        ):
+            return frozenset()
+        return self.launch_manager.delegated
+
+    def _report_hosts_without_an_install_set(self) -> None:
+        """A host the configuration launches on, that no package declares dependencies for.
+
+        Nothing installs what it runs, and no per-package check can notice: the gap is the
+        absence of a package, so it has to be reported from the run rather than from a file.
+        """
+        if self.launch_manager is None:
+            return
+        for host, packages in sorted(self.launch_manager.unclaimed.items()):
+            self.logger.error(
+                f"No package claims host '{host}', so nothing declares the "
+                f"{len(packages)} package(s) it launches: {', '.join(sorted(packages))}. "
+                f"Add <export><launch_manager_host>{host}</launch_manager_host></export> to "
+                "the package that installs them.",
+                extra={"flush_left": True},
+            )
+            self.all_valid = False
+
     def check_and_format_files(self, package_xml_files: Iterable[str]) -> bool:
         """Validate and optionally format a list of package.xml files.
 
@@ -259,7 +308,10 @@ class PackageXmlValidator:
         """
         self.all_valid = True
         encountered_unresolvable_error = False
-        for xml_file in self._without_excluded(package_xml_files):
+        remaining = self._without_excluded(package_xml_files)
+        self.launch_manager = context_for(remaining)
+
+        for xml_file in remaining:
             self.xml_valid = True
             pkg_name = os.path.basename(os.path.dirname(xml_file))
             self.logger.info(f"Processing {pkg_name}...", extra={"flush_left": True})
@@ -320,6 +372,8 @@ class PackageXmlValidator:
                 )
 
             self.all_valid &= self.xml_valid
+
+        self._report_hosts_without_an_install_set()
         # Final result messages
         if not self.all_valid and self.check_only:
             self.logger.warning(
