@@ -41,10 +41,9 @@ ANY_FORMAT = frozenset({FORMAT_YAML, FORMAT_XML, FORMAT_PY, FORMAT_TOML})
 PATTERNS = [
     # YAML-style:  pkg: <pkg_name>
     #
-    # Anchored to the start of a line, allowing the leading `- ` of a sequence item. Without
-    # the anchor any key *ending* in `pkg` matches - `mypkg: foo` yielded a package named
-    # `foo`. Not applied to Python, where `pkg: str` is a type annotation and used to yield a
-    # package named `str`, nor to a string literal that happens to contain `pkg:`.
+    # Anchored to the start of a line, allowing the leading `- ` of a sequence item, so a key
+    # merely *ending* in `pkg` is not read as one. Not applied to Python, where `pkg:` is a
+    # type annotation rather than a mapping key.
     (r"(?m)^[\s\-]*pkg\s*:\s*['\"]?([A-Za-z0-9_]+)['\"]?", {FORMAT_YAML, FORMAT_XML}),
     # Hector launch component:  package: <pkg_name>
     (
@@ -91,12 +90,9 @@ PATTERNS = [
 
 COMPILED_PATTERNS = [(re.compile(rx), formats) for rx, formats in PATTERNS]
 
-#: Kept for anything importing the old names. `COMPILED` no longer decides what is applied to
-#: a file - :py:func:`_patterns_for` does, by format.
+#: Pattern sources, indexed alongside `COMPILED_PATTERNS` so a match can name the regex it came
+#: from.
 REGEX_EXPR = [rx for rx, _ in PATTERNS]
-COMPILED = [rx for rx, _ in COMPILED_PATTERNS]
-TOML_REGEX_EXPR = [rx for rx, formats in PATTERNS if formats == {FORMAT_TOML}]
-TOML_COMPILED = [re.compile(rx) for rx in TOML_REGEX_EXPR]
 
 
 def _format_of(path: str) -> Optional[str]:
@@ -125,12 +121,7 @@ _XML_COMMENT_BLOCK = re.compile(r"(?s)<!--.*?-->")
 
 
 def _blank_out(pattern: "re.Pattern[str]", text: str) -> str:
-    """Remove a block but keep the lines it spanned.
-
-    Deleting a multi-line comment outright shifts every line after it, which is invisible
-    while matches are only collected as names and wrong the moment one is reported with a line
-    number. The newlines are kept so a match's position still means what it says.
-    """
+    """Remove a block, keeping the newlines it spanned so later match positions still hold."""
     return pattern.sub(lambda m: "\n" * m.group(0).count("\n"), text)
 
 
@@ -584,10 +575,7 @@ def _edges_in(path: str, scope: Optional[dict] = None) -> list[Edge]:
 def _component_edges(path: str, text: str) -> list[Edge]:
     """Launch-manager components in a YAML file: a mapping with `package` and `launch_file`.
 
-    Parsed rather than pattern-matched, so that the two keys have to belong to the *same*
-    mapping. A regex scanning a window of following lines paired a node-only component's
-    `package` with the next component's `launch_file`, which both invented a finding and left
-    the real include unfollowed.
+    Parsed rather than pattern-matched, so the two keys have to belong to the *same* mapping.
     """
     try:
         root = yaml.compose(text)
@@ -709,9 +697,8 @@ _SHARE_CALLS = (
 def _called_name(node: ast.Call) -> str:
     """The trailing name of a call target: `f(...)` and `a.b.f(...)` both give `f`.
 
-    Qualified calls are common in launch files - `launch.actions.IncludeLaunchDescription`,
-    `ament_index_python.get_package_share_directory` - and matching only `ast.Name` made them
-    invisible: no edge at all, rather than one reported as unreadable.
+    Launch files write these calls both ways - `launch.actions.IncludeLaunchDescription` as
+    often as the bare name - so the qualifier carries no information worth matching on.
     """
     func = node.func
     if isinstance(func, ast.Name):

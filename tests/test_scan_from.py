@@ -269,11 +269,7 @@ class TestIncludesWrittenInPython(ScanFromTestCase):
         self.assertIn("gz_internals", walk.packages)
 
     def test_a_qualified_call_is_followed(self):
-        """`launch.actions.IncludeLaunchDescription(...)`, matched on the trailing name.
-
-        Matching `ast.Name` only made the qualified form produce no edge at all - not even an
-        unreadable one - so everything below it went unread with nothing to say so.
-        """
+        """`launch.actions.IncludeLaunchDescription(...)`, matched on the trailing name."""
         self.ws.write(
             "other", "launch/child.launch.py", "Node(package='deep_package')\n"
         )
@@ -508,9 +504,8 @@ class TestFindingALaunchFileInsideAPackage(ScanFromTestCase):
         self.assertIn("not_anywhere.launch.yaml", walk.unresolved[0].launch_file)
 
     def test_a_written_out_path_does_not_fall_back_to_the_basename(self):
-        """The search is for components only. A renamed or uninstalled launch file used to
-        resolve to a same-named one elsewhere in the package, reporting what *that* file
-        names and hiding the real finding."""
+        """The basename search is for components only. Elsewhere a renamed or uninstalled
+        launch file must not resolve to a same-named one elsewhere in the package."""
         self.ws.write(
             "present",
             "somewhere_else/gone.launch.yaml",
@@ -532,9 +527,8 @@ class TestComponentBlocks(ScanFromTestCase):
     """`package` and `launch_file` have to belong to the same mapping."""
 
     def test_a_node_only_component_does_not_borrow_the_next_launch_file(self):
-        """A regex scanning the following lines paired the first component's `package` with the
-        second's `launch_file`: a finding against a package that ships nothing of the sort, and
-        the real include left unfollowed."""
+        """A component with no `launch_file` of its own is not an include, however close the
+        next component's is."""
         self.ws.write(
             "pkg_b",
             "launch/b.launch.yaml",
