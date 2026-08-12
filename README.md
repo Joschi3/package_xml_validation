@@ -150,12 +150,8 @@ The separate `check-launch-tree` hook follows every include out of a package's l
 The two fatal findings only fail the run when the package that *owns* the offending launch file is one you can fix. Three things count:
 
 1. it is in the repository being scanned;
-2. its source is elsewhere in the same workspace's `src`, found by walking up to the workspace root — the usual ROS layout is one repository per package, so a defect one include away is normally in a sibling repository rather than in this one;
+2. its source is elsewhere in the same workspace's `src`,
 3. it is below a `--fatal-under` prefix, which is how CI marks an install space the pipeline populates itself.
-
-Anything else — a package that exists only as a binary install — drops to a warning, since no commit here can fix it.
-
-Where a package appears in more than one of those places, the most editable copy wins: the manifest reported and graded is the one in the repository, then the one in the workspace, then the installed one. This matters because includes resolve through `find-pkg-share`, so the launch file the walk actually *reads* is almost always the installed copy.
 
 Crossing package boundaries resolves through `AMENT_PREFIX_PATH`. Without a sourced workspace the walk stops at the checkout's own launch files and says so; the manifest check still runs.
 
