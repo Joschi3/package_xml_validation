@@ -3,6 +3,7 @@
 import contextlib
 import io
 import os
+import re
 import tempfile
 import unittest
 from unittest import mock
@@ -328,6 +329,14 @@ class TestLaunchManagerInstallSets(LaunchTreeTestCase):
         )
         return directory
 
+    def report_of(self, package_dir):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            with mock.patch("sys.argv", ["check-launch-tree", self.root]):
+                with contextlib.suppress(SystemExit):
+                    main()
+        return out.getvalue()
+
     def setUp(self):
         super().setUp()
         self.install("driver", "launch/driver.launch.yaml", "launch: []\n")
@@ -359,6 +368,45 @@ class TestLaunchManagerInstallSets(LaunchTreeTestCase):
         self.assertEqual(
             ["driver"], [one.package for one in of_kind(findings, UNDECLARED)]
         )
+
+    def test_a_reference_nobody_declares_names_the_install_set_that_wants_it(self):
+        """The reference is written in the configuration package, but an install set is what
+        should declare it - so blaming the file it was written in points at the wrong manifest."""
+        install_set = self.install_set("app_gripper", "gripper", [])
+
+        _, findings = check(self.config_pkg, scope=Scope.of([self.root]))
+
+        undeclared = of_kind(findings, UNDECLARED)[0]
+        self.assertEqual(("gripper",), undeclared.hosts)
+
+        report = self.report_of(self.config_pkg)
+        self.assertIn("is not declared by any install set that launches it", report)
+        self.assertIn(f"gripper - {os.path.join(install_set, 'package.xml')}", report)
+
+    def test_a_host_with_no_install_set_is_named_as_such(self):
+        self.write(
+            os.path.join(self.config_pkg, "launch_manager_configs", "default.yaml"),
+            "components:\n  - name: a_driver\n    hosts: jetson\n",
+        )
+        self.install_set("app_gripper", "gripper", [])
+
+        report = self.report_of(self.config_pkg)
+
+        self.assertIn("jetson - no package claims this host", report)
+
+    def test_an_ordinary_package_gets_no_host_attribution(self):
+        """Outside the configuration package the manifest a reference was written in is the one
+        that should declare it, so there is nothing to redirect."""
+        self.install_set("app_gripper", "gripper", [])
+        other = self.package(
+            "other",
+            "launch/other.launch.yaml",
+            "launch:\n  - node:\n      pkg: driver\n",
+        )
+
+        _, findings = check(other, scope=Scope.of([self.root]))
+
+        self.assertEqual((), of_kind(findings, UNDECLARED)[0].hosts)
 
     def test_an_ordinary_package_may_not_borrow_the_allowance(self):
         """Only the package holding the configuration delegates; a package that merely sits in
@@ -708,9 +756,12 @@ class TestWhatItPrints(LaunchTreeTestCase):
         report = self.report_for(pkg)
 
         self.assertIn("undeclared_by_aggregator is not declared by aggregator", report)
-        self.assertIn(
-            f"manifest {os.path.join(self.prefix, 'share', 'aggregator', 'package.xml')}",
+        self.assertRegex(
             report,
+            r"manifest\s+"
+            + re.escape(
+                os.path.join(self.prefix, "share", "aggregator", "package.xml")
+            ),
         )
         self.assertIn("named in", report)
 

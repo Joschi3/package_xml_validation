@@ -44,7 +44,7 @@ from .helpers.formatter.dependency_queries import (
     get_package_name,
     retrieve_exec_dependencies_with_conditions,
 )
-from .helpers.launch_manager import declared_host, find_config_package
+from .helpers.launch_manager import declared_host, derive, find_config_package
 from .helpers.workspace import find_package_xml_files, find_workspace_root
 
 __all__ = [
@@ -94,6 +94,10 @@ class Finding(NamedTuple):
     launch_file: str = ""
     """For a dead include, the file the include named."""
 
+    hosts: tuple = ()
+    """For a reference no install set declares, the hosts that launch it - so the report can
+    name the manifests that should have declared it rather than the one it was written in."""
+
 
 def workspace_sources(paths: "list[str]") -> "list[str]":
     """The `<ws>/src` each path sits in, where there is one.
@@ -140,6 +144,13 @@ class Scope(NamedTuple):
     """The manifest of the package holding `launch_manager_configs/`, the only one whose launch
     files may leave their dependencies to an install set."""
 
+    host_packages: dict = {}
+    """`host -> packages its components launch`, so a reference nobody declared can be charged
+    to the hosts that need it."""
+
+    install_sets: dict = {}
+    """`host -> the manifest claiming it`. A host missing here has no install set at all."""
+
     @classmethod
     def of(
         cls,
@@ -159,17 +170,30 @@ class Scope(NamedTuple):
             index.update(_index(find_package_xml_files([root])))
 
         delegated: set = set()
+        install_sets: dict = {}
         for manifest in index.values():
-            if _read(manifest).host:
-                delegated.update(_read(manifest).declared)
+            read = _read(manifest)
+            if read.host:
+                delegated.update(read.declared)
+                install_sets.setdefault(read.host, manifest)
 
-        config = find_config_package(sorted(package_dirs_under(paths)))
+        # Deriving means walking every component's launch tree, so it is only worth doing once
+        # something has claimed a host - which is also the only case it can say anything about.
+        config = None
+        host_packages: dict = {}
+        if install_sets:
+            dirs = sorted(package_dirs_under(paths))
+            config = find_config_package(dirs)
+            host_packages = derive(dirs).packages
+
         return cls(
             index,
             fatal_under,
             ignored,
             frozenset(delegated),
             os.path.join(config, "package.xml") if config else None,
+            host_packages,
+            install_sets,
         )
 
     def severity_of(self, manifest: Optional[str]) -> str:
@@ -376,10 +400,28 @@ def _undeclared(walk: Walk, scope: Scope, owners: dict) -> "list[Finding]":
                 one.file,
                 one.line,
                 manifest,
+                hosts=_hosts_launching(one.package, scope, manifest),
             )
         )
 
     return findings
+
+
+def _hosts_launching(package: str, scope: Scope, manifest: str) -> tuple:
+    """The hosts whose components launch `package`, when install sets are in play.
+
+    Only for the configuration package: everywhere else the manifest a reference was written in
+    is the manifest that should declare it, and there is nothing to redirect.
+    """
+    if manifest != scope.config_manifest:
+        return ()
+    return tuple(
+        sorted(
+            host
+            for host, packages in scope.host_packages.items()
+            if package in packages
+        )
+    )
 
 
 def _dead(walk: Walk, scope: Scope, owners: dict, absent: set) -> "list[Finding]":
@@ -438,7 +480,7 @@ def _where(path: str, package_dir: str) -> str:
 
 #: Indent for the detail lines under a finding, and the width their labels are padded to.
 DETAIL = " " * 12
-LABEL = 9
+LABEL = 10
 
 
 def _owner_name(manifest: Optional[str]) -> str:
@@ -483,7 +525,12 @@ def _report(
             continue
         print()
         print(f"  {one.severity:<7} {_headline(one, uninstalled)}")
-        if one.kind == UNDECLARED and one.owner:
+        if one.kind == UNDECLARED and one.hosts:
+            for host in one.hosts:
+                print(
+                    f"{DETAIL}{'wanted by':<{LABEL}}{_install_set(host, scope, package_dir)}"
+                )
+        elif one.kind == UNDECLARED and one.owner:
             print(f"{DETAIL}{'manifest':<{LABEL}}{_where(one.owner, package_dir)}")
         print(
             f"{DETAIL}{'named in':<{LABEL}}{_where(one.file, package_dir)}:{one.line}"
@@ -506,6 +553,14 @@ def _report(
         )
 
 
+def _install_set(host: str, scope: Scope, package_dir: str) -> str:
+    """The manifest that should declare what `host` launches, or that there is none."""
+    manifest = scope.install_sets.get(host)
+    if manifest is None:
+        return f"{host} - no package claims this host, so nothing declares what it runs"
+    return f"{host} - {_where(manifest, package_dir)}"
+
+
 def _headline(one: Finding, uninstalled: set) -> str:
     if one.kind == NOT_INSTALLED:
         return f"{one.package} is not installed in this workspace"
@@ -514,6 +569,11 @@ def _headline(one: Finding, uninstalled: set) -> str:
         return f"{one.package} does not ship {one.launch_file}"
 
     absent = " (and is not installed here)" if one.package in uninstalled else ""
+    if one.hosts:
+        # Written in the configuration package, but an install set is what should declare it.
+        return (
+            f"{one.package} is not declared by any install set that launches it{absent}"
+        )
     return f"{one.package} is not declared by {_owner_name(one.owner)}{absent}"
 
 
