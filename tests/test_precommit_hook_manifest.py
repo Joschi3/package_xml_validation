@@ -52,9 +52,22 @@ class TestCheckLaunchTreeHook(unittest.TestCase):
         ):
             self.assertRegex(path, pattern)
 
-    def test_a_directory_merely_ending_in_launch_does_not(self):
+    def test_editing_a_manifest_triggers_it(self):
+        """Dropping a dependency from a manifest is one of the two ways to create the finding
+        this hook exists to catch, so a manifest-only commit has to run it."""
         pattern = re.compile(self.hook["files"])
-        for path in ("mylaunch/a.py", "src/prelaunch/a.yaml", "docs/launching.md"):
+        for path in ("package.xml", "src/pkg/package.xml"):
+            self.assertRegex(path, pattern)
+
+    def test_a_name_merely_ending_in_one_of_those_does_not(self):
+        pattern = re.compile(self.hook["files"])
+        for path in (
+            "mylaunch/a.py",
+            "src/prelaunch/a.yaml",
+            "docs/launching.md",
+            "mypackage.xml",
+            "src/pkg/other_package.xml",
+        ):
             self.assertNotRegex(path, pattern)
 
 
