@@ -1,40 +1,128 @@
 #!/usr/bin/env python3
-"""Does everything this launch tree reaches actually exist here?
+"""Does everything this launch tree reaches exist, and does every manifest admit to it?
 
-Follows every include from a package's launch files, across package boundaries, and reports
-two kinds of finding:
+Follows every include out of a package's launch files, across package boundaries, and grades
+what it finds by whether anyone can act on it:
 
-* **a package that is not installed** - the launch file names it, nothing here provides it;
-* **an include that leads nowhere** - the package is there, the launch file it names is not.
+* **a reference no manifest declares** - a launch file names a package that its own
+  `package.xml` does not depend on. A defect in the checkout, visible without a workspace,
+  so it fails the run.
+* **an include that leads nowhere** - the package is installed, the launch file it names is
+  not. Also a defect, and also fatal.
+* **a package that is not installed here** - a warning. A CI runner may simply not have built
+  it, and nothing in the checkout is wrong.
+* **an include nobody could follow** - a warning, listed so a walk that read half the tree does
+  not read like one that read all of it.
 
-Neither is fixable by editing a manifest, so this is a separate entry point from
-`package_xml_validator` rather than a flag on it: it only reports, and it resolves through
-`AMENT_PREFIX_PATH`, so it needs a built and sourced workspace. Without one it says so and
-skips, rather than reporting every package as missing.
+The two fatal kinds only fail the run when the *owning* package is one the committer can fix:
+a package in the checkout being scanned, or one under a `--fatal-under` prefix. Against a
+binary-only install they are reported as warnings.
+
+Crossing package boundaries needs `AMENT_PREFIX_PATH`. Without it the walk stops at the
+checkout's own launch files and says so - the manifest check still runs, since it never needed
+a workspace.
 """
 
-from typing import Optional
+from typing import NamedTuple, Optional
 import argparse
 import os
 import sys
 
+import lxml.etree as ET
+
+from .helpers.condition_eval import evaluate_condition
+from .helpers.exception_parser import parse_exceptions
 from .helpers.find_launch_dependencies import (
     Walk,
     default_share_lookup,
     is_literal_package,
     scan_directories,
 )
+from .helpers.formatter.dependency_queries import (
+    get_package_name,
+    retrieve_exec_dependencies_with_conditions,
+)
 from .helpers.workspace import find_package_xml_files
 
-__all__ = ["check", "main", "package_dirs_under"]
+__all__ = [
+    "FATAL",
+    "WARNING",
+    "Finding",
+    "Scope",
+    "check",
+    "main",
+    "package_dirs_under",
+]
 
 
-#: Directories worth seeding from: `launch`, plus the two that hold launch-manager component
-#: definitions naming the package and launch file they start.
-DEFAULT_SEED_DIRS = ("launch", "launch_manager_components", "launch_manager_configs")
+#: Directories worth seeding from: `launch` and `components` as the manifest validator uses
+#: them, plus the two that hold launch-manager component definitions.
+DEFAULT_SEED_DIRS = (
+    "launch",
+    "components",
+    "launch_manager_components",
+    "launch_manager_configs",
+)
 
 #: How many unfollowable includes to list before summarising the rest as a count.
 LISTED_UNREAD = 5
+
+FATAL = "error"
+WARNING = "warning"
+
+UNDECLARED = "undeclared"
+DEAD_INCLUDE = "dead-include"
+NOT_INSTALLED = "not-installed"
+
+
+class Finding(NamedTuple):
+    """One thing worth saying about a launch tree."""
+
+    kind: str
+    severity: str
+    package: str
+    file: str
+    """The launch file the reference was written in."""
+
+    line: int
+    owner: Optional[str] = None
+    """The `package.xml` held responsible, where there is one."""
+
+    launch_file: str = ""
+    """For a dead include, the file the include named."""
+
+
+class Scope(NamedTuple):
+    """Which manifests this run may fail on, and which names never to report at all."""
+
+    source: dict
+    """`package name -> package.xml` for the checkout being scanned. Always ours to fix."""
+
+    fatal_under: tuple = ()
+    """Extra prefixes to treat the same way, such as an install space CI fills itself."""
+
+    ignored: frozenset = frozenset()
+
+    @classmethod
+    def of(
+        cls,
+        paths: "list[str]",
+        fatal_under: "tuple[str, ...]" = (),
+        ignored: "frozenset[str]" = frozenset(),
+    ) -> "Scope":
+        return cls(_index(find_package_xml_files(paths)), fatal_under, ignored)
+
+    def severity_of(self, manifest: Optional[str]) -> str:
+        if manifest is None:
+            return WARNING
+        if manifest in self.source.values():
+            return FATAL
+        absolute = os.path.abspath(manifest)
+        under = any(
+            absolute.startswith(os.path.abspath(one) + os.sep)
+            for one in self.fatal_under
+        )
+        return FATAL if under else WARNING
 
 
 def workspace_is_available() -> bool:
@@ -42,10 +130,6 @@ def workspace_is_available() -> bool:
     return any(
         part for part in os.environ.get("AMENT_PREFIX_PATH", "").split(os.pathsep)
     )
-
-
-def _installed(package: str) -> bool:
-    return default_share_lookup(package) is not None
 
 
 def package_dirs_under(paths: "list[str]") -> "list[str]":
@@ -58,12 +142,23 @@ def package_dirs_under(paths: "list[str]") -> "list[str]":
     return sorted({os.path.dirname(one) for one in find_package_xml_files(paths)})
 
 
-def check(package_dir: str, args: Optional[dict] = None) -> "tuple[Walk, list, list]":
-    """Follow one package's launch tree.
+def check(
+    package_dir: str,
+    args: Optional[dict] = None,
+    scope: Optional[Scope] = None,
+    resolvable: Optional[bool] = None,
+) -> "tuple[Walk, list[Finding]]":
+    """Follow one package's launch tree and grade what it finds.
 
     `package_dir` is a single package directory, not a repository root - see
-    :py:func:`package_dirs_under`. Returns `(walk, missing packages, dead includes)`.
+    :py:func:`package_dirs_under`. `scope` decides which findings are fatal, and defaults to
+    treating this package alone as the checkout.
     """
+    if scope is None:
+        scope = Scope.of([package_dir])
+    if resolvable is None:
+        resolvable = workspace_is_available()
+
     seeds = [
         os.path.join(package_dir, name)
         for name in DEFAULT_SEED_DIRS
@@ -74,20 +169,184 @@ def check(package_dir: str, args: Optional[dict] = None) -> "tuple[Walk, list, l
     # reported - once.
     walk = scan_directories(seeds, args=args)
 
-    missing = sorted(
-        {one.package for one in walk.references if not _installed(one.package)}
+    return walk, _findings(walk, scope, resolvable)
+
+
+# ── Reading the manifests a walk is graded against ───────────────────────────────────────
+
+_MANIFESTS: "dict[str, tuple[Optional[str], frozenset, frozenset]]" = {}
+
+
+def _read(manifest: str) -> "tuple[Optional[str], frozenset, frozenset]":
+    """`(package name, declared exec deps, names to ignore)`, parsed once per path.
+
+    Exec dependencies, because a launch file names what it runs. Conditions are evaluated and
+    `<!-- validator:ignore ... -->` is honoured, so this agrees with what
+    `package-xml-validator` would say about the same manifest.
+    """
+    if manifest not in _MANIFESTS:
+        try:
+            parser = ET.XMLParser(no_network=True, resolve_entities=False)
+            root = ET.parse(manifest, parser).getroot()
+        except (OSError, ET.XMLSyntaxError):
+            _MANIFESTS[manifest] = (None, frozenset(), frozenset())
+        else:
+            declared = frozenset(
+                name
+                for name, condition in retrieve_exec_dependencies_with_conditions(root)
+                if evaluate_condition(condition)
+            )
+            _MANIFESTS[manifest] = (
+                get_package_name(root),
+                declared,
+                parse_exceptions(root).ignored_deps,
+            )
+    return _MANIFESTS[manifest]
+
+
+def _index(manifests: "list[str]") -> dict:
+    """`package name -> package.xml`, for looking a source manifest up by name."""
+    found = {}
+    for manifest in manifests:
+        name = _read(manifest)[0]
+        if name:
+            found[name] = manifest
+    return found
+
+
+def _owner(path: str, source: dict) -> Optional[str]:
+    """The `package.xml` responsible for `path`, preferring the checkout to an installed copy.
+
+    Includes resolve through `find-pkg-share`, so most files a walk reads are installed copies.
+    Where the same package is also in the checkout, that is the manifest a committer can edit
+    and the one the run should be graded against.
+    """
+    directory = os.path.dirname(os.path.abspath(path))
+    while True:
+        manifest = os.path.join(directory, "package.xml")
+        if os.path.isfile(manifest):
+            name = _read(manifest)[0]
+            return source.get(name, manifest) if name else manifest
+        parent = os.path.dirname(directory)
+        if parent == directory:
+            return None
+        directory = parent
+
+
+# ── Grading a walk ───────────────────────────────────────────────────────────────────────
+
+
+def _findings(walk: Walk, scope: Scope, resolvable: bool) -> "list[Finding]":
+    owners = {one: _owner(one, scope.source) for one in walk.visited}
+
+    # Absent as far as the walk is concerned. An include into one of these could not be
+    # followed, so calling it a package that fails to ship a file would be a guess.
+    absent = (
+        {one for one in walk.packages if default_share_lookup(one) is None}
+        if resolvable
+        else set()
     )
 
-    # A dead include is one whose package is here and whose file is not. An include whose
-    # package is absent is already reported as missing, and one whose name still holds a
-    # substitution names no package at all - both belong in the unfollowable list instead.
-    dead = [
-        one
+    findings: list[Finding] = []
+    findings.extend(_undeclared(walk, scope, owners))
+    if resolvable:
+        findings.extend(_dead(walk, scope, owners, absent))
+        findings.extend(_absent(walk, scope, owners, absent))
+
+    return sorted(
+        findings, key=lambda one: (one.severity != FATAL, one.kind, one.package)
+    )
+
+
+def _muted(package: str, scope: Scope, manifest: Optional[str]) -> bool:
+    """Whether this package was asked to be left out, globally or by the manifest citing it."""
+    if package in scope.ignored:
+        return True
+    return manifest is not None and package in _read(manifest)[2]
+
+
+def _first_mention(walk: Walk) -> dict:
+    """Where each package was first named, so a finding can cite one place rather than all."""
+    where: dict = {}
+    for one in walk.references:
+        where.setdefault(one.package, one)
+    return where
+
+
+def _undeclared(walk: Walk, scope: Scope, owners: dict) -> "list[Finding]":
+    """References a launch file makes that its own package.xml does not declare."""
+    findings = []
+    seen = set()
+
+    for one in walk.references:
+        manifest = owners.get(one.file)
+        if manifest is None or _muted(one.package, scope, manifest):
+            continue
+
+        name, declared, _ = _read(manifest)
+        if one.package == name or one.package in declared:
+            continue
+
+        if (manifest, one.package) in seen:
+            continue
+        seen.add((manifest, one.package))
+
+        findings.append(
+            Finding(
+                UNDECLARED,
+                scope.severity_of(manifest),
+                one.package,
+                one.file,
+                one.line,
+                manifest,
+            )
+        )
+
+    return findings
+
+
+def _dead(walk: Walk, scope: Scope, owners: dict, absent: set) -> "list[Finding]":
+    """Includes whose package is here and whose file is not.
+
+    An include into a package that is not here at all could not be followed for a different
+    reason, and one whose name still holds a substitution names no package at all - neither is
+    evidence that a file is missing.
+    """
+    return [
+        Finding(
+            DEAD_INCLUDE,
+            scope.severity_of(owners.get(one.file)),
+            one.package,
+            one.file,
+            one.line,
+            owners.get(one.file),
+            one.launch_file,
+        )
         for one in walk.unresolved
-        if is_literal_package(one.package) and one.package not in missing
+        if is_literal_package(one.package)
+        and one.package not in absent
+        and not _muted(one.package, scope, owners.get(one.file))
     ]
 
-    return walk, missing, dead
+
+def _absent(walk: Walk, scope: Scope, owners: dict, absent: set) -> "list[Finding]":
+    """Packages nothing in this workspace provides.
+
+    A package that is in the checkout is left out: it is not missing, only unbuilt, which is
+    the ordinary state of a CI runner and says nothing about the tree.
+    """
+    return [
+        Finding(
+            NOT_INSTALLED, WARNING, package, one.file, one.line, owners.get(one.file)
+        )
+        for package, one in _first_mention(walk).items()
+        if package in absent
+        and package not in scope.source
+        and not _muted(package, scope, owners.get(one.file))
+    ]
+
+
+# ── Saying it ────────────────────────────────────────────────────────────────────────────
 
 
 def _where(path: str, package_dir: str) -> str:
@@ -100,47 +359,69 @@ def _where(path: str, package_dir: str) -> str:
     return os.path.abspath(path) if relative.startswith("..") else relative
 
 
-def _report(package_dir: str, walk: Walk, missing: list, dead: list) -> None:
+def _report(
+    package_dir: str, walk: Walk, findings: "list[Finding]", resolvable: bool
+) -> None:
+    """Print what this package's tree turned up, or nothing at all if it turned up nothing."""
+    unread = _unfollowable(walk, findings)
+    if not findings and not unread:
+        return
+
     name = os.path.basename(os.path.abspath(package_dir))
     print(
         f"{name}: read {len(walk.visited)} launch file(s), {len(walk.packages)} package(s)"
     )
 
-    where: dict = {}
-    for one in walk.references:
-        where.setdefault(one.package, one)
+    # A package that is both undeclared and absent is one problem, so the absence is a clause
+    # on the manifest finding rather than a second line under it.
+    uninstalled = {one.package for one in findings if one.kind == NOT_INSTALLED}
+    also_undeclared = {one.package for one in findings if one.kind == UNDECLARED}
 
-    for package in missing:
-        cited = where.get(package)
-        print(f"  {package} is not installed in this workspace")
-        if cited:
-            print(f"      referenced by {_where(cited.file, package_dir)}:{cited.line}")
+    for one in findings:
+        if one.kind == NOT_INSTALLED and one.package in also_undeclared:
+            continue
+        print(f"  {one.severity:<7} {_message(one, package_dir, uninstalled)}")
+        print(f"          referenced by {_where(one.file, package_dir)}:{one.line}")
 
-    for edge in dead:
-        print(f"  {edge.package} does not ship {edge.launch_file}")
-        print(f"      referenced by {_where(edge.file, package_dir)}:{edge.line}")
-
-    # Edges the two sections above have not already accounted for.
-    explained = set(missing)
-    unread = [
-        one
-        for one in walk.unresolved
-        if one not in dead and one.package not in explained
-    ]
     if unread:
-        # Printed even when nothing is wrong, so a clean result that skipped half the tree
-        # does not read like one that did not.
-        print(f"  {len(unread)} include(s) could not be followed and were not checked:")
+        print(f"  {WARNING:<7} {len(unread)} include(s) could not be followed:")
         for edge in unread[:LISTED_UNREAD]:
             target = f"{edge.package or '(computed)'}/{edge.launch_file}"
-            print(f"      {_where(edge.file, package_dir)}:{edge.line}  {target}")
+            print(f"          {_where(edge.file, package_dir)}:{edge.line}  {target}")
         if len(unread) > LISTED_UNREAD:
-            print(f"      ... and {len(unread) - LISTED_UNREAD} more")
+            print(f"          ... and {len(unread) - LISTED_UNREAD} more")
+
+    if not resolvable:
+        print(
+            f"  {WARNING:<7} AMENT_PREFIX_PATH is empty, so includes into other packages were "
+            "not followed."
+        )
+
+
+def _message(one: Finding, package_dir: str, uninstalled: set) -> str:
+    if one.kind == NOT_INSTALLED:
+        return f"{one.package} is not installed in this workspace"
+
+    if one.kind == DEAD_INCLUDE:
+        return f"{one.package} does not ship {one.launch_file}"
+
+    owner = _where(one.owner, package_dir) if one.owner else "its package.xml"
+    absent = " (and is not installed here)" if one.package in uninstalled else ""
+    return f"{one.package} is not declared in {owner}{absent}"
+
+
+def _unfollowable(walk: Walk, findings: "list[Finding]") -> list:
+    """Includes no finding above has already accounted for."""
+    explained = {
+        one.package for one in findings if one.kind in (DEAD_INCLUDE, NOT_INSTALLED)
+    }
+    return [one for one in walk.unresolved if one.package not in explained]
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Check that everything a package's launch tree references exists here."
+        description="Check that everything a package's launch tree references exists here, "
+        "and that every manifest along the way declares what its launch files name."
     )
     parser.add_argument(
         "src",
@@ -149,10 +430,25 @@ def main() -> None:
         help="Files or directories to search for packages. Defaults to the current directory.",
     )
     parser.add_argument(
-        "--error",
+        "--fatal-under",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="Also treat packages installed below PATH as yours to fix, so findings against "
+        "them fail the run. Repeat for several. Packages in SRC always count.",
+    )
+    parser.add_argument(
+        "--ignore",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="A package to leave out of every report. Repeat for several.",
+    )
+    parser.add_argument(
+        "--warn-only",
         action="store_true",
-        help="Exit non-zero on findings. Warns only by default, so it can be introduced to a "
-        "repository that already has some.",
+        help="Report everything but always exit zero, for introducing the check to a "
+        "repository that already has findings.",
     )
     parser.add_argument(
         "--arg",
@@ -164,32 +460,29 @@ def main() -> None:
     )
     parsed = parser.parse_args()
 
-    if not workspace_is_available():
-        # Not a failure: with nothing to resolve against, every package would read as missing.
-        print(
-            "check-launch-tree: AMENT_PREFIX_PATH is empty, so packages cannot be resolved - "
-            "the launch tree was not checked. Source the workspace to enable this check."
-        )
-        return
-
     args = {}
     for item in parsed.arg:
         name, _, value = item.partition("=")
         if name:
             args[name] = value
 
-    package_dirs = package_dirs_under(parsed.src)
-    if not package_dirs:
+    manifests = find_package_xml_files(parsed.src)
+    if not manifests:
         print("check-launch-tree: no packages found. Nothing to check.")
         return
 
-    findings = 0
-    for package_dir in package_dirs:
-        walk, missing, dead = check(package_dir, args or None)
-        _report(package_dir, walk, missing, dead)
-        findings += len(missing) + len(dead)
+    scope = Scope(
+        _index(manifests), tuple(parsed.fatal_under), frozenset(parsed.ignore)
+    )
+    resolvable = workspace_is_available()
 
-    if findings and parsed.error:
+    fatal = 0
+    for package_dir in sorted({os.path.dirname(one) for one in manifests}):
+        walk, findings = check(package_dir, args or None, scope, resolvable)
+        _report(package_dir, walk, findings, resolvable)
+        fatal += sum(1 for one in findings if one.severity == FATAL)
+
+    if fatal and not parsed.warn_only:
         sys.exit(1)
 
 

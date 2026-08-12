@@ -10,13 +10,18 @@
     pass_filenames: false
     args: [--compare-with-cmake, --auto-fill-missing-deps]
 
-# Report-only, and needs a built and sourced workspace (it resolves through AMENT_PREFIX_PATH,
-# and skips with a message without one). Warns by default so it can be added to a repository
-# that already has findings; pass --error once they are dealt with.
+# Fails on a launch reference no manifest declares; warns about anything only a built
+# workspace could have told it, so a runner without one is not a failure.
+#
+# `verbose: true` is load-bearing: pre-commit discards a passing hook's output, so without it
+# every warning this prints would go nowhere. Pass --warn-only to introduce the hook to a
+# repository that already has findings, and --fatal-under PATH to treat an install space CI
+# fills itself as yours to fix.
 -   id: check-launch-tree
     name: Check launch tree references
-    description: Follow every include from this package's launch files and report references that do not resolve in this workspace.
+    description: Follow every include from this package's launch files, and check that each manifest along the way declares what its launch files name.
     entry: check-launch-tree
     language: python
     pass_filenames: false
-    files: '(launch|launch_manager_components|launch_manager_configs)/.*\.(py|xml|ya?ml)$'
+    verbose: true
+    files: '(^|/)(launch|components|launch_manager_components|launch_manager_configs)/.*\.(py|xml|ya?ml|toml|launch)$'

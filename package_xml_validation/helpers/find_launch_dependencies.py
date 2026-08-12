@@ -602,7 +602,7 @@ def _component_edges(path: str, text: str) -> list[Edge]:
             edges.append(
                 Edge(
                     package[0].value,
-                    os.path.join("launch", launch_file[0].value),
+                    launch_file[0].value,
                     path,
                     package[1].start_mark.line + 1,
                     None,

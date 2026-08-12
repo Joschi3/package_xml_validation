@@ -26,7 +26,7 @@ repos:
     hooks:
       - id: format-package-xml
         name: Format package.xml
-      # Optional. Warns only; add args: [--error] to make findings fatal.
+      # Optional. See "Launch Tree Integrity" below.
       - id: check-launch-tree
         name: Check launch tree references
 ```
@@ -138,9 +138,27 @@ The on-disk file now matches the **After** snippet above. The exit code is non-z
 
 ### Launch Tree Integrity
 
-The separate `check-launch-tree` hook follows every include out of a package's launch files, across package boundaries, and reports references that do not resolve: a package that is not installed, and an include whose package is present but whose launch file is not. Includes it cannot follow, e.g. a name built from `$(eval …)`, or an argument with no value, are listed as unchecked rather than assumed fine.
+The separate `check-launch-tree` hook follows every include out of a package's launch files, across package boundaries, and grades what it finds by whether anyone can act on it:
 
-Report-only, since neither finding is fixable by editing a manifest. It resolves packages through `AMENT_PREFIX_PATH`, so it needs a built and sourced workspace and skips with a message without one. Pass `--arg NAME=VALUE` to follow the tree a particular set of launch arguments produces, and `--error` to exit non-zero on findings.
+| Finding | Meaning | Effect |
+| --- | --- | --- |
+| not declared | a launch file names a package its own `package.xml` does not depend on | **fails the run** |
+| dead include | the package is installed, the launch file it names is not | **fails the run** |
+| not installed | nothing in this workspace provides the package | warning |
+| could not be followed | a name built from `$(eval …)`, or an argument with no value | warning |
+
+The split is what makes the hook usable in CI: a runner that has not built the workspace will report half of it as not installed, which is nobody's fault, while a missing manifest entry is a real defect and needs no workspace to see.
+
+The two fatal findings only fail the run when the package that *owns* the offending launch file is one you can fix — a package in the checkout being scanned, or one below a `--fatal-under` prefix. Against a binary-only install they drop to warnings. Where a package is both installed and in the checkout, the checkout's manifest is the one checked.
+
+Crossing package boundaries resolves through `AMENT_PREFIX_PATH`. Without a sourced workspace the walk stops at the checkout's own launch files and says so; the manifest check still runs.
+
+| Option | |
+| --- | --- |
+| `--fatal-under PATH` | also treat packages installed below `PATH` as yours to fix. Repeatable. In CI, `--fatal-under /opt/<distro>` covers packages the pipeline installs itself |
+| `--warn-only` | report everything, always exit zero — for introducing the hook to a repository that already has findings |
+| `--ignore NAME` | leave a package out of every report. Repeatable |
+| `--arg NAME=VALUE` | follow the tree a particular set of launch arguments produces, rather than the one the declared defaults describe. Repeatable |
 
 ### Build Configuration
 
@@ -255,7 +273,7 @@ against the in-memory tree, and writes back only if a step actually mutated.
 | Module | Responsibility |
 | --- | --- |
 | `package_xml_validator.py` | CLI entry point and per-file orchestration (parse → run steps → optionally write). |
-| `check_launch_tree.py` | Second entry point: follows the launch tree across packages and reports references that do not resolve. |
+| `check_launch_tree.py` | Second entry point: follows the launch tree across packages, and grades each finding by whether the package that owns the offending file is one the committer can fix. |
 | `helpers/validation_steps/` | One `*Step` class per validation rule. Each docstring states the rule, inputs, and when (if ever) it mutates the tree. |
 | `helpers/formatter/` | Pure structural checks (`structural_checks.py`), tree mutators (`mutations.py`), indentation/pretty-print helpers, and shared schema constants. `PackageXmlFormatter` is a thin facade. |
 | `helpers/cmake_parsers.py` | Lightweight regex-based CMake parser used by `CMakeComparisonStep`. |
