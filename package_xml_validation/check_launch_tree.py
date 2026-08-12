@@ -393,17 +393,41 @@ def _where(path: str, package_dir: str) -> str:
     return os.path.abspath(path) if relative.startswith("..") else relative
 
 
+#: Indent for the detail lines under a finding, and the width their labels are padded to.
+DETAIL = " " * 12
+LABEL = 9
+
+
+def _owner_name(manifest: Optional[str]) -> str:
+    """What to call the package a finding is charged to.
+
+    The manifest path alone makes a reader work out which package is at fault from a
+    `share/<name>/package.xml` fragment, so the name leads and the path follows it.
+    """
+    if manifest is None:
+        return "its own package"
+    return _read(manifest)[0] or os.path.basename(os.path.dirname(manifest))
+
+
 def _report(
-    package_dir: str, walk: Walk, findings: "list[Finding]", resolvable: bool
+    package_dir: str,
+    walk: Walk,
+    findings: "list[Finding]",
+    scope: Scope,
+    resolvable: bool,
 ) -> None:
     """Print what this package's tree turned up, or nothing at all if it turned up nothing."""
     unread = _unfollowable(walk, findings)
     if not findings and not unread:
         return
 
-    name = os.path.basename(os.path.abspath(package_dir))
+    reached = {_owner(one, scope.source) for one in walk.visited}
+    reached.discard(None)
+
     print(
-        f"{name}: read {len(walk.visited)} launch file(s), {len(walk.packages)} package(s)"
+        f"{os.path.basename(os.path.abspath(package_dir))}: followed this package's launch "
+        f"tree - {len(walk.visited)} launch file(s) across {len(reached)} package(s), naming "
+        f"{len(walk.packages)} package(s)."
     )
 
     # A package that is both undeclared and absent is one problem, so the absence is a clause
@@ -414,34 +438,40 @@ def _report(
     for one in findings:
         if one.kind == NOT_INSTALLED and one.package in also_undeclared:
             continue
-        print(f"  {one.severity:<7} {_message(one, package_dir, uninstalled)}")
-        print(f"          referenced by {_where(one.file, package_dir)}:{one.line}")
+        print()
+        print(f"  {one.severity:<7} {_headline(one, uninstalled)}")
+        if one.kind == UNDECLARED and one.owner:
+            print(f"{DETAIL}{'manifest':<{LABEL}}{_where(one.owner, package_dir)}")
+        print(
+            f"{DETAIL}{'named in':<{LABEL}}{_where(one.file, package_dir)}:{one.line}"
+        )
 
     if unread:
+        print()
         print(f"  {WARNING:<7} {len(unread)} include(s) could not be followed:")
         for edge in unread[:LISTED_UNREAD]:
             target = f"{edge.package or '(computed)'}/{edge.launch_file}"
-            print(f"          {_where(edge.file, package_dir)}:{edge.line}  {target}")
+            print(f"{DETAIL}{_where(edge.file, package_dir)}:{edge.line}  {target}")
         if len(unread) > LISTED_UNREAD:
-            print(f"          ... and {len(unread) - LISTED_UNREAD} more")
+            print(f"{DETAIL}... and {len(unread) - LISTED_UNREAD} more")
 
     if not resolvable:
+        print()
         print(
             f"  {WARNING:<7} AMENT_PREFIX_PATH is empty, so includes into other packages were "
             "not followed."
         )
 
 
-def _message(one: Finding, package_dir: str, uninstalled: set) -> str:
+def _headline(one: Finding, uninstalled: set) -> str:
     if one.kind == NOT_INSTALLED:
         return f"{one.package} is not installed in this workspace"
 
     if one.kind == DEAD_INCLUDE:
         return f"{one.package} does not ship {one.launch_file}"
 
-    owner = _where(one.owner, package_dir) if one.owner else "its package.xml"
     absent = " (and is not installed here)" if one.package in uninstalled else ""
-    return f"{one.package} is not declared in {owner}{absent}"
+    return f"{one.package} is not declared by {_owner_name(one.owner)}{absent}"
 
 
 def _unfollowable(walk: Walk, findings: "list[Finding]") -> list:
@@ -512,7 +542,7 @@ def main() -> None:
     fatal = 0
     for package_dir in sorted({os.path.dirname(one) for one in manifests}):
         walk, findings = check(package_dir, args or None, scope, resolvable)
-        _report(package_dir, walk, findings, resolvable)
+        _report(package_dir, walk, findings, scope, resolvable)
         fatal += sum(1 for one in findings if one.severity == FATAL)
 
     if fatal and not parsed.warn_only:
